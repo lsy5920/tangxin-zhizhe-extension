@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "糖心志者",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "授权 CTF 隔离靶场账号状态、播放链路和账号池验证工具。",
   "permissions": [
     "storage"

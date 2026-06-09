@@ -216,7 +216,7 @@ function publicAccount(account) {
 }
 
 function normalizeRemoteConfig(remote = {}) {
-  const mode = ["cloud", "local", "cloud-first"].includes(remote?.accountSourceMode)
+  const mode = ["cloud", "cloud-fixed", "local", "cloud-first"].includes(remote?.accountSourceMode)
     ? remote.accountSourceMode
     : REMOTE_CONFIG.accountSourceMode;
   return {
@@ -227,6 +227,7 @@ function normalizeRemoteConfig(remote = {}) {
     adminToken: String(remote?.adminToken || REMOTE_CONFIG.adminToken || ""),
     enabled: remote?.enabled !== false,
     accountSourceMode: mode,
+    fixedAccountId: String(remote?.fixedAccountId || ""),
     fallbackLocal: remote?.fallbackLocal !== false
   };
 }
@@ -281,12 +282,22 @@ async function syncRemoteAccounts(state) {
     const data = await remoteRequest(state, "/v1/accounts");
     if (Array.isArray(data.accounts)) {
       const merged = new Map();
-      for (const account of state.accountPool || []) merged.set(account.id, normalizeAccount(account));
-      for (const account of data.accounts) merged.set(account.id, normalizeAccount({ ...account, source: account.source || "remote" }));
+      for (const account of state.accountPool || []) {
+        const normalized = normalizeAccount(account);
+        if (normalized.source !== "remote" && normalized.source !== "qrcode" && normalized.source !== "remote-seed") {
+          merged.set(normalized.id, normalized);
+        }
+      }
+      for (const account of data.accounts) {
+        merged.set(account.id, normalizeAccount({ ...account, source: account.source || "remote" }));
+      }
       state.accountPool = Array.from(merged.values());
       state.remote.lastSyncAt = nowIso();
       state.remote.lastError = "";
-      if (!state.selectedFullAccountId || !state.accountPool.some((item) => item.id === state.selectedFullAccountId)) {
+      const fixedId = state.remote.fixedAccountId || "";
+      if (state.remote.accountSourceMode === "cloud-fixed" && fixedId && state.accountPool.some((item) => item.id === fixedId)) {
+        state.selectedFullAccountId = fixedId;
+      } else if (!state.selectedFullAccountId || !state.accountPool.some((item) => item.id === state.selectedFullAccountId)) {
         state.selectedFullAccountId = data.accounts[0]?.id || state.accountPool[0]?.id || "";
       }
       await saveState(state);
@@ -724,6 +735,7 @@ async function getFullDetail(message = {}) {
           movieId,
           visitorDetail,
           accountMode: sourceMode,
+          accountId: sourceMode === "cloud-fixed" ? (remote.fixedAccountId || state.selectedFullAccountId || "") : "",
           bootstrapSession: message.bootstrapSession || message.session || null
         })
       }));

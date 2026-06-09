@@ -154,8 +154,15 @@
                 账号来源
                 <select data-field="accountSourceMode">
                   <option value="cloud">云端随机轮换</option>
+                  <option value="cloud-fixed">固定云端账号</option>
                   <option value="local">本地选中账号</option>
                   <option value="cloud-first">云端优先，本地兜底</option>
+                </select>
+              </label>
+              <label>
+                固定云端账号
+                <select data-field="remoteFixedAccountId">
+                  <option value="">未选择</option>
                 </select>
               </label>
             </div>
@@ -377,6 +384,17 @@
 
   function selectedAccount() {
     return state.accountPool.find((item) => item.id === state.selectedFullAccountId) || state.accountPool[0] || null;
+  }
+
+  function remoteSourceLabel(mode) {
+    if (mode === "local") return "本地选中账号";
+    if (mode === "cloud-first") return "云端优先，本地兜底";
+    if (mode === "cloud-fixed") return "固定云端账号";
+    return "云端随机轮换";
+  }
+
+  function isCloudAccount(account = {}) {
+    return ["remote", "qrcode", "remote-seed", "seed"].includes(account.source) || account.hasQrcode || account.hasPassword || account.hasToken;
   }
 
   function isDisplayPatchActive(probe = {}) {
@@ -729,10 +747,19 @@
     if (fields.remoteClientToken) fields.remoteClientToken.value = "";
     if (fields.remoteAdminToken) fields.remoteAdminToken.value = "";
     if (fields.accountSourceMode) fields.accountSourceMode.value = remote.accountSourceMode || "cloud";
+    if (fields.remoteFixedAccountId) {
+      const fixedId = remote.fixedAccountId || state.selectedFullAccountId || "";
+      const cloudAccounts = state.accountPool.filter(isCloudAccount);
+      fields.remoteFixedAccountId.innerHTML = `<option value="">未选择</option>` + cloudAccounts.map((account) => `
+        <option value="${escapeHtml(account.id)}"${account.id === fixedId ? " selected" : ""}>${escapeHtml(accountTitle(account))} / ${escapeHtml(account.id)}</option>
+      `).join("");
+      fields.remoteFixedAccountId.value = fixedId;
+    }
     if (views.remoteMeta) {
-      const sourceLabel = remote.accountSourceMode === "local" ? "本地选中账号" : remote.accountSourceMode === "cloud-first" ? "云端优先，本地兜底" : "云端随机轮换";
+      const sourceLabel = remoteSourceLabel(remote.accountSourceMode);
+      const fixedText = remote.accountSourceMode === "cloud-fixed" ? ` / 固定=${remote.fixedAccountId || state.selectedFullAccountId || "未选择"}` : "";
       views.remoteMeta.textContent = remote.baseUrl
-        ? `已配置 / 来源=${sourceLabel} / client=${remote.hasClientToken ? remote.clientTokenMasked || "set" : "未设置"} / admin=${remote.hasAdminToken ? remote.adminTokenMasked || "set" : "未设置"} / ${remote.lastError ? `错误：${remote.lastError}` : remote.lastSyncAt ? `上次同步 ${remote.lastSyncAt}` : "等待同步"}`
+        ? `已配置 / 来源=${sourceLabel}${fixedText} / client=${remote.hasClientToken ? remote.clientTokenMasked || "set" : "未设置"} / admin=${remote.hasAdminToken ? remote.adminTokenMasked || "set" : "未设置"} / ${remote.lastError ? `错误：${remote.lastError}` : remote.lastSyncAt ? `上次同步 ${remote.lastSyncAt}` : "等待同步"}`
         : "远程未配置；完整账号可上传到 Cloudflare Worker/Supabase 后再同步。";
     }
     views.accountPool.innerHTML = state.accountPool.map((account) => {
@@ -742,7 +769,7 @@
         <article class="${isSelected ? "is-selected" : ""}">
           <div>
             <b>${escapeHtml(accountTitle(account))}</b>
-            <span>${escapeHtml([account.username || "未填写用户名", status, account.userInfo?.id ? `ID ${account.userInfo.id}` : ""].filter(Boolean).join(" / "))}</span>
+            <span>${escapeHtml([account.username || account.source || "未填写用户名", status, account.hasQrcode ? "二维码凭证" : "", account.userInfo?.id ? `ID ${account.userInfo.id}` : ""].filter(Boolean).join(" / "))}</span>
             <code>${escapeHtml(account.tokenMasked || (account.hasToken ? "token 已保存" : "token 未导入"))}</code>
             ${account.lastError ? `<p>${escapeHtml(account.lastError)}</p>` : ""}
           </div>
@@ -1076,6 +1103,7 @@
         clientToken: fields.remoteClientToken.value.trim(),
         adminToken: fields.remoteAdminToken.value.trim(),
         accountSourceMode: fields.accountSourceMode?.value || "cloud",
+        fixedAccountId: fields.remoteFixedAccountId?.value || state.selectedFullAccountId || "",
         enabled: true,
         fallbackLocal: fields.accountSourceMode?.value === "cloud-first"
       }
@@ -1087,7 +1115,9 @@
   async function syncRemoteAccounts() {
     const response = await sendRuntime("syncRemoteAccounts");
     syncSavedState(response.state || {});
-    emitFlow("远程账号池", "已从 Cloudflare Worker 同步账号池", "ok");
+    const remote = response.state?.remote || {};
+    if (remote.lastError) emitFlow("远程账号池同步失败", remote.lastError, "error");
+    else emitFlow("远程账号池", `已从 Cloudflare Worker 同步 ${(response.state?.accountPool || []).length} 个账号`, "ok");
   }
 
   async function uploadAccountRemote() {
