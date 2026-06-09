@@ -48,7 +48,8 @@ const DEFAULT_STATE = {
     fullplayEnabled: true,
     remote: REMOTE_CONFIG,
     fullDetails: [],
-    fullDetailCache: {}
+    fullDetailCache: {},
+    downloadTasks: {}
   };
 
 const enc = new TextEncoder();
@@ -403,6 +404,7 @@ async function getStateInternal() {
   }
   state.fullDetails = Array.isArray(state.fullDetails) ? state.fullDetails.slice(-80) : [];
   state.fullDetailCache = state.fullDetailCache && typeof state.fullDetailCache === "object" ? state.fullDetailCache : {};
+  state.downloadTasks = state.downloadTasks && typeof state.downloadTasks === "object" ? state.downloadTasks : {};
   if (autoCleaned) await saveState({ ...state, autoCleanedThisLoad: false });
   return state;
 }
@@ -430,6 +432,7 @@ async function resetAllLocalData() {
     remote: { ...REMOTE_CONFIG },
     fullDetails: [],
     fullDetailCache: {},
+    downloadTasks: {},
     lastFullTrace: null,
     lastGuestTrace: null,
     notes: []
@@ -674,6 +677,34 @@ function absoluteUrl(link) {
   } catch (_) {
     return value;
   }
+}
+
+function safeFileName(value) {
+  return String(value || "")
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 120);
+}
+
+function downloadFileName(movieId, ext = "ts") {
+  return `糖心志者/完整视频_${safeFileName(movieId || Date.now())}.${ext}`;
+}
+
+function linkExtension(link) {
+  const url = String(link || "").split("?")[0].toLowerCase();
+  if (url.endsWith(".mp4")) return "mp4";
+  if (url.endsWith(".m3u8")) return "m3u8";
+  return "ts";
+}
+
+async function ensureOffscreenDocument() {
+  if (!chrome.offscreen?.createDocument) throw new Error("当前浏览器不支持离屏下载，请升级 Chrome 或 Edge");
+  if (chrome.offscreen.hasDocument && await chrome.offscreen.hasDocument()) return;
+  await chrome.offscreen.createDocument({
+    url: chrome.runtime.getURL("offscreen.html"),
+    reasons: ["BLOBS"],
+    justification: "用于在扩展后台把完整 m3u8 分片合并成可下载文件"
+  });
 }
 
 function looksPlayableLink(value) {
@@ -934,6 +965,54 @@ async function getFullDetail(message = {}) {
   return { ok: true, detail, data: detail, summary, account: publicAccount(account), state: sanitizeState(fresh) };
 }
 
+async function downloadFullVideo(message = {}) {
+  const movieId = String(message.movieId || message.id || "").trim();
+  if (!movieId) throw new Error("缺少视频编号 movieId");
+  const full = await getFullDetail(message);
+  const detail = normalizeFullDetail(full.detail || full.data || {});
+  const summary = full.summary || {};
+  const link = detail.play_link || summary.playLink || detail.backup_link || summary.backupLink || "";
+  if (!link) throw new Error("完整详情没有返回可下载播放链接");
+  const url = absoluteUrl(link);
+  const ext = linkExtension(url);
+  const filename = downloadFileName(movieId, ext === "mp4" ? "mp4" : "ts");
+  if (ext === "mp4") {
+    const downloadId = await chrome.downloads.download({ url, filename, saveAs: false });
+    return { ok: true, mode: "direct", url, filename, downloadId, summary, state: full.state };
+  }
+  await ensureOffscreenDocument();
+  const taskId = `txzz_download_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const result = await chrome.runtime.sendMessage({
+    type: "offscreenDownloadM3u8",
+    taskId,
+    url,
+    filename,
+    saveAs: false
+  });
+  if (result?.ok === false) throw new Error(result.error || "完整视频下载失败");
+  return { ok: true, mode: "m3u8-merged-ts", url, filename, taskId, ...result, summary, state: full.state };
+}
+
+async function recordDownloadProgress(message = {}) {
+  const state = await getStateInternal();
+  const taskId = String(message.taskId || "");
+  if (!taskId) return { ok: true };
+  state.downloadTasks = {
+    ...(state.downloadTasks || {}),
+    [taskId]: {
+      taskId,
+      stage: message.stage || "",
+      current: Number(message.current || 0),
+      total: Number(message.total || 0),
+      updatedAt: nowIso()
+    }
+  };
+  const entries = Object.entries(state.downloadTasks);
+  if (entries.length > 40) state.downloadTasks = Object.fromEntries(entries.slice(-40));
+  await saveState(state);
+  return { ok: true };
+}
+
 async function upsertAccount(raw) {
   const state = await getStateInternal();
   const incoming = normalizeAccount(raw);
@@ -1107,6 +1186,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "getFullDetail") {
       sendResponse(await getFullDetail(message));
+      return;
+    }
+    if (message?.type === "downloadFullVideo") {
+      sendResponse(await downloadFullVideo(message));
+      return;
+    }
+    if (message?.type === "downloadProgress") {
+      sendResponse(await recordDownloadProgress(message));
       return;
     }
     sendResponse({ ok: false, error: `unknown message: ${message?.type || ""}` });

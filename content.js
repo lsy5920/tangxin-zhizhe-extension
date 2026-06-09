@@ -378,6 +378,19 @@
     }
   }
 
+  function currentMovieId() {
+    const match = String(location.pathname || "").match(/\/movie\/detail\/(\d+)/);
+    return match ? match[1] : "";
+  }
+
+  function isDownloadTrigger(target) {
+    const el = target?.closest?.("button,a,div,span,[role='button'],.van-cell,.van-button");
+    if (!el) return false;
+    const text = String(el.textContent || el.getAttribute("aria-label") || el.title || "").trim();
+    const href = String(el.getAttribute?.("href") || "");
+    return /下载|缓存|download/i.test(text) || /download/i.test(href);
+  }
+
   function accountTitle(account) {
     return account?.label || account?.username || account?.id || "完整账号";
   }
@@ -853,6 +866,9 @@
         <span>${escapeHtml([item.accountLabel || item.accountUser, item.fullStat?.segments ? `${item.fullStat.segments} 片` : "", item.fullStat?.duration ? `${item.fullStat.duration}s` : ""].filter(Boolean).join(" / "))}</span>
         <code>${escapeHtml(item.playLink || "")}</code>
         ${item.backupLink ? `<code>${escapeHtml(item.backupLink)}</code>` : ""}
+        <div class="txzz-account-actions">
+          <button data-action="download-full-video" data-movie-id="${escapeHtml(item.movieId || "")}">下载完整视频</button>
+        </div>
       </article>
     `).join("") || `<div class="txzz-empty">还没有完整详情记录。</div>`;
     renderStats();
@@ -1195,6 +1211,31 @@
     emitFlow("远程账号池", `已上传 ${accountTitle(account)}，账号池已更新为云端只读摘要`, "ok");
   }
 
+  async function downloadFullVideo(movieId = currentMovieId()) {
+    const id = String(movieId || currentMovieId()).trim();
+    if (!id) throw new Error("当前页面不是视频详情页，无法识别视频编号");
+    emitFlow("完整下载", `开始获取完整视频 ${id}`);
+    const bootstrapSession = await collectSession();
+    const response = await sendRuntime("downloadFullVideo", {
+      movieId: id,
+      accountId: state.selectedFullAccountId,
+      bootstrapSession
+    });
+    if (response.state) syncSavedState(response.state);
+    const mode = response.mode === "m3u8-merged-ts" ? "m3u8 分片合并" : "直接下载";
+    emitFlow("完整下载", `${mode} 已创建下载任务：${response.filename || id}`, "ok");
+    if (response.summary) {
+      state.fullDetails.push({
+        ...response.summary,
+        movieId: response.summary.movieId || id,
+        playLink: response.summary.playLink || response.url || ""
+      });
+      state.fullDetails = state.fullDetails.slice(-80);
+      renderFullDetails();
+    }
+    return response;
+  }
+
   async function selectAccount(accountId) {
     const response = await sendRuntime("selectAccount", { accountId });
     syncSavedState(response.state || {});
@@ -1264,6 +1305,7 @@
     const action = actionEl.dataset.action;
     const accountId = actionEl.dataset.accountId || state.selectedFullAccountId;
     try {
+      if (action === "noop") return;
       if (action === "toggle") togglePanel();
       if (action === "close") togglePanel(false);
       if (action === "refresh") {
@@ -1306,6 +1348,7 @@
       if (action === "sync-remote") await syncRemoteAccounts();
       if (action === "upload-account-remote") await uploadAccountRemote();
       if (action === "upload-local-account-remote") await uploadLocalAccountRemote(accountId);
+      if (action === "download-full-video") await downloadFullVideo(actionEl.dataset.movieId || currentMovieId());
       if (action === "import-current-session") await importCurrentSession();
       if (action === "export") {
         const trace = await exportTrace();
@@ -1416,6 +1459,18 @@
     if (event?.cancelable) event.preventDefault();
   }
 
+  function installDownloadInterceptor() {
+    document.addEventListener("click", (event) => {
+      const movieId = currentMovieId();
+      if (!movieId || !isDownloadTrigger(event.target)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      emitFlow("完整下载", `已接管详情页下载按钮：${movieId}`);
+      downloadFullVideo(movieId).catch((err) => emitFlow("完整下载失败", err?.message || String(err), "error"));
+    }, true);
+  }
+
   async function handleFullDetailRequest(payload) {
     emitFlow("完整播放", `命中 /movie/detail，视频 ${payload.movieId}`);
     try {
@@ -1514,6 +1569,7 @@
   });
 
   installHook();
+  installDownloadInterceptor();
   syncViewportVars();
   collectSession().catch(() => {});
   applyDisplayPatch().catch(() => {});

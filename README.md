@@ -21,6 +21,7 @@
 - 居中面板：点击悬浮球后隐藏悬浮球，面板在屏幕中间展开；关闭后悬浮球重新出现，手机端顶部栏固定可见。
 - 展示覆盖：在沙箱页面侧展示为永久会员、永久尤物圈、999 余额。
 - 链路观测：分类记录 M3U8、MP4、切片、播放接口、购买接口、支付接口、余额接口、权限接口和完整播放命中。
+- 完整下载：接管视频详情页下载按钮，优先使用完整账号池获取完整播放链接；MP4 直接下载，M3U8 会下载分片并合并为 `.ts` 文件。
 - 流程图日志：运行状态按步骤展示，避免出现代码式日志。
 - 账号池模式：支持云端随机轮换、本地选中账号、云端优先本地兜底。
 - 远程同步：通过 Cloudflare Worker 读取 Supabase 账号池，避免完整账号密码直接暴露在插件前端。
@@ -40,6 +41,8 @@ tangxin-zhizhe-extension/
 ├── nav_guard.js        # 页面导航守卫，降低视频页无感刷新问题
 ├── page_hook.js        # 页面主世界请求 Hook 与播放链路替换逻辑
 ├── page_probe.js       # 页面会话与用户信息探测脚本
+├── offscreen.html      # 离屏下载页面，用于合并完整 M3U8 分片
+├── offscreen_downloader.js # 完整视频下载与 M3U8 分片合并逻辑
 └── README.md           # 插件使用文档
 ```
 
@@ -107,6 +110,15 @@ https://txzzsecure.lsy20.top
 3. 进入「链路」页查看捕获到的 M3U8、MP4、切片和播放接口。
 4. 点击「复制最新播放链接」复制最近一次命中的播放链接。
 
+### 场景二点五：下载完整视频
+
+1. 打开视频详情页。
+2. 点击页面原本的「下载」或「缓存」按钮。
+3. 插件会拦截游客下载逻辑，使用完整账号池获取完整播放链接。
+4. 如果完整链接是 MP4，会直接创建浏览器下载任务。
+5. 如果完整链接是 M3U8，会通过离屏下载器下载所有分片并合并为 `.ts` 文件，保存到浏览器默认下载目录的 `糖心志者` 文件夹。
+6. 也可以进入插件「完整播放」页，点击单条记录上的「下载完整视频」按钮。
+
 ### 场景三：使用本地账号池
 
 1. 进入「账号池」页。
@@ -169,6 +181,7 @@ flowchart LR
 node --check .\tangxin-zhizhe-extension\background.js
 node --check .\tangxin-zhizhe-extension\content.js
 node --check .\tangxin-zhizhe-extension\page_hook.js
+node --check .\tangxin-zhizhe-extension\offscreen_downloader.js
 node --check .\verify_txzz_clear_cache.js
 node --check .\verify_txzz_mobile_ball.js
 node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\manifest.json','utf8')); console.log('manifest ok')"
@@ -303,3 +316,4 @@ node .\verify_txzz_cdp_live.js
 2026-06-09 20:32 【修复】将插件默认远程 Worker 地址更新为已验证可用的 `workers.dev` 默认域名，健康检查显示运行时密钥全部注入成功，账号池可正常同步。
 2026-06-09 20:42 【优化】新增覆盖安装后的自动缓存清理机制，插件首次读取状态时会自动切换到当前默认 Worker、清理旧云端账号摘要和完整播放缓存，同时保留用户手动导入的本地账号。
 2026-06-09 21:35 【优化】默认 Worker 地址切换为 `https://txzzsecure.lsy20.top`，云端账号改为只读摘要显示；本地账号卡片新增「上传云端」按钮，上传成功后账号池自动同步并转为云端摘要。
+2026-06-09 23:40 【新增】新增完整视频下载能力，接管详情页下载按钮并优先使用完整账号池获取完整播放链接；MP4 直接下载，M3U8 通过离屏下载器下载分片并合并为 `.ts` 文件。
