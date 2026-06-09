@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "糖心志者",
+  "version": "1.1.0",
+  "description": "Authorized CTF sandbox helper for account-state visualization, playback-chain tracing, and dual-session verification.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://txh068.com/*",
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://txh068.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "糖心志者"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "nav_guard.js",
+        "page_hook.js",
+        "page_probe.js",
+        "display_patch.js"
+      ],
+      "matches": [
+        "https://txh068.com/*"
+      ]
+    }
+  ]
+}
