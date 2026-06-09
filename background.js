@@ -7,6 +7,11 @@ const API_CONFIG = {
   aesKey: "fd14f9f8e38808fa"
 };
 
+const STORAGE_SCHEMA_VERSION = "2026-06-09-auto-cache-v1";
+const LEGACY_REMOTE_BASE_URLS = [
+  "https://txzz.lsy20.top"
+];
+
 const REMOTE_CONFIG = {
   baseUrl: "https://txzz-secure-pool.3199912548.workers.dev",
   clientToken: "txzz_client_91ee115d9bf5c8e800f2def383f9da71d449fb2a11ccba455c9abb7c590701f2",
@@ -232,6 +237,64 @@ function normalizeRemoteConfig(remote = {}) {
   };
 }
 
+function normalizeBaseUrl(value) {
+  return String(value || "").replace(/\/+$/, "");
+}
+
+function isLegacyRemoteBaseUrl(value) {
+  const normalized = normalizeBaseUrl(value);
+  return !normalized || LEGACY_REMOTE_BASE_URLS.some((item) => normalizeBaseUrl(item) === normalized);
+}
+
+function isRemoteAccount(account = {}) {
+  const source = String(account.source || "");
+  return source === "remote" || source === "qrcode" || source === "remote-seed";
+}
+
+function buildAutoCleanState(storedState = {}) {
+  const previousRemote = normalizeRemoteConfig(storedState.remote || {});
+  const keepManualAccounts = (Array.isArray(storedState.accountPool) ? storedState.accountPool : [])
+    .map(normalizeAccount)
+    .filter((account) => !isRemoteAccount(account));
+  const accountMap = new Map();
+  for (const account of DEFAULT_ACCOUNTS) accountMap.set(account.id, normalizeAccount(account));
+  for (const account of keepManualAccounts) accountMap.set(account.id, account);
+  const selectedFullAccountId = accountMap.has(storedState.selectedFullAccountId)
+    ? storedState.selectedFullAccountId
+    : DEFAULT_ACCOUNTS[0]?.id || Array.from(accountMap.keys())[0] || "";
+  return {
+    ...DEFAULT_STATE,
+    role: storedState.role || DEFAULT_STATE.role,
+    selectedFullAccountId,
+    accountPool: Array.from(accountMap.values()),
+    remote: {
+      ...REMOTE_CONFIG,
+      adminToken: previousRemote.adminToken || "",
+      accountSourceMode: REMOTE_CONFIG.accountSourceMode,
+      fixedAccountId: "",
+      fallbackLocal: true,
+      lastAutoCleanAt: nowIso(),
+      lastAutoCleanReason: isLegacyRemoteBaseUrl(previousRemote.baseUrl)
+        ? "检测到旧 Worker 地址或空地址，已自动切换到当前默认 Worker 并清理旧缓存"
+        : "检测到插件覆盖安装后的旧版本缓存，已自动刷新远程账号池状态"
+    },
+    fullDetails: [],
+    fullDetailCache: {},
+    lastFullTrace: null,
+    lastGuestTrace: null,
+    notes: Array.isArray(storedState.notes) ? storedState.notes.slice(-20) : [],
+    storageSchemaVersion: STORAGE_SCHEMA_VERSION,
+    autoCleanedAt: nowIso()
+  };
+}
+
+function shouldAutoCleanStoredState(storedState = {}) {
+  if (!storedState || typeof storedState !== "object") return true;
+  if (storedState.storageSchemaVersion !== STORAGE_SCHEMA_VERSION) return true;
+  if (isLegacyRemoteBaseUrl(storedState.remote?.baseUrl)) return true;
+  return false;
+}
+
 function publicRemoteConfig(remote = {}) {
   const normalized = normalizeRemoteConfig(remote);
   return {
@@ -311,8 +374,12 @@ async function syncRemoteAccounts(state) {
 
 async function getStateInternal() {
   const stored = await chrome.storage.local.get("txzzState");
-  const state = { ...DEFAULT_STATE, ...(stored.txzzState || {}) };
+  const storedState = stored.txzzState || {};
+  const autoCleaned = shouldAutoCleanStoredState(storedState);
+  const state = autoCleaned ? buildAutoCleanState(storedState) : { ...DEFAULT_STATE, ...storedState };
   state.remote = normalizeRemoteConfig(state.remote);
+  state.storageSchemaVersion = STORAGE_SCHEMA_VERSION;
+  state.autoCleanedThisLoad = Boolean(autoCleaned);
   const merged = new Map();
   for (const account of DEFAULT_ACCOUNTS) merged.set(account.id, normalizeAccount(account));
   for (const account of Array.isArray(state.accountPool) ? state.accountPool : []) {
@@ -326,6 +393,7 @@ async function getStateInternal() {
   }
   state.fullDetails = Array.isArray(state.fullDetails) ? state.fullDetails.slice(-80) : [];
   state.fullDetailCache = state.fullDetailCache && typeof state.fullDetailCache === "object" ? state.fullDetailCache : {};
+  if (autoCleaned) await saveState({ ...state, autoCleanedThisLoad: false });
   return state;
 }
 
@@ -339,8 +407,9 @@ function sanitizeState(state) {
 }
 
 async function saveState(state) {
-  await chrome.storage.local.set({ txzzState: state });
-  return state;
+  const nextState = { ...state, storageSchemaVersion: STORAGE_SCHEMA_VERSION };
+  await chrome.storage.local.set({ txzzState: nextState });
+  return nextState;
 }
 
 async function resetAllLocalData() {

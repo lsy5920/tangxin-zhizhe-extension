@@ -1018,10 +1018,25 @@
   }
 
   function syncSavedState(saved) {
+    const autoCleaned = Boolean(saved.autoCleanedThisLoad);
+    if (autoCleaned) {
+      window.postMessage({ source: "txzz-content", kind: "clear-runtime-cache" }, "*");
+      state.playback = [];
+      state.requests = [];
+      state.observations = [];
+      state.flow = [];
+    }
     state.accountPool = Array.isArray(saved.accountPool) ? saved.accountPool : [];
     state.selectedFullAccountId = saved.selectedFullAccountId || state.accountPool[0]?.id || "";
     state.remote = saved.remote || state.remote || null;
     state.fullDetails = Array.isArray(saved.fullDetails) ? saved.fullDetails : [];
+    if (autoCleaned) {
+      const reason = saved.remote?.lastAutoCleanReason || "已自动清理旧版本插件缓存并切换到当前默认配置";
+      emitFlow("自动清理缓存", reason, "ok");
+    }
+    renderPlayback();
+    renderObservations();
+    renderFlow();
     renderAccounts();
     renderFullDetails();
   }
@@ -1063,7 +1078,7 @@
   }
 
   async function clearDataCache() {
-    const ok = window.confirm("将清除旧版本残留的插件本地数据、账号池缓存、完整详情缓存和保存链路，并重置为当前版本默认状态。是否继续？");
+    const ok = window.confirm("将清除插件本地数据、账号池缓存、完整详情缓存和保存链路，并重置为当前版本默认状态。新版本覆盖安装时会自动清理旧缓存，此按钮用于手动兜底。是否继续？");
     if (!ok) return;
     window.postMessage({ source: "txzz-content", kind: "clear-runtime-cache" }, "*");
     const response = await sendRuntime("clearAllData");
