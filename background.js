@@ -49,7 +49,9 @@ const DEFAULT_STATE = {
     remote: REMOTE_CONFIG,
     fullDetails: [],
     fullDetailCache: {},
-    downloadTasks: {}
+    downloadTasks: {},
+    downloadSnapshots: [],
+    downloadDeletedTaskIds: []
   };
 
 const enc = new TextEncoder();
@@ -293,6 +295,9 @@ function buildAutoCleanState(storedState = {}) {
     lastFullTrace: null,
     lastGuestTrace: null,
     notes: Array.isArray(storedState.notes) ? storedState.notes.slice(-20) : [],
+    downloadTasks: {},
+    downloadSnapshots: [],
+    downloadDeletedTaskIds: [],
     storageSchemaVersion: STORAGE_SCHEMA_VERSION,
     autoCleanedAt: nowIso()
   };
@@ -404,7 +409,9 @@ async function getStateInternal() {
   }
   state.fullDetails = Array.isArray(state.fullDetails) ? state.fullDetails.slice(-80) : [];
   state.fullDetailCache = state.fullDetailCache && typeof state.fullDetailCache === "object" ? state.fullDetailCache : {};
-  state.downloadTasks = state.downloadTasks && typeof state.downloadTasks === "object" ? state.downloadTasks : {};
+  state.downloadTasks = compactDownloadTasks(state.downloadTasks && typeof state.downloadTasks === "object" ? state.downloadTasks : {});
+  state.downloadSnapshots = Array.isArray(state.downloadSnapshots) ? state.downloadSnapshots.slice(-30) : [];
+  state.downloadDeletedTaskIds = Array.isArray(state.downloadDeletedTaskIds) ? state.downloadDeletedTaskIds.slice(-120).map(String) : [];
   if (autoCleaned) await saveState({ ...state, autoCleanedThisLoad: false });
   return state;
 }
@@ -414,7 +421,9 @@ function sanitizeState(state) {
     ...state,
     remote: publicRemoteConfig(state.remote),
     accountPool: (state.accountPool || []).map(publicAccount),
-    fullDetails: (state.fullDetails || []).slice(-80)
+    fullDetails: (state.fullDetails || []).slice(-80),
+    downloadTasks: state.downloadTasks && typeof state.downloadTasks === "object" ? state.downloadTasks : {},
+    downloadSnapshots: Array.isArray(state.downloadSnapshots) ? state.downloadSnapshots.slice(-30) : []
   };
 }
 
@@ -433,6 +442,8 @@ async function resetAllLocalData() {
     fullDetails: [],
     fullDetailCache: {},
     downloadTasks: {},
+    downloadSnapshots: [],
+    downloadDeletedTaskIds: [],
     lastFullTrace: null,
     lastGuestTrace: null,
     notes: []
@@ -686,8 +697,65 @@ function safeFileName(value) {
     .slice(0, 120);
 }
 
-function downloadFileName(movieId, ext = "ts") {
-  return `糖心志者/完整视频_${safeFileName(movieId || Date.now())}.${ext}`;
+function displayMovieTitle(detail = {}, summary = {}, fallback = "") {
+  return String(
+    detail.title ||
+    detail.name ||
+    detail.movie_title ||
+    detail.movieTitle ||
+    detail.video_title ||
+    detail.videoTitle ||
+    detail.mv_name ||
+    detail.desc ||
+    summary.title ||
+    summary.name ||
+    fallback ||
+    ""
+  ).trim();
+}
+
+function downloadTitleSnippet(title = "", movieId = "") {
+  const clean = String(title || "").replace(/\s+/g, " ").trim();
+  if (!clean) return `完整视频_${movieId || Date.now()}`;
+  return clean.length > 14 ? clean.slice(0, 14) : clean;
+}
+
+function downloadFileName(movieId, ext = "mp4", title = "") {
+  const snippet = safeFileName(downloadTitleSnippet(title, movieId));
+  const idPart = safeFileName(movieId || Date.now());
+  return `糖心志者/${snippet}_${idPart}.${ext}`;
+}
+
+function downloadTaskId(movieId) {
+  return `txzz_download_movie_${safeFileName(movieId || "unknown")}`;
+}
+
+function isDownloadRunning(task = {}) {
+  return ["queued", "playlist", "segments", "segment"].includes(String(task.stage || ""));
+}
+
+function isDownloadReady(task = {}) {
+  return ["ready", "complete"].includes(String(task.stage || "")) || Boolean(task.objectReady);
+}
+
+function compactDownloadTasks(tasks = {}) {
+  const grouped = new Map();
+  for (const [key, task] of Object.entries(tasks || {})) {
+    if (!task || typeof task !== "object") continue;
+    const groupKey = String(task.movieId || key || "");
+    const existing = grouped.get(groupKey);
+    if (!existing) {
+      grouped.set(groupKey, { key, task });
+      continue;
+    }
+    const currentRunning = isDownloadRunning(task);
+    const existingRunning = isDownloadRunning(existing.task);
+    const newer = String(task.updatedAt || "") >= String(existing.task.updatedAt || "");
+    if ((currentRunning && !existingRunning) || (currentRunning === existingRunning && newer)) {
+      grouped.set(groupKey, { key, task });
+    }
+  }
+  return Object.fromEntries(Array.from(grouped.values()).map((item) => [item.key, item.task]));
 }
 
 function linkExtension(link) {
@@ -975,42 +1043,263 @@ async function downloadFullVideo(message = {}) {
   if (!link) throw new Error("完整详情没有返回可下载播放链接");
   const url = absoluteUrl(link);
   const ext = linkExtension(url);
-  const filename = downloadFileName(movieId, ext === "mp4" ? "mp4" : "ts");
+  const title = displayMovieTitle(detail, summary, message.title || message.movieTitle || "");
+  const titleSnippet = downloadTitleSnippet(title, movieId);
+  const filename = downloadFileName(movieId, "mp4", title);
+  const taskId = downloadTaskId(movieId);
+  const existingState = await getStateInternal();
+  const existingTask = existingState.downloadTasks?.[taskId];
+  if (isDownloadRunning(existingTask)) {
+    return { ok: true, reused: true, mode: existingTask.mode || (ext === "mp4" ? "direct" : "m3u8-merged-ts"), url: existingTask.url || url, filename: existingTask.filename || filename, taskId, summary, state: sanitizeState(existingState) };
+  }
+  existingState.downloadDeletedTaskIds = (existingState.downloadDeletedTaskIds || []).filter((id) => id !== taskId);
+  await saveState(existingState);
   if (ext === "mp4") {
-    const downloadId = await chrome.downloads.download({ url, filename, saveAs: false });
-    return { ok: true, mode: "direct", url, filename, downloadId, summary, state: full.state };
+    const ready = await getStateInternal();
+    ready.downloadDeletedTaskIds = (ready.downloadDeletedTaskIds || []).filter((id) => id !== taskId);
+    ready.downloadTasks = {
+      ...(ready.downloadTasks || {}),
+      [taskId]: {
+        ...(ready.downloadTasks?.[taskId] || {}),
+        taskId,
+        movieId,
+        movieTitle: title,
+        titleSnippet,
+        mode: "direct",
+        stage: "ready",
+        current: 1,
+        total: 1,
+        filename,
+        url,
+        objectReady: true,
+        updatedAt: nowIso()
+      }
+    };
+    await saveState(ready);
+    return { ok: true, mode: "direct", ready: true, url, filename, taskId, summary, state: sanitizeState(ready) };
   }
   await ensureOffscreenDocument();
-  const taskId = `txzz_download_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  const result = await chrome.runtime.sendMessage({
+  const queued = await getStateInternal();
+  queued.downloadDeletedTaskIds = (queued.downloadDeletedTaskIds || []).filter((id) => id !== taskId);
+  queued.downloadTasks = {
+    ...(queued.downloadTasks || {}),
+    [taskId]: {
+      ...(queued.downloadTasks?.[taskId] || {}),
+      taskId,
+      movieId,
+      movieTitle: title,
+      titleSnippet,
+      mode: "m3u8-merged-ts",
+      stage: "queued",
+      current: 0,
+      total: 0,
+      filename,
+      url,
+      updatedAt: nowIso()
+    }
+  };
+  await saveState(queued);
+  chrome.runtime.sendMessage({
     type: "offscreenDownloadM3u8",
     taskId,
+    movieId,
+    movieTitle: title,
+    titleSnippet,
     url,
     filename,
     saveAs: false
+  }).then(async (result) => {
+    if (result?.ok === false) throw new Error(result.error || "完整视频下载失败");
+    if (result?.started) return;
+  }).catch(async (err) => {
+    const failed = await getStateInternal();
+    failed.downloadTasks = {
+      ...(failed.downloadTasks || {}),
+      [taskId]: {
+        ...(failed.downloadTasks?.[taskId] || {}),
+        taskId,
+        movieId,
+        movieTitle: title,
+        titleSnippet,
+        mode: "m3u8-merged-ts",
+        stage: "error",
+        filename,
+        url,
+        error: err?.message || String(err),
+        updatedAt: nowIso()
+      }
+    };
+    await saveState(failed);
   });
-  if (result?.ok === false) throw new Error(result.error || "完整视频下载失败");
-  return { ok: true, mode: "m3u8-merged-ts", url, filename, taskId, ...result, summary, state: full.state };
+  return { ok: true, mode: "m3u8-merged-ts", queued: true, url, filename, taskId, summary, state: sanitizeState(queued) };
 }
 
 async function recordDownloadProgress(message = {}) {
   const state = await getStateInternal();
   const taskId = String(message.taskId || "");
   if (!taskId) return { ok: true };
+  if ((state.downloadDeletedTaskIds || []).includes(taskId)) return { ok: true, ignored: true };
   state.downloadTasks = {
     ...(state.downloadTasks || {}),
     [taskId]: {
+      ...(state.downloadTasks?.[taskId] || {}),
+      type: "offscreenDownloadM3u8",
       taskId,
+      movieId: String(message.movieId || state.downloadTasks?.[taskId]?.movieId || ""),
+      mode: String(message.mode || state.downloadTasks?.[taskId]?.mode || "m3u8-merged-ts"),
       stage: message.stage || "",
       current: Number(message.current || 0),
       total: Number(message.total || 0),
+      movieTitle: String(message.movieTitle || state.downloadTasks?.[taskId]?.movieTitle || ""),
+      titleSnippet: String(message.titleSnippet || state.downloadTasks?.[taskId]?.titleSnippet || ""),
+      filename: String(message.filename || state.downloadTasks?.[taskId]?.filename || ""),
+      url: String(message.url || state.downloadTasks?.[taskId]?.url || ""),
+      error: String(message.error || ""),
+      downloadId: message.downloadId || state.downloadTasks?.[taskId]?.downloadId || null,
+      bytes: Number(message.bytes || state.downloadTasks?.[taskId]?.bytes || 0),
+      objectReady: message.stage === "ready" || Boolean(message.objectReady || state.downloadTasks?.[taskId]?.objectReady),
+      saveVia: String(message.saveVia || state.downloadTasks?.[taskId]?.saveVia || ""),
+      format: String(message.format || state.downloadTasks?.[taskId]?.format || ""),
+      transmuxError: String(message.transmuxError || state.downloadTasks?.[taskId]?.transmuxError || ""),
       updatedAt: nowIso()
     }
   };
   const entries = Object.entries(state.downloadTasks);
   if (entries.length > 40) state.downloadTasks = Object.fromEntries(entries.slice(-40));
+  state.downloadTasks = compactDownloadTasks(state.downloadTasks);
   await saveState(state);
   return { ok: true };
+}
+
+async function saveDownloadToDevice(taskId = "") {
+  const state = await getStateInternal();
+  const task = state.downloadTasks?.[taskId];
+  if (!task) throw new Error("未找到下载任务");
+  if (task.stage === "error") throw new Error(task.error || "该任务失败，不能保存");
+  if (isDownloadRunning(task)) throw new Error("任务仍在下载或合并中，请等待显示可保存后再操作");
+  if (task.mode === "direct") {
+    const downloadId = await chrome.downloads.download({ url: task.url, filename: task.filename || undefined, saveAs: true });
+    const fresh = await getStateInternal();
+    fresh.downloadTasks = {
+      ...(fresh.downloadTasks || {}),
+      [taskId]: {
+        ...(fresh.downloadTasks?.[taskId] || task),
+        stage: "complete",
+        downloadId,
+        objectReady: true,
+        updatedAt: nowIso()
+      }
+    };
+    await saveState(fresh);
+    return { ok: true, downloadId, state: sanitizeState(fresh) };
+  }
+  if (task.mode === "m3u8-merged-ts") {
+    await ensureOffscreenDocument();
+    const result = await chrome.runtime.sendMessage({
+      type: "offscreenSaveMergedDownload",
+      taskId,
+      url: task.url,
+      saveAs: false
+    });
+    if (result?.ok === false) throw new Error(result.error || "保存合并视频失败");
+    const fresh = await getStateInternal();
+    fresh.downloadTasks = {
+      ...(fresh.downloadTasks || {}),
+      [taskId]: {
+        ...(fresh.downloadTasks?.[taskId] || task),
+        stage: "complete",
+        downloadId: result.downloadId || null,
+        bytes: result.bytes || task.bytes || 0,
+        current: result.segments || task.current || 0,
+        total: result.segments || task.total || 0,
+        saveVia: result.saveVia || "",
+        format: result.format || fresh.downloadTasks?.[taskId]?.format || "",
+        transmuxError: result.transmuxError || fresh.downloadTasks?.[taskId]?.transmuxError || "",
+        objectReady: true,
+        updatedAt: nowIso()
+      }
+    };
+    await saveState(fresh);
+    return { ok: true, ...result, state: sanitizeState(fresh) };
+  }
+  throw new Error(`未知下载模式：${task.mode || ""}`);
+}
+
+async function removeDownloadTask(taskId = "", movieId = "") {
+  const state = await getStateInternal();
+  const targetMovieId = String(movieId || state.downloadTasks?.[taskId]?.movieId || "");
+  const deletedIds = new Set((state.downloadDeletedTaskIds || []).map(String));
+  for (const [key, task] of Object.entries(state.downloadTasks || {})) {
+    if (key === taskId || (targetMovieId && String(task.movieId || "") === targetMovieId)) {
+      deletedIds.add(key);
+      delete state.downloadTasks[key];
+      chrome.runtime.sendMessage({ type: "offscreenDeleteDownloadTask", taskId: key }).catch(() => {});
+    }
+  }
+  state.downloadDeletedTaskIds = Array.from(deletedIds).slice(-120);
+  await saveState(state);
+  return { ok: true, state: sanitizeState(state) };
+}
+
+async function saveDownloadSnapshot(label = "") {
+  const state = await getStateInternal();
+  const tasks = Object.values(state.downloadTasks || {}).sort((a, b) => String(a.updatedAt || "").localeCompare(String(b.updatedAt || "")));
+  const snapshot = {
+    id: `txzz_snapshot_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    label: String(label || `下载记录 ${new Date().toLocaleString("zh-CN", { hour12: false })}`),
+    savedAt: nowIso(),
+    total: tasks.length,
+    running: tasks.filter((task) => ["queued", "playlist", "segments", "segment"].includes(String(task.stage || ""))).length,
+    completed: tasks.filter((task) => task.stage === "complete").length,
+    failed: tasks.filter((task) => task.stage === "error").length,
+    tasks: tasks.slice(-40).map((task) => ({
+      taskId: String(task.taskId || ""),
+      movieId: String(task.movieId || ""),
+      mode: String(task.mode || ""),
+      stage: String(task.stage || ""),
+      current: Number(task.current || 0),
+      total: Number(task.total || 0),
+      filename: String(task.filename || ""),
+      url: String(task.url || ""),
+      error: String(task.error || ""),
+      downloadId: task.downloadId || null,
+      bytes: Number(task.bytes || 0),
+      updatedAt: task.updatedAt || ""
+    }))
+  };
+  state.downloadSnapshots = [...(Array.isArray(state.downloadSnapshots) ? state.downloadSnapshots : []), snapshot].slice(-30);
+  await saveState(state);
+  return { ok: true, snapshot, state: sanitizeState(state) };
+}
+
+async function clearDownloadTasks() {
+  const state = await getStateInternal();
+  state.downloadTasks = {};
+  await saveState(state);
+  return { ok: true, state: sanitizeState(state) };
+}
+
+async function clearDownloadSnapshots() {
+  const state = await getStateInternal();
+  state.downloadSnapshots = [];
+  await saveState(state);
+  return { ok: true, state: sanitizeState(state) };
+}
+
+async function openDownloadFolder() {
+  try {
+    const recent = await chrome.downloads.search({ filenameRegex: "糖心志者", orderBy: ["-startTime"], limit: 1 });
+    if (recent?.[0]?.id) {
+      await chrome.downloads.show(recent[0].id);
+      return { ok: true, opened: true, mode: "downloadItem" };
+    }
+  } catch (_) {}
+  try {
+    await chrome.downloads.showDefaultFolder();
+    return { ok: true, opened: true, mode: "defaultFolder" };
+  } catch (err) {
+    throw new Error(`无法打开下载目录：${err?.message || String(err)}`);
+  }
 }
 
 async function upsertAccount(raw) {
@@ -1120,6 +1409,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: true, state: sanitizeState(state) });
       return;
     }
+    if (message?.type === "getStateLocal") {
+      sendResponse({ ok: true, state: sanitizeState(await getStateInternal()) });
+      return;
+    }
     if (message?.type === "saveRemoteConfig") {
       sendResponse(await saveRemoteConfig(message.remote || {}));
       return;
@@ -1194,6 +1487,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "downloadProgress") {
       sendResponse(await recordDownloadProgress(message));
+      return;
+    }
+    if (message?.type === "saveDownloadSnapshot") {
+      sendResponse(await saveDownloadSnapshot(message.label || ""));
+      return;
+    }
+    if (message?.type === "saveDownloadToDevice") {
+      sendResponse(await saveDownloadToDevice(String(message.taskId || "")));
+      return;
+    }
+    if (message?.type === "removeDownloadTask") {
+      sendResponse(await removeDownloadTask(String(message.taskId || ""), String(message.movieId || "")));
+      return;
+    }
+    if (message?.type === "clearDownloadTasks") {
+      sendResponse(await clearDownloadTasks());
+      return;
+    }
+    if (message?.type === "clearDownloadSnapshots") {
+      sendResponse(await clearDownloadSnapshots());
+      return;
+    }
+    if (message?.type === "openDownloadFolder") {
+      sendResponse(await openDownloadFolder());
       return;
     }
     sendResponse({ ok: false, error: `unknown message: ${message?.type || ""}` });

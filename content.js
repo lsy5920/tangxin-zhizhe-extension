@@ -49,6 +49,7 @@
     <button class="txzz-ball" data-action="toggle" title="展开糖心志者" aria-label="展开糖心志者">
       <span>志</span>
     </button>
+    <div class="txzz-toast" data-view="toast" aria-live="polite"></div>
     <div class="txzz-shell" role="dialog" aria-label="糖心志者安全测试面板">
       <header class="txzz-head">
         <div class="txzz-brand" data-drag-handle>
@@ -100,6 +101,7 @@
           <button class="is-active" data-tab="trace">链路</button>
           <button data-tab="permission">权限</button>
           <button data-tab="fullplay">完整播放</button>
+          <button data-tab="downloads">下载</button>
           <button data-tab="accounts">账号池</button>
           <button data-tab="compare">对比</button>
           <button data-tab="tools">工具</button>
@@ -129,6 +131,34 @@
           </div>
           <div class="txzz-fullplay-card" data-view="fullplaySummary"></div>
           <div class="txzz-list" data-view="fullplayList"></div>
+        </section>
+
+        <section class="txzz-view" data-view-panel="downloads">
+          <div class="txzz-download-hero">
+            <div>
+              <span>糖心志者 · 下载中枢</span>
+              <strong>管理完整视频任务、保存记录和下载目录</strong>
+              <small>实时显示完整链接任务状态，支持查看、复制、保存和清理。</small>
+            </div>
+            <button class="txzz-primary" data-action="refresh-downloads">刷新下载</button>
+          </div>
+          <div class="txzz-download-stats" data-view="downloadSummary"></div>
+          <div class="txzz-download-actions">
+            <button data-action="save-downloads">保存当前记录</button>
+            <button data-action="copy-downloads">复制下载数据</button>
+            <button data-action="open-download-folder">打开下载目录</button>
+            <button class="txzz-danger-action" data-action="clear-downloads">清空任务</button>
+          </div>
+          <div class="txzz-section-head">
+            <strong>当前任务</strong>
+            <small data-view="downloadMeta">等待下载任务</small>
+          </div>
+          <div class="txzz-download-list" data-view="downloadList"></div>
+          <div class="txzz-section-head">
+            <strong>保存记录</strong>
+            <button data-action="clear-download-snapshots">清空保存记录</button>
+          </div>
+          <div class="txzz-download-snapshots" data-view="downloadSnapshots"></div>
         </section>
 
         <section class="txzz-view" data-view-panel="accounts">
@@ -271,11 +301,16 @@
     accountPool: [],
     selectedFullAccountId: "",
     remote: null,
-    fullDetails: []
+    fullDetails: [],
+    downloadTasks: {},
+    downloadSnapshots: []
   };
 
   let drag = null;
   let ignoreNextToggle = false;
+  let toastTimer = 0;
+  const downloadLocks = new Set();
+  const announcedDownloadStages = new Set();
 
   function isCompactViewport() {
     return window.matchMedia?.("(max-width: 720px)")?.matches || window.innerWidth <= 720;
@@ -383,12 +418,68 @@
     return match ? match[1] : "";
   }
 
+  function currentMovieTitle() {
+    const selectors = [
+      ".movie-title",
+      ".video-title",
+      ".detail-title",
+      ".van-nav-bar__title",
+      "h1",
+      "h2"
+    ];
+    for (const selector of selectors) {
+      const text = document.querySelector(selector)?.textContent?.replace(/\s+/g, " ").trim();
+      if (text && !/糖心|下载|播放|详情/.test(text)) return text;
+    }
+    const docTitle = String(document.title || "").replace(/\s*[-|_].*$/, "").replace(/\s+/g, " ").trim();
+    return docTitle && !/糖心|txh/i.test(docTitle) ? docTitle : "";
+  }
+
+  function compactText(value) {
+    return String(value || "").replace(/\s+/g, "").trim();
+  }
+
+  function elementLooksSmallAction(el) {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    const rect = el.getBoundingClientRect?.();
+    if (!rect) return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    return rect.width <= 320 && rect.height <= 220;
+  }
+
+  function isDownloadText(text) {
+    const value = compactText(text);
+    if (!value) return false;
+    if (/^(下载|缓存|下载\/缓存|download|cache)$/i.test(value)) return true;
+    return value.length <= 18 && /(下载|缓存|download|cache)/i.test(value);
+  }
+
+  function findDownloadTrigger(target) {
+    if (!target?.closest || target.closest("#txzz-panel")) return null;
+    const hrefEl = target.closest("a[href*='download'],a[download]");
+    if (hrefEl && elementLooksSmallAction(hrefEl)) return hrefEl;
+
+    const grid = target.closest(".van-grid-item");
+    if (grid && elementLooksSmallAction(grid) && isDownloadText(grid.textContent)) return grid;
+
+    const action = target.closest("button,a,[role='button'],.van-button,.van-cell,.van-grid-item__content,.van-grid-item__text");
+    if (action && elementLooksSmallAction(action)) {
+      const text = action.textContent || action.getAttribute("aria-label") || action.title || "";
+      const href = action.getAttribute?.("href") || "";
+      if (isDownloadText(text) || /download/i.test(href)) return action;
+    }
+
+    let el = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
+    for (let depth = 0; el && depth < 5; depth += 1, el = el.parentElement) {
+      if (el.closest?.("#txzz-panel")) return null;
+      if (elementLooksSmallAction(el) && isDownloadText(el.textContent || el.getAttribute?.("aria-label") || el.title || "")) return el;
+      if (el === document.body || el === document.documentElement) break;
+    }
+    return null;
+  }
+
   function isDownloadTrigger(target) {
-    const el = target?.closest?.("button,a,div,span,[role='button'],.van-cell,.van-button");
-    if (!el) return false;
-    const text = String(el.textContent || el.getAttribute("aria-label") || el.title || "").trim();
-    const href = String(el.getAttribute?.("href") || "");
-    return /下载|缓存|download/i.test(text) || /download/i.test(href);
+    return Boolean(findDownloadTrigger(target));
   }
 
   function accountTitle(account) {
@@ -690,6 +781,8 @@
         accountPool: state.accountPool,
         selectedFullAccountId: state.selectedFullAccountId,
         fullDetails: state.fullDetails.slice(-40),
+        downloadTasks: state.downloadTasks || {},
+        downloadSnapshots: state.downloadSnapshots || [],
         publishedAt: new Date().toISOString()
       });
     } catch (_) {}
@@ -719,6 +812,18 @@
     publishState();
   }
 
+  function showToast(message, level = "info") {
+    const toast = views.toast;
+    if (!toast) return;
+    window.clearTimeout(toastTimer);
+    toast.textContent = String(message || "");
+    toast.className = `txzz-toast is-show ${level === "error" ? "is-error" : level === "ok" ? "is-ok" : ""}`;
+    toastTimer = window.setTimeout(() => {
+      toast.className = "txzz-toast";
+      toast.textContent = "";
+    }, 3600);
+  }
+
   function renderFlow() {
     views.flow.innerHTML = state.flow.slice(-8).map((item, index) => `
       <div class="txzz-step ${item.level === "ok" ? "is-ok" : item.level === "error" ? "is-error" : ""}">
@@ -739,6 +844,181 @@
     const latest = state.fullDetails[state.fullDetails.length - 1];
     views.latestFullplay.textContent = latest ? `${latest.movieId} / ${latest.action || "full_detail"}` : "等待命中";
     publishState();
+  }
+
+  function downloadStageLabel(stage) {
+    if (stage === "queued") return "已排队";
+    if (stage === "playlist") return "读取播放列表";
+    if (stage === "segments") return "准备分片";
+    if (stage === "segment") return "下载分片";
+    if (stage === "ready") return "合并完成，待保存";
+    if (stage === "save-dialog") return "选择保存位置";
+    if (stage === "complete") return "已保存到设备";
+    if (stage === "error") return "下载失败";
+    return stage || "下载任务";
+  }
+
+  function downloadFormatLabel(task = {}) {
+    if (task.format === "mp4" || /\.mp4(?:[?#]|$)/i.test(task.filename || "")) return "MP4";
+    if (task.format === "ts" || /\.ts(?:[?#]|$)/i.test(task.filename || "")) return "TS 兜底";
+    return task.mode === "direct" ? "原始格式" : "转封装中";
+  }
+
+  function downloadStageTone(stage) {
+    if (stage === "ready" || stage === "complete") return "is-ok";
+    if (stage === "error") return "is-error";
+    if (["queued", "playlist", "segments", "segment", "save-dialog"].includes(String(stage || ""))) return "is-running";
+    return "";
+  }
+
+  function downloadProgress(task = {}) {
+    const total = Number(task.total || 0);
+    const current = Number(task.current || 0);
+    if (task.stage === "complete") return 100;
+    if (task.stage === "ready") return 100;
+    if (!total) return task.stage === "queued" ? 2 : task.stage === "playlist" ? 6 : 0;
+    return Math.max(0, Math.min(99, Math.round((current / total) * 100)));
+  }
+
+  function downloadCardTitle(task = {}) {
+    const title = String(task.titleSnippet || task.movieTitle || "").trim();
+    if (title) return title.length > 14 ? `${title.slice(0, 14)}...` : title;
+    return task.movieId ? `完整视频 ${task.movieId}` : "完整视频";
+  }
+
+  function canSaveDownload(task = {}) {
+    return task.stage === "ready" || task.stage === "complete" || (task.mode === "direct" && Boolean(task.url));
+  }
+
+  function formatBytes(bytes) {
+    const value = Number(bytes || 0);
+    if (!value) return "未记录";
+    const units = ["B", "KB", "MB", "GB"];
+    let size = value;
+    let index = 0;
+    while (size >= 1024 && index < units.length - 1) {
+      size /= 1024;
+      index += 1;
+    }
+    return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+  }
+
+  function formatTime(value) {
+    if (!value) return "未记录";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString("zh-CN", { hour12: false });
+  }
+
+  function downloadTasksArray() {
+    return Object.values(state.downloadTasks || {})
+      .filter((task) => task && typeof task === "object")
+      .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  }
+
+  function downloadTaskStats(tasks = downloadTasksArray()) {
+    return {
+      total: tasks.length,
+      running: tasks.filter((task) => ["queued", "playlist", "segments", "segment", "save-dialog"].includes(String(task.stage || ""))).length,
+      completed: tasks.filter((task) => task.stage === "complete").length,
+      failed: tasks.filter((task) => task.stage === "error").length
+    };
+  }
+
+  function renderDownloads() {
+    const tasks = downloadTasksArray();
+    const stats = downloadTaskStats(tasks);
+    if (views.downloadSummary) {
+      views.downloadSummary.innerHTML = [
+        ["总任务", stats.total],
+        ["进行中", stats.running],
+        ["已完成", stats.completed],
+        ["失败", stats.failed]
+      ].map(([label, value]) => `
+        <article>
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+        </article>
+      `).join("");
+    }
+    if (views.downloadMeta) {
+      const latest = tasks[0];
+      views.downloadMeta.textContent = latest
+        ? `最近更新：${downloadStageLabel(latest.stage)} / ${formatTime(latest.updatedAt)}`
+        : "等待下载任务";
+    }
+    if (views.downloadList) {
+      views.downloadList.innerHTML = tasks.map((task) => {
+        const percent = downloadProgress(task);
+        const count = task.total ? `${Number(task.current || 0)}/${Number(task.total || 0)} 片` : "等待分片统计";
+        const tone = downloadStageTone(task.stage);
+        const canSave = canSaveDownload(task);
+        const title = downloadCardTitle(task);
+        const fullTitle = task.movieTitle || task.filename || title;
+        return `
+          <article class="txzz-download-card ${tone}">
+            <div class="txzz-download-card-head">
+              <div>
+                <b title="${escapeHtml(fullTitle)}">${escapeHtml(title)}</b>
+                <span>${escapeHtml([task.movieId ? `视频 ${task.movieId}` : "", downloadFormatLabel(task), downloadStageLabel(task.stage)].filter(Boolean).join(" / "))}</span>
+              </div>
+              <i>${escapeHtml(`${percent}%`)}</i>
+            </div>
+            <div class="txzz-progress" aria-label="下载进度">
+              <span style="width:${percent}%"></span>
+            </div>
+            <div class="txzz-download-meta">
+              <span>${escapeHtml(count)}</span>
+              <span>${escapeHtml(formatBytes(task.bytes))}</span>
+              <span>${escapeHtml(formatTime(task.updatedAt))}</span>
+            </div>
+            ${task.error ? `<p class="txzz-download-error">${escapeHtml(task.error)}</p>` : ""}
+            ${task.transmuxError ? `<p class="txzz-download-warn">MP4 转封装失败，已保留 TS 兜底：${escapeHtml(task.transmuxError)}</p>` : ""}
+            <p class="txzz-download-file">${escapeHtml(task.filename || "等待生成文件名")}</p>
+            <code>${escapeHtml(task.url || "")}</code>
+            <div class="txzz-account-actions">
+              <button data-action="save-download-device" data-task-id="${escapeHtml(task.taskId || "")}" ${canSave ? "" : "disabled"}>${task.stage === "complete" ? "重新保存" : "保存到设备"}</button>
+              <button data-action="copy-download-url" data-task-id="${escapeHtml(task.taskId || "")}">复制链接</button>
+              <button data-action="remove-download-task" data-task-id="${escapeHtml(task.taskId || "")}" data-movie-id="${escapeHtml(task.movieId || "")}">删除</button>
+              <button data-action="open-download-folder">打开目录</button>
+            </div>
+          </article>
+        `;
+      }).join("") || `<div class="txzz-empty">还没有下载任务。进入视频详情页点击「下载」，或在「完整播放」页点击「下载完整视频」。</div>`;
+    }
+    if (views.downloadSnapshots) {
+      const snapshots = Array.isArray(state.downloadSnapshots) ? state.downloadSnapshots.slice().reverse() : [];
+      views.downloadSnapshots.innerHTML = snapshots.map((snapshot) => `
+        <article>
+          <div>
+            <b>${escapeHtml(snapshot.label || snapshot.id || "下载记录")}</b>
+            <span>${escapeHtml(`保存时间：${formatTime(snapshot.savedAt)} / 总任务 ${snapshot.total || 0} / 完成 ${snapshot.completed || 0} / 失败 ${snapshot.failed || 0}`)}</span>
+          </div>
+          <div class="txzz-account-actions">
+            <button data-action="copy-download-snapshot" data-snapshot-id="${escapeHtml(snapshot.id || "")}">复制记录</button>
+          </div>
+        </article>
+      `).join("") || `<div class="txzz-empty">暂无保存记录。点击「保存当前记录」后会在这里留档。</div>`;
+    }
+  }
+
+  function announceDownloadTasks() {
+    for (const task of Object.values(state.downloadTasks || {})) {
+      const key = `${task.taskId}:${task.stage}:${task.current || 0}:${task.total || 0}:${task.error || ""}`;
+      if (announcedDownloadStages.has(key)) continue;
+      announcedDownloadStages.add(key);
+      const count = task.total ? ` ${task.current || 0}/${task.total}` : "";
+      const detail = task.stage === "error"
+        ? `${task.movieId || ""} ${task.error || "未知错误"}`
+        : `${task.movieId || ""}${count} ${task.filename || ""}`.trim();
+      emitFlow(downloadStageLabel(task.stage), detail, task.stage === "error" ? "error" : task.stage === "complete" ? "ok" : "info");
+    }
+    if (announcedDownloadStages.size > 200) {
+      const latest = Array.from(announcedDownloadStages).slice(-80);
+      announcedDownloadStages.clear();
+      latest.forEach((item) => announcedDownloadStages.add(item));
+    }
+    renderDownloads();
   }
 
   function renderSession() {
@@ -1085,6 +1365,8 @@
     state.selectedFullAccountId = saved.selectedFullAccountId || state.accountPool[0]?.id || "";
     state.remote = saved.remote || state.remote || null;
     state.fullDetails = Array.isArray(saved.fullDetails) ? saved.fullDetails : [];
+    state.downloadTasks = saved.downloadTasks && typeof saved.downloadTasks === "object" ? saved.downloadTasks : {};
+    state.downloadSnapshots = Array.isArray(saved.downloadSnapshots) ? saved.downloadSnapshots : [];
     if (autoCleaned) {
       const reason = saved.remote?.lastAutoCleanReason || "已自动清理旧版本插件缓存并切换到当前默认配置";
       emitFlow("自动清理缓存", reason, "ok");
@@ -1094,6 +1376,8 @@
     renderFlow();
     renderAccounts();
     renderFullDetails();
+    renderDownloads();
+    announceDownloadTasks();
   }
 
   async function loadSavedState(verbose = true) {
@@ -1108,6 +1392,16 @@
     return saved;
   }
 
+  async function refreshLocalDownloadState() {
+    const response = await sendRuntime("getStateLocal");
+    const saved = response.state || {};
+    state.downloadTasks = saved.downloadTasks && typeof saved.downloadTasks === "object" ? saved.downloadTasks : {};
+    state.downloadSnapshots = Array.isArray(saved.downloadSnapshots) ? saved.downloadSnapshots : [];
+    announceDownloadTasks();
+    renderDownloads();
+    publishState();
+  }
+
   function resetLocalRuntimeState(saved = {}) {
     state.role = saved.role || "guest";
     state.displayPatchApplied = false;
@@ -1117,6 +1411,8 @@
     state.observations = [];
     state.flow = [];
     state.fullDetails = Array.isArray(saved.fullDetails) ? saved.fullDetails : [];
+    state.downloadTasks = saved.downloadTasks && typeof saved.downloadTasks === "object" ? saved.downloadTasks : {};
+    state.downloadSnapshots = Array.isArray(saved.downloadSnapshots) ? saved.downloadSnapshots : [];
     state.accountPool = Array.isArray(saved.accountPool) ? saved.accountPool : [];
     state.selectedFullAccountId = saved.selectedFullAccountId || state.accountPool[0]?.id || "";
     state.remote = saved.remote || null;
@@ -1128,6 +1424,7 @@
     renderFlow();
     renderAccounts();
     renderFullDetails();
+    renderDownloads();
     renderSession();
     publishState();
   }
@@ -1214,26 +1511,103 @@
   async function downloadFullVideo(movieId = currentMovieId()) {
     const id = String(movieId || currentMovieId()).trim();
     if (!id) throw new Error("当前页面不是视频详情页，无法识别视频编号");
-    emitFlow("完整下载", `开始获取完整视频 ${id}`);
-    const bootstrapSession = await collectSession();
-    const response = await sendRuntime("downloadFullVideo", {
-      movieId: id,
-      accountId: state.selectedFullAccountId,
-      bootstrapSession
-    });
-    if (response.state) syncSavedState(response.state);
-    const mode = response.mode === "m3u8-merged-ts" ? "m3u8 分片合并" : "直接下载";
-    emitFlow("完整下载", `${mode} 已创建下载任务：${response.filename || id}`, "ok");
-    if (response.summary) {
-      state.fullDetails.push({
-        ...response.summary,
-        movieId: response.summary.movieId || id,
-        playLink: response.summary.playLink || response.url || ""
-      });
-      state.fullDetails = state.fullDetails.slice(-80);
-      renderFullDetails();
+    if (downloadLocks.has(id)) {
+      emitFlow("完整下载", `视频 ${id} 下载任务已经在创建中，请稍候`, "ok");
+      showToast("下载任务已经在创建中", "ok");
+      return { ok: true, locked: true, movieId: id };
     }
-    return response;
+    downloadLocks.add(id);
+    emitFlow("完整下载", `开始获取完整视频 ${id}`);
+    showToast("正在获取完整视频链接");
+    try {
+      const bootstrapSession = await collectSession();
+      const response = await sendRuntime("downloadFullVideo", {
+        movieId: id,
+        movieTitle: currentMovieTitle(),
+        accountId: state.selectedFullAccountId,
+        bootstrapSession
+      });
+      if (response.state) syncSavedState(response.state);
+      const mode = response.mode === "m3u8-merged-ts" ? "m3u8 分片合并" : "直接下载";
+      emitFlow("完整下载", `${mode} 已创建下载任务：${response.filename || id}`, "ok");
+      showToast(`${mode}任务已创建`, "ok");
+      if (response.summary) {
+        state.fullDetails.push({
+          ...response.summary,
+          movieId: response.summary.movieId || id,
+          playLink: response.summary.playLink || response.url || ""
+        });
+        state.fullDetails = state.fullDetails.slice(-80);
+        renderFullDetails();
+      }
+      return response;
+    } catch (err) {
+      emitFlow("完整下载失败", err?.message || String(err), "error");
+      showToast(`下载失败：${err?.message || String(err)}`, "error");
+      throw err;
+    } finally {
+      window.setTimeout(() => downloadLocks.delete(id), 1200);
+    }
+  }
+
+  async function saveDownloadRecords() {
+    const response = await sendRuntime("saveDownloadSnapshot");
+    syncSavedState(response.state || {});
+    emitFlow("下载管理", `已保存当前下载记录：${response.snapshot?.label || "下载记录"}`, "ok");
+    showToast("下载记录已保存", "ok");
+  }
+
+  async function copyDownloadRecords() {
+    const payload = {
+      tasks: downloadTasksArray(),
+      snapshots: Array.isArray(state.downloadSnapshots) ? state.downloadSnapshots : [],
+      exportedAt: new Date().toISOString()
+    };
+    await copyText(JSON.stringify(payload, null, 2), "下载数据");
+  }
+
+  async function copyDownloadUrl(taskId = "") {
+    const task = (state.downloadTasks || {})[taskId];
+    await copyText(task?.url || "", "下载链接");
+  }
+
+  async function copyDownloadSnapshot(snapshotId = "") {
+    const snapshot = (state.downloadSnapshots || []).find((item) => item.id === snapshotId);
+    await copyText(snapshot ? JSON.stringify(snapshot, null, 2) : "", "保存记录");
+  }
+
+  async function saveDownloadDevice(taskId = "") {
+    const response = await sendRuntime("saveDownloadToDevice", { taskId });
+    syncSavedState(response.state || {});
+    emitFlow("下载管理", "已弹出保存到设备窗口或完成保存", "ok");
+    showToast("已处理保存到设备", "ok");
+  }
+
+  async function removeDownloadTask(taskId = "", movieId = "") {
+    const response = await sendRuntime("removeDownloadTask", { taskId, movieId });
+    syncSavedState(response.state || {});
+    emitFlow("下载管理", `已删除视频 ${movieId || taskId} 的下载任务`, "ok");
+  }
+
+  async function clearDownloadTasks() {
+    const ok = window.confirm("将清空插件面板里的当前下载任务记录，不会删除已经保存到浏览器下载目录的文件。是否继续？");
+    if (!ok) return;
+    const response = await sendRuntime("clearDownloadTasks");
+    syncSavedState(response.state || {});
+    emitFlow("下载管理", "已清空当前下载任务记录", "ok");
+  }
+
+  async function clearDownloadSnapshots() {
+    const ok = window.confirm("将清空下载页里的保存记录，不会删除当前任务和本地文件。是否继续？");
+    if (!ok) return;
+    const response = await sendRuntime("clearDownloadSnapshots");
+    syncSavedState(response.state || {});
+    emitFlow("下载管理", "已清空保存记录", "ok");
+  }
+
+  async function openDownloadFolder() {
+    await sendRuntime("openDownloadFolder");
+    emitFlow("下载管理", "已请求浏览器打开下载目录", "ok");
   }
 
   async function selectAccount(accountId) {
@@ -1349,6 +1723,19 @@
       if (action === "upload-account-remote") await uploadAccountRemote();
       if (action === "upload-local-account-remote") await uploadLocalAccountRemote(accountId);
       if (action === "download-full-video") await downloadFullVideo(actionEl.dataset.movieId || currentMovieId());
+      if (action === "refresh-downloads") {
+        await refreshLocalDownloadState();
+        emitFlow("下载管理", "已刷新下载任务状态", "ok");
+      }
+      if (action === "save-downloads") await saveDownloadRecords();
+      if (action === "copy-downloads") await copyDownloadRecords();
+      if (action === "copy-download-url") await copyDownloadUrl(actionEl.dataset.taskId || "");
+      if (action === "copy-download-snapshot") await copyDownloadSnapshot(actionEl.dataset.snapshotId || "");
+      if (action === "save-download-device") await saveDownloadDevice(actionEl.dataset.taskId || "");
+      if (action === "remove-download-task") await removeDownloadTask(actionEl.dataset.taskId || "", actionEl.dataset.movieId || "");
+      if (action === "clear-downloads") await clearDownloadTasks();
+      if (action === "clear-download-snapshots") await clearDownloadSnapshots();
+      if (action === "open-download-folder") await openDownloadFolder();
       if (action === "import-current-session") await importCurrentSession();
       if (action === "export") {
         const trace = await exportTrace();
@@ -1459,16 +1846,46 @@
     if (event?.cancelable) event.preventDefault();
   }
 
+  function handleNativeDownloadClick(event) {
+    const movieId = currentMovieId();
+    const trigger = findDownloadTrigger(event.target);
+    if (!movieId || !trigger) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+    emitFlow("完整下载", `已接管详情页下载按钮：${movieId}`);
+    showToast("已接管下载按钮，正在创建任务");
+    downloadFullVideo(movieId).catch(() => {});
+    return true;
+  }
+
+  function bindVisibleDownloadButtons() {
+    if (!currentMovieId()) return;
+    const selectors = [
+      ".van-grid-item",
+      ".van-grid-item__content",
+      ".van-grid-item__text",
+      ".van-button",
+      ".van-cell",
+      "button",
+      "a",
+      "[role='button']"
+    ].join(",");
+    document.querySelectorAll(selectors).forEach((el) => {
+      if (el.dataset?.txzzDownloadBound === "1") return;
+      if (!findDownloadTrigger(el)) return;
+      el.dataset.txzzDownloadBound = "1";
+      el.addEventListener("click", handleNativeDownloadClick, true);
+      el.setAttribute("data-txzz-download-trigger", "1");
+    });
+  }
+
   function installDownloadInterceptor() {
-    document.addEventListener("click", (event) => {
-      const movieId = currentMovieId();
-      if (!movieId || !isDownloadTrigger(event.target)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      emitFlow("完整下载", `已接管详情页下载按钮：${movieId}`);
-      downloadFullVideo(movieId).catch((err) => emitFlow("完整下载失败", err?.message || String(err), "error"));
-    }, true);
+    document.addEventListener("click", handleNativeDownloadClick, true);
+    const observer = new MutationObserver(() => bindVisibleDownloadButtons());
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    window.setInterval(bindVisibleDownloadButtons, 1200);
+    bindVisibleDownloadButtons();
   }
 
   async function handleFullDetailRequest(payload) {
@@ -1575,8 +1992,14 @@
   applyDisplayPatch().catch(() => {});
   installVisibleDisplayLoop();
   loadSavedState(false).catch((err) => emitFlow("账号池", err?.message || String(err), "error"));
+  window.setInterval(() => {
+    if (Object.keys(state.downloadTasks || {}).length) {
+      refreshLocalDownloadState().catch(() => {});
+    }
+  }, 1500);
   renderFlow();
   renderPlayback();
   renderObservations();
   renderFullDetails();
+  renderDownloads();
 })();

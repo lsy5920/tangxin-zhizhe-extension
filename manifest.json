@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "糖心志者",
-  "version": "1.1.6",
+  "version": "1.2.0",
   "description": "授权 CTF 隔离靶场账号状态、播放链路和账号池验证工具。",
   "permissions": [
     "storage",
@@ -39,7 +39,8 @@
         "nav_guard.js",
         "page_hook.js",
         "page_probe.js",
-        "display_patch.js"
+        "display_patch.js",
+        "vendor/mux-7.0.0.min.js"
       ],
       "matches": [
         "https://txh068.com/*"
