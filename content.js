@@ -50,7 +50,6 @@
       <span>志</span>
     </button>
     <div class="txzz-toast" data-view="toast" aria-live="polite"></div>
-    <div class="txzz-flow-badge" data-view="flowBadge" aria-live="polite" hidden></div>
     <div class="txzz-shell" role="dialog" aria-label="糖心志者功能管理面板">
       <header class="txzz-head">
         <div class="txzz-brand" data-drag-handle>
@@ -324,7 +323,15 @@
   `;
   document.documentElement.appendChild(panel);
 
+  const flowBadge = document.createElement("div");
+  flowBadge.id = "txzz-flow-badge";
+  flowBadge.className = "txzz-flow-badge";
+  flowBadge.setAttribute("aria-live", "polite");
+  flowBadge.hidden = true;
+  document.documentElement.appendChild(flowBadge);
+
   const views = Object.fromEntries(Array.from(panel.querySelectorAll("[data-view]")).map((el) => [el.dataset.view, el]));
+  views.flowBadge = flowBadge;
   const fields = Object.fromEntries(Array.from(panel.querySelectorAll("[data-field]")).map((el) => [el.dataset.field, el]));
   const shell = panel.querySelector(".txzz-shell");
   const ball = panel.querySelector(".txzz-ball");
@@ -358,12 +365,16 @@
   let ignoreNextToggle = false;
   let toastTimer = 0;
   let flowBadgeTimer = 0;
+  let flowBadgeActive = false;
+  const flowBadgeQueue = [];
   const downloadLocks = new Set();
   const announcedDownloadStages = new Set();
   const FLOW_BADGE_TITLES = [
     "展示覆盖",
     "远程账号池",
     "远程账号池同步失败",
+    "云端账号",
+    "云端账号失败",
     "账号检查",
     "播放资源",
     "播放资源失败",
@@ -395,6 +406,12 @@
     panel.style.setProperty("--txzz-vvh", `${height}px`);
     panel.style.setProperty("--txzz-vleft", `${left}px`);
     panel.style.setProperty("--txzz-vtop", `${top}px`);
+    if (views.flowBadge) {
+      views.flowBadge.style.setProperty("--txzz-vvw", `${width}px`);
+      views.flowBadge.style.setProperty("--txzz-vvh", `${height}px`);
+      views.flowBadge.style.setProperty("--txzz-vleft", `${left}px`);
+      views.flowBadge.style.setProperty("--txzz-vtop", `${top}px`);
+    }
   }
 
   const DISPLAY_USER_PATCH = {
@@ -1101,6 +1118,30 @@
   function updateFlowBadge(item = {}) {
     const badge = views.flowBadge;
     if (!badge || !isKeyFlowTitle(item.title)) return;
+    if (state.expanded) {
+      flowBadgeQueue.length = 0;
+      flowBadgeActive = false;
+      window.clearTimeout(flowBadgeTimer);
+      badge.className = "txzz-flow-badge";
+      badge.hidden = true;
+      return;
+    }
+    flowBadgeQueue.push(item);
+    if (flowBadgeQueue.length > 8) flowBadgeQueue.splice(0, flowBadgeQueue.length - 8);
+    showNextFlowBadge();
+  }
+
+  function flowBadgeDuration(item = {}) {
+    if (item.level === "error") return 10000;
+    return 2000;
+  }
+
+  function showNextFlowBadge() {
+    const badge = views.flowBadge;
+    if (!badge || flowBadgeActive || state.expanded) return;
+    const item = flowBadgeQueue.shift();
+    if (!item) return;
+    flowBadgeActive = true;
     window.clearTimeout(flowBadgeTimer);
     const level = item.level === "error" ? "is-error" : item.level === "ok" ? "is-ok" : "is-running";
     badge.hidden = false;
@@ -1113,7 +1154,25 @@
     flowBadgeTimer = window.setTimeout(() => {
       badge.className = "txzz-flow-badge";
       badge.hidden = true;
-    }, item.level === "error" ? 8200 : 5200);
+      flowBadgeActive = false;
+      window.setTimeout(showNextFlowBadge, 220);
+    }, flowBadgeDuration(item));
+  }
+
+  function emitCloudAccountFlow(summary = {}, fallbackMovieId = "") {
+    if (!summary || typeof summary !== "object") return;
+    const accountName = summary.accountLabel || summary.accountUser || summary.rotation?.accountId || "自动轮换账号";
+    const tried = Number(summary.rotation?.tried || 0);
+    const failed = Array.isArray(summary.rotation?.failed) ? summary.rotation.failed.length : 0;
+    const action = String(summary.action || "");
+    const parts = [
+      `使用 ${accountName}`,
+      tried ? `已尝试 ${tried} 个` : "",
+      failed ? `切换失败 ${failed} 个` : "",
+      action === "buy_then_full_detail" ? "已执行金币解锁" : "",
+      summary.rotation?.purchasePolicy ? "按金币最少策略" : ""
+    ].filter(Boolean);
+    emitFlow("云端账号", `${fallbackMovieId || summary.movieId || "当前视频"} / ${parts.join(" / ")}`, "ok");
   }
 
   function showToast(message, level = "info") {
@@ -1826,11 +1885,17 @@
   }
 
   async function syncRemoteAccounts() {
+    emitFlow("云端账号", "正在同步云端账号池");
     const response = await sendRuntime("syncRemoteAccounts");
     syncSavedState(response.state || {});
     const remote = response.state?.remote || {};
     if (remote.lastError) emitFlow("远程账号池同步失败", remote.lastError, "error");
-    else emitFlow("远程账号池", `已从 Cloudflare Worker 同步 ${(response.state?.accountPool || []).length} 个账号`, "ok");
+    else {
+      const accounts = response.state?.accountPool || [];
+      const cloudCount = accounts.filter(isCloudAccount).length;
+      emitFlow("远程账号池", `已从 Cloudflare Worker 同步 ${accounts.length} 个账号`, "ok");
+      emitFlow("云端账号", `云端可轮换账号 ${cloudCount} 个`, "ok");
+    }
   }
 
   async function uploadAccountRemote() {
@@ -1865,6 +1930,7 @@
     }
     downloadLocks.add(id);
     emitFlow("视频下载", `开始获取视频 ${id}`);
+    emitFlow("云端账号", `正在为视频 ${id} 轮换可用账号`);
     showToast("正在获取视频链接");
     try {
       const bootstrapSession = await collectSession();
@@ -1879,6 +1945,7 @@
       emitFlow("视频下载", `${mode} 已创建下载任务：${response.filename || id}`, "ok");
       showToast(`${mode}任务已创建`, "ok");
       if (response.summary) {
+        emitCloudAccountFlow(response.summary, id);
         state.fullDetails.push({
           ...response.summary,
           movieId: response.summary.movieId || id,
@@ -1890,6 +1957,7 @@
       return response;
     } catch (err) {
       emitFlow("视频下载失败", err?.message || String(err), "error");
+      emitFlow("云端账号失败", err?.message || String(err), "error");
       showToast(`下载失败：${err?.message || String(err)}`, "error");
       throw err;
     } finally {
@@ -2005,6 +2073,13 @@
     state.expanded = typeof force === "boolean" ? force : !state.expanded;
     panel.classList.toggle("txzz-open", state.expanded);
     panel.classList.toggle("txzz-closed", !state.expanded);
+    if (state.expanded && views.flowBadge) {
+      flowBadgeQueue.length = 0;
+      flowBadgeActive = false;
+      window.clearTimeout(flowBadgeTimer);
+      views.flowBadge.className = "txzz-flow-badge";
+      views.flowBadge.hidden = true;
+    }
     publishState();
     if (state.expanded) {
       panel.classList.remove("txzz-dragged");
@@ -2277,6 +2352,7 @@
 
   async function handleFullDetailRequest(payload) {
     emitFlow("播放资源", `记录视频详情接口，视频 ${payload.movieId}`);
+    emitFlow("云端账号", `正在为视频 ${payload.movieId} 轮换可用账号`);
     try {
       const bootstrapSession = await collectSession();
       const response = await sendRuntime("getFullDetail", {
@@ -2311,6 +2387,7 @@
         });
         if (summary.playLink) addPlayback({ kind: "media", via: "fullplay.play_link", url: summary.playLink, category: "m3u8" });
         if (summary.backupLink) addPlayback({ kind: "media", via: "fullplay.backup_link", url: summary.backupLink, category: "m3u8" });
+        emitCloudAccountFlow(summary, payload.movieId);
         emitFlow(
           summary.playLink || summary.backupLink ? "播放资源" : "播放资源缺少链接",
           summary.playLink || summary.backupLink
@@ -2328,6 +2405,7 @@
         payload: { ok: false, error: err?.message || String(err) }
       }, "*");
       emitFlow("播放资源失败", err?.message || String(err), "error");
+      emitFlow("云端账号失败", err?.message || String(err), "error");
     }
   }
 

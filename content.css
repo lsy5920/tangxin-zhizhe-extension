@@ -1,4 +1,4 @@
-#txzz-panel,
+﻿#txzz-panel,
 #txzz-panel * {
   box-sizing: border-box;
 }
@@ -90,10 +90,15 @@
   color: #ffe8e8;
 }
 
-#txzz-panel .txzz-flow-badge {
+#txzz-flow-badge {
+  --txzz-muted: #c8b6ad;
+  --txzz-gold: #ffd36a;
+  --txzz-green: #65e09d;
+  box-sizing: border-box;
   position: fixed;
   left: 14px;
   top: 14px;
+  z-index: 2147483647;
   width: min(320px, calc(100vw - 28px));
   min-height: 54px;
   border: 1px solid rgba(255, 211, 106, 0.34);
@@ -108,16 +113,18 @@
   padding: 9px 11px;
   background: rgba(17, 15, 22, 0.95);
   color: #fffaf6;
+  font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
   box-shadow: 0 16px 38px rgba(0, 0, 0, 0.42);
   backdrop-filter: blur(10px);
   pointer-events: none;
 }
 
-#txzz-panel .txzz-flow-badge.is-show {
+#txzz-flow-badge.is-show {
   display: grid;
 }
 
-#txzz-panel .txzz-flow-badge span {
+#txzz-flow-badge span {
   grid-area: tag;
   min-width: 46px;
   border-radius: 999px;
@@ -129,40 +136,40 @@
   text-align: center;
 }
 
-#txzz-panel .txzz-flow-badge strong,
-#txzz-panel .txzz-flow-badge small {
+#txzz-flow-badge strong,
+#txzz-flow-badge small {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-#txzz-panel .txzz-flow-badge strong {
+#txzz-flow-badge strong {
   grid-area: title;
   color: #fff;
   font-size: 14px;
 }
 
-#txzz-panel .txzz-flow-badge small {
+#txzz-flow-badge small {
   grid-area: detail;
   color: var(--txzz-muted);
   font-size: 12px;
 }
 
-#txzz-panel .txzz-flow-badge.is-ok {
+#txzz-flow-badge.is-ok {
   border-color: rgba(101, 224, 157, 0.42);
 }
 
-#txzz-panel .txzz-flow-badge.is-ok span {
+#txzz-flow-badge.is-ok span {
   background: rgba(101, 224, 157, 0.12);
   color: var(--txzz-green);
 }
 
-#txzz-panel .txzz-flow-badge.is-error {
+#txzz-flow-badge.is-error {
   border-color: rgba(255, 107, 107, 0.5);
 }
 
-#txzz-panel .txzz-flow-badge.is-error span {
+#txzz-flow-badge.is-error span {
   background: rgba(255, 107, 107, 0.14);
   color: #ffd0d0;
 }
@@ -1349,7 +1356,7 @@
 }
 
 @media (max-width: 720px) {
-  #txzz-panel .txzz-flow-badge {
+  #txzz-flow-badge {
     top: calc(var(--txzz-vtop, 0px) + 10px);
     left: calc(var(--txzz-vleft, 0px) + 10px);
     width: min(300px, calc(var(--txzz-vvw, 100vw) - 20px));
@@ -1501,3 +1508,4 @@
     white-space: nowrap;
   }
 }
+
