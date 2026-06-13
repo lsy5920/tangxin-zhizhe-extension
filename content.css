@@ -76,10 +76,16 @@
 }
 
 #txzz-panel .txzz-primary,
-#txzz-update-dialog button[data-update-action="open"] {
+#txzz-update-dialog button[data-update-action="download"] {
   background: linear-gradient(135deg, var(--txzz-red), #aa3d5c);
   border-color: rgba(255, 216, 118, 0.42);
   color: #fff;
+}
+
+#txzz-update-dialog button[data-update-action="open"] {
+  background: linear-gradient(180deg, rgba(255, 216, 118, 0.2), rgba(80, 65, 30, 0.72));
+  border-color: rgba(255, 216, 118, 0.34);
+  color: #fff5d6;
 }
 
 #txzz-panel .txzz-danger-action {
@@ -347,7 +353,7 @@
 
 #txzz-update-dialog .txzz-update-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1.25fr 1fr 1fr;
   gap: 8px;
   margin-top: 12px;
 }

@@ -505,6 +505,7 @@
         <p data-update-view="detail">点击查看项目仓库，获取最新版本和说明。</p>
         <code data-update-view="line"></code>
         <div class="txzz-update-actions">
+          <button type="button" data-update-action="download">下载最新版</button>
           <button type="button" data-update-action="open">查看更新</button>
           <button type="button" data-update-action="dismiss">稍后提醒</button>
         </div>
@@ -2538,6 +2539,14 @@
         openRepositoryHome();
         await closeRepositoryUpdateDialog("notified");
         emitFlow("更新提醒", "已打开糖心志者项目仓库", "ok");
+      }
+      if (action === "download") {
+        const response = await sendRuntime("downloadRepositoryArchive", {
+          version: uiState.repositoryUpdate?.remote?.version || "",
+          build: uiState.repositoryUpdate?.remote?.build || ""
+        });
+        await closeRepositoryUpdateDialog("notified");
+        emitFlow("更新提醒", response.downloadId ? `已开始下载最新版压缩包：${response.filename}` : "已提交最新版下载任务", "ok");
       }
       if (action === "dismiss") {
         await closeRepositoryUpdateDialog("dismissed");

@@ -24,6 +24,7 @@ const REPOSITORY_CONFIG = {
   owner: "lsy5920",
   repo: "tangxin-zhizhe-extension",
   url: "https://github.com/lsy5920/tangxin-zhizhe-extension",
+  archiveUrl: "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip",
   updateManifestUrl: "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/update.json",
   readmeUrls: [
     "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/README.md",
@@ -33,9 +34,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-06-13-1342";
+const LOCAL_UPDATE_BUILD = "2026-06-13-1349";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-06-13 02:23 【新增】新增远程仓库更新日志检查能力，插件会自动对比 GitHub README 更新日志，发现新记录时弹出精美更新提醒并可跳转项目主页。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-06-13 13:49 【新增】糖心志者升级到 2.0.1，更新弹窗支持直接下载 GitHub 仓库最新压缩包。";
 
 const DEFAULT_ACCOUNTS = [
   {
@@ -1714,6 +1715,19 @@ async function markRepositoryUpdateNotified(updateId = "", mode = "notified") {
   return { ok: true, updateState: next };
 }
 
+async function downloadRepositoryArchive(meta = {}) {
+  const version = safeFileName(String(meta.version || localExtensionVersion() || "latest"));
+  const build = safeFileName(String(meta.build || LOCAL_UPDATE_BUILD || "main"));
+  const filename = `糖心志者/糖心志者_${version}_${build}_最新版.zip`;
+  const downloadId = await chrome.downloads.download({
+    url: REPOSITORY_CONFIG.archiveUrl,
+    filename,
+    saveAs: false,
+    conflictAction: "uniquify"
+  });
+  return { ok: true, downloadId, filename, url: REPOSITORY_CONFIG.archiveUrl };
+}
+
 async function upsertAccount(raw) {
   const state = await getStateInternal();
   const incoming = normalizeAccount(raw);
@@ -1848,6 +1862,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "markRepositoryUpdateNotified") {
       sendResponse(await markRepositoryUpdateNotified(String(message.updateId || ""), String(message.mode || "notified")));
+      return;
+    }
+    if (message?.type === "downloadRepositoryArchive") {
+      sendResponse(await downloadRepositoryArchive(message));
       return;
     }
     if (message?.type === "uploadAccountToRemote") {
