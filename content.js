@@ -313,6 +313,7 @@
             <button data-action="load-saved">载入保存记录</button>
             <button data-action="export">导出记录</button>
             <button data-action="save">保存当前记录</button>
+            <button data-action="check-update">检查更新</button>
             <button data-action="clear">清空记录</button>
             <button class="txzz-danger-action" data-action="clear-cache">清除数据缓存</button>
           </div>
@@ -1793,6 +1794,13 @@
     try {
       const response = await sendRuntime("checkRepositoryUpdate", { force });
       if (response.shouldNotify) showRepositoryUpdateDialog(response);
+      else if (force) {
+        emitFlow(
+          "更新提醒",
+          response.updateAvailable ? "发现更新日志，但这条更新已经提醒过" : "当前插件 README 已包含远程仓库更新日志",
+          "ok"
+        );
+      }
       return response;
     } catch (err) {
       emitFlow("更新检查失败", err?.message || String(err), "error");
@@ -2268,6 +2276,7 @@
         emitFlow("清空", "已清空当前会话捕获记录", "ok");
       }
       if (action === "clear-cache") await clearDataCache();
+      if (action === "check-update") await checkRepositoryUpdate(true);
       if (action === "compare") await compareTraces();
     } catch (err) {
       emitFlow("操作失败", err?.message || String(err), "error");
@@ -2541,7 +2550,7 @@
   applyDisplayPatch().catch(() => {});
   installVisibleDisplayLoop();
   loadSavedState(false).catch((err) => emitFlow("账号池", err?.message || String(err), "error"));
-  window.setTimeout(() => checkRepositoryUpdate(false).catch(() => {}), 1800);
+  window.setTimeout(() => checkRepositoryUpdate(true).catch(() => {}), 1800);
   window.setInterval(() => {
     if (Object.keys(state.downloadTasks || {}).length) {
       refreshLocalDownloadState().catch(() => {});
