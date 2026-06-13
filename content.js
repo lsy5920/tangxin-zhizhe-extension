@@ -388,6 +388,7 @@
               <button data-action="refresh">刷新状态</button>
               <button data-action="about">关于项目</button>
               <button data-action="check-update">检查更新</button>
+              <button data-action="download-latest">下载最新版</button>
               <button class="txzz-danger-action" data-action="clear-cache">清除数据缓存</button>
             </div>
           </div>
@@ -2445,6 +2446,13 @@
       }
       if (action === "clear-cache") await clearDataCache();
       if (action === "check-update") await checkRepositoryUpdate(true);
+      if (action === "download-latest") {
+        const response = await sendRuntime("downloadRepositoryArchive", {
+          version: uiState.repositoryUpdate?.remote?.version || "",
+          build: uiState.repositoryUpdate?.remote?.build || ""
+        });
+        emitFlow("版本更新", response.downloadId ? `已开始下载最新版压缩包：${response.filename}` : "已提交最新版下载任务", "ok");
+      }
       if (action === "show-update-dialog") {
         if (uiState.repositoryUpdate?.updateAvailable) showRepositoryUpdateDialog(uiState.repositoryUpdate);
         else await checkRepositoryUpdate(true);
