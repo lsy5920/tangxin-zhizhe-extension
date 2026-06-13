@@ -20,6 +20,20 @@ const REMOTE_CONFIG = {
   fallbackLocal: true
 };
 
+const REPOSITORY_CONFIG = {
+  owner: "lsy5920",
+  repo: "tangxin-zhizhe-extension",
+  url: "https://github.com/lsy5920/tangxin-zhizhe-extension",
+  readmeUrls: [
+    "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/README.md",
+    "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/master/README.md"
+  ],
+  checkIntervalMs: 6 * 60 * 60 * 1000,
+  timeoutMs: 9000
+};
+
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-06-13 02:23 【新增】新增远程仓库更新日志检查能力，插件会自动对比 GitHub README 更新日志，发现新记录时弹出精美更新提醒并可跳转项目主页。";
+
 const DEFAULT_ACCOUNTS = [
   {
     id: "full-lsyhook",
@@ -1450,6 +1464,129 @@ async function openDownloadFolder() {
   }
 }
 
+function parseChangelogEntries(markdown = "") {
+  const text = String(markdown || "").replace(/\r/g, "");
+  const marker = text.match(/(?:^|\n)##\s*更新日志\s*\n([\s\S]*)$/);
+  const body = marker ? marker[1] : text;
+  return body.split("\n")
+    .map((item) => item.trim())
+    .filter((item) => /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+【.+?】/.test(item))
+    .map((line) => {
+      const match = line.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s+(【.+?】)\s*(.*)$/);
+      return {
+        id: line,
+        line,
+        time: match?.[1] || "",
+        type: match?.[2] || "",
+        text: match?.[3] || line
+      };
+    })
+    .sort((a, b) => compareChangelogTime(b, a));
+}
+
+function parseChangelogHead(markdown = "") {
+  return parseChangelogEntries(markdown)[0] || null;
+}
+
+function compareChangelogTime(a = {}, b = {}) {
+  const at = Date.parse(String(a.time || "").replace(" ", "T"));
+  const bt = Date.parse(String(b.time || "").replace(" ", "T"));
+  if (Number.isFinite(at) && Number.isFinite(bt)) return at - bt;
+  return String(a.line || "").localeCompare(String(b.line || ""), "zh-CN");
+}
+
+async function fetchTextWithTimeout(url, timeoutMs = REPOSITORY_CONFIG.timeoutMs) {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const response = await fetch(url, {
+      signal: controller?.signal,
+      headers: { "cache-control": "no-cache" }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.text();
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function fetchRemoteReadme() {
+  const errors = [];
+  for (const url of REPOSITORY_CONFIG.readmeUrls) {
+    try {
+      return { url, text: await fetchTextWithTimeout(url) };
+    } catch (err) {
+      errors.push(`${url}: ${err?.message || String(err)}`);
+    }
+  }
+  throw new Error(`远程 README 读取失败：${errors.join("；")}`);
+}
+
+async function getLocalChangelogEntries() {
+  try {
+    const url = chrome.runtime.getURL("README.md");
+    const response = await fetch(url, { cache: "no-cache" });
+    if (response.ok) {
+      const parsed = parseChangelogEntries(await response.text());
+      if (parsed.length) return parsed;
+    }
+  } catch (_) {}
+  return parseChangelogEntries(FALLBACK_LOCAL_CHANGELOG_HEAD);
+}
+
+async function checkRepositoryUpdate(options = {}) {
+  const stored = await chrome.storage.local.get("txzzUpdateState");
+  const updateState = stored.txzzUpdateState || {};
+  const now = Date.now();
+  if (!options.force && updateState.lastCheckedAt && now - Number(updateState.lastCheckedAt || 0) < REPOSITORY_CONFIG.checkIntervalMs) {
+    return { ok: true, skipped: true, updateAvailable: false, updateState };
+  }
+  const localEntries = await getLocalChangelogEntries();
+  const local = localEntries[0] || null;
+  const localIds = new Set(localEntries.map((entry) => entry.id));
+  const remoteReadme = await fetchRemoteReadme();
+  const remoteEntries = parseChangelogEntries(remoteReadme.text);
+  const remote = remoteEntries.find((entry) => !localIds.has(entry.id)) || null;
+  if (!remoteEntries.length) throw new Error("远程 README 没有解析到更新日志");
+  const updateAvailable = Boolean(remote);
+  const shouldNotify = Boolean(updateAvailable && remote && updateState.dismissedId !== remote.id && updateState.notifiedId !== remote.id);
+  const nextUpdateState = {
+    ...updateState,
+    lastCheckedAt: now,
+    lastRemoteId: remoteEntries[0]?.id || "",
+    lastRemoteLine: remoteEntries[0]?.line || "",
+    lastReadmeUrl: remoteReadme.url
+  };
+  await chrome.storage.local.set({ txzzUpdateState: nextUpdateState });
+  return {
+    ok: true,
+    skipped: false,
+    updateAvailable,
+    shouldNotify,
+    repositoryUrl: REPOSITORY_CONFIG.url,
+    local,
+    localCount: localEntries.length,
+    remote,
+    remoteHead: remoteEntries[0] || null,
+    remoteCount: remoteEntries.length,
+    readmeUrl: remoteReadme.url,
+    updateState: nextUpdateState
+  };
+}
+
+async function markRepositoryUpdateNotified(updateId = "", mode = "notified") {
+  const stored = await chrome.storage.local.get("txzzUpdateState");
+  const updateState = stored.txzzUpdateState || {};
+  const key = mode === "dismissed" ? "dismissedId" : "notifiedId";
+  const next = {
+    ...updateState,
+    [key]: String(updateId || updateState.lastRemoteId || ""),
+    [`${key}At`]: Date.now()
+  };
+  await chrome.storage.local.set({ txzzUpdateState: next });
+  return { ok: true, updateState: next };
+}
+
 async function upsertAccount(raw) {
   const state = await getStateInternal();
   const incoming = normalizeAccount(raw);
@@ -1576,6 +1713,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "syncRemoteAccounts") {
       const state = await syncRemoteAccounts(await getStateInternal());
       sendResponse({ ok: true, state: sanitizeState(state) });
+      return;
+    }
+    if (message?.type === "checkRepositoryUpdate") {
+      sendResponse(await checkRepositoryUpdate({ force: Boolean(message.force) }));
+      return;
+    }
+    if (message?.type === "markRepositoryUpdateNotified") {
+      sendResponse(await markRepositoryUpdateNotified(String(message.updateId || ""), String(message.mode || "notified")));
       return;
     }
     if (message?.type === "uploadAccountToRemote") {

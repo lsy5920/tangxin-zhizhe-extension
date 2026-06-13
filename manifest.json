@@ -40,6 +40,7 @@
         "page_hook.js",
         "page_probe.js",
         "display_patch.js",
+        "README.md",
         "vendor/mux-7.0.0.min.js"
       ],
       "matches": [

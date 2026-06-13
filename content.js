@@ -330,8 +330,34 @@
   flowBadge.hidden = true;
   document.documentElement.appendChild(flowBadge);
 
+  const updateDialog = document.createElement("div");
+  updateDialog.id = "txzz-update-dialog";
+  updateDialog.className = "txzz-update-dialog";
+  updateDialog.hidden = true;
+  updateDialog.innerHTML = `
+    <div class="txzz-update-mask" data-update-action="dismiss"></div>
+    <section class="txzz-update-card" role="dialog" aria-label="糖心志者更新提醒">
+      <div class="txzz-update-icon">志</div>
+      <div class="txzz-update-body">
+        <span>糖心志者发现新版本</span>
+        <strong data-update-view="title">远程仓库有新的更新日志</strong>
+        <p data-update-view="detail">点击查看项目仓库，获取最新版本和说明。</p>
+        <code data-update-view="line"></code>
+        <div class="txzz-update-actions">
+          <button type="button" data-update-action="open">查看更新</button>
+          <button type="button" data-update-action="dismiss">稍后提醒</button>
+        </div>
+      </div>
+    </section>
+  `;
+  document.documentElement.appendChild(updateDialog);
+
   const views = Object.fromEntries(Array.from(panel.querySelectorAll("[data-view]")).map((el) => [el.dataset.view, el]));
   views.flowBadge = flowBadge;
+  views.updateDialog = updateDialog;
+  views.updateTitle = updateDialog.querySelector('[data-update-view="title"]');
+  views.updateDetail = updateDialog.querySelector('[data-update-view="detail"]');
+  views.updateLine = updateDialog.querySelector('[data-update-view="line"]');
   const fields = Object.fromEntries(Array.from(panel.querySelectorAll("[data-field]")).map((el) => [el.dataset.field, el]));
   const shell = panel.querySelector(".txzz-shell");
   const ball = panel.querySelector(".txzz-ball");
@@ -358,7 +384,8 @@
     accountFormOpen: false,
     accountTypePicking: true,
     showInvalidCloudAccounts: false,
-    editingAccountId: ""
+    editingAccountId: "",
+    repositoryUpdate: null
   };
 
   let drag = null;
@@ -373,6 +400,8 @@
     "展示覆盖",
     "远程账号池",
     "远程账号池同步失败",
+    "更新提醒",
+    "更新检查失败",
     "云端账号",
     "云端账号失败",
     "账号检查",
@@ -1736,6 +1765,41 @@
     });
   }
 
+  function openRepositoryHome() {
+    window.open("https://github.com/lsy5920/tangxin-zhizhe-extension", "_blank", "noopener,noreferrer");
+  }
+
+  function showRepositoryUpdateDialog(update = {}) {
+    const remote = update.remote || {};
+    uiState.repositoryUpdate = update;
+    if (views.updateTitle) views.updateTitle.textContent = `${remote.time || "最新"} ${remote.type || "【更新】"}`;
+    if (views.updateDetail) views.updateDetail.textContent = remote.text || "远程仓库已有新的更新日志，建议前往项目主页获取最新版本。";
+    if (views.updateLine) views.updateLine.textContent = remote.line || "";
+    views.updateDialog.hidden = false;
+    views.updateDialog.classList.add("is-open");
+    emitFlow("更新提醒", "远程仓库发现新的更新日志", "ok");
+  }
+
+  async function closeRepositoryUpdateDialog(mode = "dismissed") {
+    const updateId = uiState.repositoryUpdate?.remote?.id || "";
+    views.updateDialog.classList.remove("is-open");
+    views.updateDialog.hidden = true;
+    if (updateId) {
+      await sendRuntime("markRepositoryUpdateNotified", { updateId, mode }).catch(() => {});
+    }
+  }
+
+  async function checkRepositoryUpdate(force = false) {
+    try {
+      const response = await sendRuntime("checkRepositoryUpdate", { force });
+      if (response.shouldNotify) showRepositoryUpdateDialog(response);
+      return response;
+    } catch (err) {
+      emitFlow("更新检查失败", err?.message || String(err), "error");
+      return { ok: false, error: err?.message || String(err) };
+    }
+  }
+
   function syncSavedState(saved) {
     const autoCleaned = Boolean(saved.autoCleanedThisLoad);
     if (autoCleaned) {
@@ -2111,7 +2175,7 @@
       if (action === "toggle") togglePanel();
       if (action === "close") togglePanel(false);
       if (action === "about") {
-        window.open("https://github.com/lsy5920/tangxin-zhizhe-extension", "_blank", "noopener,noreferrer");
+        openRepositoryHome();
         emitFlow("关于", "已打开糖心志者项目主页", "ok");
       }
       if (action === "refresh") {
@@ -2207,6 +2271,26 @@
       if (action === "compare") await compareTraces();
     } catch (err) {
       emitFlow("操作失败", err?.message || String(err), "error");
+    }
+    event.preventDefault();
+  });
+
+  updateDialog.addEventListener("click", async (event) => {
+    const actionEl = event.target.closest("[data-update-action]");
+    if (!actionEl) return;
+    const action = actionEl.dataset.updateAction;
+    try {
+      if (action === "open") {
+        openRepositoryHome();
+        await closeRepositoryUpdateDialog("notified");
+        emitFlow("更新提醒", "已打开糖心志者项目仓库", "ok");
+      }
+      if (action === "dismiss") {
+        await closeRepositoryUpdateDialog("dismissed");
+        emitFlow("更新提醒", "已关闭本次更新提醒", "ok");
+      }
+    } catch (err) {
+      emitFlow("更新提醒", err?.message || String(err), "error");
     }
     event.preventDefault();
   });
@@ -2457,6 +2541,7 @@
   applyDisplayPatch().catch(() => {});
   installVisibleDisplayLoop();
   loadSavedState(false).catch((err) => emitFlow("账号池", err?.message || String(err), "error"));
+  window.setTimeout(() => checkRepositoryUpdate(false).catch(() => {}), 1800);
   window.setInterval(() => {
     if (Object.keys(state.downloadTasks || {}).length) {
       refreshLocalDownloadState().catch(() => {});

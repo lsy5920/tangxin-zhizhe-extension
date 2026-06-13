@@ -174,6 +174,127 @@
   color: #ffd0d0;
 }
 
+#txzz-update-dialog,
+#txzz-update-dialog * {
+  box-sizing: border-box;
+}
+
+#txzz-update-dialog[hidden] {
+  display: none;
+}
+
+#txzz-update-dialog {
+  --txzz-muted: #c8b6ad;
+  --txzz-gold: #ffd36a;
+  --txzz-green: #65e09d;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  color: #fffaf6;
+  font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+  pointer-events: auto;
+}
+
+#txzz-update-dialog .txzz-update-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 4, 8, 0.62);
+  backdrop-filter: blur(8px);
+}
+
+#txzz-update-dialog .txzz-update-card {
+  position: relative;
+  width: min(520px, calc(100vw - 28px));
+  border: 1px solid rgba(255, 211, 106, 0.32);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px;
+  background:
+    linear-gradient(135deg, rgba(255, 211, 106, 0.11), rgba(255, 85, 118, 0.08)),
+    #15131b;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.52);
+}
+
+#txzz-update-dialog .txzz-update-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #ffd36a, #ff5576);
+  color: #22131c;
+  font-size: 20px;
+  font-weight: 900;
+  box-shadow: 0 0 0 7px rgba(255, 211, 106, 0.12);
+}
+
+#txzz-update-dialog .txzz-update-body {
+  min-width: 0;
+}
+
+#txzz-update-dialog .txzz-update-body span,
+#txzz-update-dialog .txzz-update-body p {
+  color: var(--txzz-muted);
+}
+
+#txzz-update-dialog .txzz-update-body span,
+#txzz-update-dialog .txzz-update-body strong,
+#txzz-update-dialog .txzz-update-body code {
+  display: block;
+}
+
+#txzz-update-dialog .txzz-update-body strong {
+  margin-top: 3px;
+  color: #fff;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+#txzz-update-dialog .txzz-update-body p {
+  margin: 8px 0;
+}
+
+#txzz-update-dialog .txzz-update-body code {
+  max-height: 86px;
+  overflow: auto;
+  border: 1px solid rgba(244, 219, 208, 0.12);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(15, 13, 19, 0.88);
+  color: #fff1c7;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+#txzz-update-dialog .txzz-update-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#txzz-update-dialog button {
+  min-height: 38px;
+  border: 1px solid rgba(255, 211, 106, 0.3);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #2a2430, #201d27);
+  color: #fffaf6;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+#txzz-update-dialog button[data-update-action="open"] {
+  background: linear-gradient(135deg, #ff5576, #a93855);
+  border-color: rgba(255, 211, 106, 0.45);
+}
+
 #txzz-panel .txzz-shell {
   position: fixed;
   left: var(--txzz-left, 50%);
@@ -1480,6 +1601,20 @@
 }
 
 @media (max-width: 430px) {
+  #txzz-update-dialog .txzz-update-card {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  #txzz-update-dialog .txzz-update-icon {
+    width: 46px;
+    height: 46px;
+  }
+
+  #txzz-update-dialog .txzz-update-actions {
+    grid-template-columns: 1fr;
+  }
+
   #txzz-panel .txzz-tabs,
   #txzz-panel .txzz-grid,
   #txzz-panel .txzz-download-stats,
