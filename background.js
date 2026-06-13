@@ -34,9 +34,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-06-13-1358";
+const LOCAL_UPDATE_BUILD = "2026-06-13-1404";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-06-13 13:58 【新增】测试下载功能。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-06-13 14:04 【优化】更新下载压缩包命名为 tangxin-zhizhe-extension-main.zip，便于解压后直接加载插件目录。";
 
 const DEFAULT_ACCOUNTS = [
   {
@@ -1716,9 +1716,7 @@ async function markRepositoryUpdateNotified(updateId = "", mode = "notified") {
 }
 
 async function downloadRepositoryArchive(meta = {}) {
-  const version = safeFileName(String(meta.version || localExtensionVersion() || "latest"));
-  const build = safeFileName(String(meta.build || LOCAL_UPDATE_BUILD || "main"));
-  const filename = `糖心志者/糖心志者_${version}_${build}_最新版.zip`;
+  const filename = "tangxin-zhizhe-extension-main.zip";
   const downloadId = await chrome.downloads.download({
     url: REPOSITORY_CONFIG.archiveUrl,
     filename,

@@ -1,16 +1,16 @@
 {
   "schema": 1,
   "name": "糖心志者",
-  "version": "2.0.3",
-  "build": "2026-06-13-1358",
-  "releasedAt": "2026-06-13 13:58",
+  "version": "2.0.4",
+  "build": "2026-06-13-1404",
+  "releasedAt": "2026-06-13 14:04",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "changelog": [
     {
-      "id": "2026-06-13-1358",
-      "type": "新增",
-      "title": "测试下载功能",
-      "detail": "测试下载功能。"
+      "id": "2026-06-13-1404",
+      "type": "优化",
+      "title": "优化下载压缩包命名",
+      "detail": "更新弹窗下载的仓库压缩包固定命名为 tangxin-zhizhe-extension-main.zip，解压后可直接选择 tangxin-zhizhe-extension-main 目录加载插件。"
     }
   ]
 }
