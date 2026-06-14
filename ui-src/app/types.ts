@@ -48,6 +48,11 @@ export type AccountItem = {
   nickname?: string;
   username?: string;
   source?: string;
+  cloud?: boolean;
+  cloudReadonly?: boolean;
+  isCloud?: boolean;
+  remoteId?: string;
+  cloudId?: string;
   status?: string;
   available?: boolean;
   reason?: string;
