@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, CheckCircle, Copy, Download, FolderOpen, Link, Loader, RefreshCw, Save, Search, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, Copy, Download, FolderOpen, Link, Loader, RefreshCw, Save, Search, SortDesc, Trash2, XCircle } from "lucide-react";
 import type { BridgeState, DownloadTask } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, isRunningDownloadTask, maskUrl, shortTime } from "../helpers";
 
@@ -9,6 +9,7 @@ type Props = {
 };
 
 type DownloadFilter = "all" | "running" | "ready" | "failed";
+type DownloadSort = "updated" | "failed" | "progress" | "size";
 
 function taskTone(task: DownloadTask) {
   if (task.stage === "complete" || task.stage === "ready") return { label: downloadStageLabel(task.stage), color: "bg-emerald-100 text-emerald-600", icon: <CheckCircle size={11} /> };
@@ -22,6 +23,7 @@ export function DownloadsPage({ state, onAction }: Props) {
   const stats = downloadStats(tasks);
   const [filter, setFilter] = useState<DownloadFilter>("all");
   const [searchText, setSearchText] = useState("");
+  const [sortMode, setSortMode] = useState<DownloadSort>("updated");
   const readyCount = tasks.filter(canSaveDownload).length;
   // 下载任务较多时先按状态缩小范围，再查看具体任务卡片。
   const statusFilteredTasks = tasks.filter((task) => {
@@ -31,7 +33,7 @@ export function DownloadsPage({ state, onAction }: Props) {
     return true;
   });
   const searchKeyword = searchText.trim().toLowerCase();
-  const filteredTasks = statusFilteredTasks.filter((task) => {
+  const searchedTasks = statusFilteredTasks.filter((task) => {
     // 搜索只在本地任务摘要里匹配，保证批量操作看到什么就处理什么。
     if (!searchKeyword) return true;
     const sourceUrl = absoluteUrl(task.url);
@@ -48,11 +50,34 @@ export function DownloadsPage({ state, onAction }: Props) {
       task.transmuxError
     ].filter(Boolean).join(" ").toLowerCase().includes(searchKeyword);
   });
+  const updatedTime = (task: DownloadTask) => Date.parse(String(task.updatedAt || "")) || 0;
+  const filteredTasks = [...searchedTasks].sort((a, b) => {
+    // 排序只改变展示和导出顺序，不改变当前筛选、搜索后的任务集合。
+    if (sortMode === "failed") {
+      const diff = Number(b.stage === "error") - Number(a.stage === "error");
+      if (diff) return diff;
+    }
+    if (sortMode === "progress") {
+      const diff = downloadProgress(b) - downloadProgress(a);
+      if (diff) return diff;
+    }
+    if (sortMode === "size") {
+      const diff = Number(b.bytes || 0) - Number(a.bytes || 0);
+      if (diff) return diff;
+    }
+    return updatedTime(b) - updatedTime(a);
+  });
   const filterItems: { key: DownloadFilter; label: string; value: number; color: string }[] = [
     { key: "all", label: "全部", value: stats.total, color: "text-purple-600" },
     { key: "running", label: "进行中", value: stats.running, color: "text-amber-600" },
     { key: "ready", label: "可保存", value: readyCount, color: "text-emerald-600" },
     { key: "failed", label: "失败", value: stats.failed, color: "text-rose-600" }
+  ];
+  const sortItems: { key: DownloadSort; label: string; tip: string }[] = [
+    { key: "updated", label: "最近", tip: "按更新时间倒序" },
+    { key: "failed", label: "失败优先", tip: "失败任务排在前面" },
+    { key: "progress", label: "进度", tip: "进度高的排在前面" },
+    { key: "size", label: "大小", tip: "文件大的排在前面" }
   ];
   const filteredTaskIds = filteredTasks.map((task) => task.taskId || task.movieId || task.url || "").filter(Boolean);
   const filteredLinkCount = filteredTasks.filter((task) => Boolean(task.url)).length;
@@ -114,6 +139,21 @@ export function DownloadsPage({ state, onAction }: Props) {
               清除
             </button>
           )}
+        </div>
+        <div className="mt-2 grid grid-cols-4 gap-1.5">
+          {sortItems.map((item) => {
+            const active = sortMode === item.key;
+            return (
+              <button
+                key={item.key}
+                onClick={() => setSortMode(item.key)}
+                title={item.tip}
+                className={`flex min-h-8 items-center justify-center gap-1 rounded-xl px-1.5 text-[10px] font-medium transition-all ${active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "bg-white text-purple-400 hover:bg-purple-100"}`}
+              >
+                <SortDesc size={11} /> {item.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 

@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.5.7",
-  "build": "2026-07-08-0203",
-  "releasedAt": "2026-07-08 02:03",
+  "version": "2.5.8",
+  "build": "2026-07-08-0216",
+  "releasedAt": "2026-07-08 02:16",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -12,10 +12,10 @@
   ],
   "changelog": [
     {
-      "id": "2026-07-08-0203",
-      "type": "修复",
-      "title": "全面重构升级检测和最新版下载链路",
-      "detail": "修复远程清单检测成功后因状态写入字段错误导致误报失败的问题；升级系统改为新版清单结构，实时绕过缓存读取 update.json，旧更新缓存不再沿用；最新版下载会优先使用清单里的完整下载地址，并在失败时继续尝试 GitHub 候选压缩包地址；设置页新增清单地址、检测模式、候选下载地址和下载失败原因展示。"
+      "id": "2026-07-08-0216",
+      "type": "优化",
+      "title": "优化下载任务排序和升级检测提示",
+      "detail": "下载页新增排序切换，可按最近更新、失败优先、进度最高和文件大小重排当前筛选与搜索结果，批量保存、复制链接、复制报告和重试失败会沿用当前可见顺序；设置页更新管理补充自动检测保护间隔和手动检查绕过缓存说明。"
     }
   ]
 }

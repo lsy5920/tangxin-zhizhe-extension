@@ -258,6 +258,9 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
   const updateSystemTip = state.repositoryUpdate?.updateSystem?.ignoredLegacyCache
     ? "已忽略旧版更新缓存，本次按新版清单重新检测。"
     : "新版升级系统会实时读取远程清单，并保留候选下载地址用于兜底。";
+  const updateCacheTip = state.repositoryUpdate?.updateSystem?.cacheTtlMs
+    ? `自动检测保护间隔约 ${Math.max(1, Math.round(Number(state.repositoryUpdate.updateSystem.cacheTtlMs) / 1000))} 秒，手动检查会立即绕过缓存。`
+    : "手动检查会立即绕过缓存读取远程清单。";
   const diagnostics = serviceCheck?.diagnostics;
   const diagnosticTone = levelClasses(diagnostics?.level);
   const accountProblem = hasDiagnosticKey(diagnostics, ["accounts", "usable", "risk", "unverified"]);
@@ -405,6 +408,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
           </div>
           <div className="mt-2 rounded-xl bg-white/70 px-2 py-1.5 text-[10px] leading-relaxed text-purple-400">
             <p>{updateSystemTip}</p>
+            <p className="mt-1">{updateCacheTip}</p>
             {updateCandidates.length > 1 && <p className="mt-1 truncate">候选地址：{updateCandidates.join(" ｜ ")}</p>}
             {state.repositoryUpdate?.downloadStatus && <p className="mt-1">上次下载：{state.repositoryUpdate.downloadStatus}</p>}
             {state.repositoryUpdate?.downloadError && <p className="mt-1 text-rose-500">下载错误：{state.repositoryUpdate.downloadError}</p>}
