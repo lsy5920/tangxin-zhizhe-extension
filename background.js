@@ -34,9 +34,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-0044";
+const LOCAL_UPDATE_BUILD = "2026-07-08-0048";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 00:44 【优化】升级版本到 v2.3.7，下载页新增复制当前筛选完整下载链接，外部播放器、下载器或排查时可一次拿到当前筛选结果。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 00:48 【优化】升级版本到 v2.3.8，下载失败任务新增重试入口，可直接重新创建同一视频的下载任务。";
 
 const DEFAULT_STATE = {
   role: "guest",

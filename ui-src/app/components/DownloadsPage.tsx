@@ -139,6 +139,17 @@ export function DownloadsPage({ state, onAction }: Props) {
                 </div>
               )}
               <div className="flex gap-1.5 pt-0.5">
+                {task.stage === "error" && (
+                  // 失败重试复用完整视频下载流程，继续走账号池和资源刷新逻辑。
+                  <button
+                    onClick={() => onAction("download-full-video", { movieId: task.movieId || "" })}
+                    disabled={!task.movieId}
+                    className="flex items-center gap-1 rounded-xl border border-amber-200 px-2.5 py-1.5 text-[11px] text-amber-500 transition-transform active:scale-95 disabled:opacity-45"
+                    title="重新创建下载任务"
+                  >
+                    <RefreshCw size={11} /> 重试
+                  </button>
+                )}
                 <button
                   onClick={() => onAction("save-download-device", { taskId: task.taskId || "" })}
                   disabled={!canSaveDownload(task)}
