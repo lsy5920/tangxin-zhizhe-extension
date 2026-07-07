@@ -113,7 +113,7 @@ export default function App() {
   const renderPage = () => {
     if (page === "overview") return <OverviewPage state={bridgeState} onAction={action} onPage={setPage} />;
     if (page === "accounts") return <AccountsPage state={bridgeState} onAction={action} intent={accountsIntent} />;
-    if (page === "playback") return <PlaybackPage state={bridgeState} onAction={action} />;
+    if (page === "playback") return <PlaybackPage state={bridgeState} onAction={action} onPage={setPage} />;
     if (page === "downloads") return <DownloadsPage state={bridgeState} onAction={action} />;
     return <SettingsPage state={bridgeState} onAction={action} onPage={goPage} />;
   };

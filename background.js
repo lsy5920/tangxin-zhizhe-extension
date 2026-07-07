@@ -34,9 +34,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-0003";
+const LOCAL_UPDATE_BUILD = "2026-07-08-0008";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 00:03 【优化】升级版本到 v2.3.1，优化播放页播放就绪体验，新增主备线路状态、刷新播放资源和完整链接复制，并优化设置页更新管理信息展示。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 00:08 【优化】升级版本到 v2.3.2，播放页新增当前视频下载任务联动，可直接查看下载进度、保存到设备或跳转下载页；设置页更新管理新增复制更新信息。";
 
 const DEFAULT_STATE = {
   role: "guest",

@@ -1,10 +1,11 @@
-import { AlertCircle, CheckCircle, Clock, Copy, Download, Film, Layers, Link, RefreshCw, Route, ShieldCheck, Timer, Wifi } from "lucide-react";
-import type { BridgeState, FullDetail } from "../types";
-import { formatDuration, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
+import { AlertCircle, CheckCircle, Clock, Copy, Download, Film, Layers, Link, RefreshCw, Route, Save, ShieldCheck, Timer, Wifi } from "lucide-react";
+import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
+import { canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 
 type Props = {
   state: BridgeState;
   onAction: (action: string, payload?: Record<string, unknown>) => void;
+  onPage?: (page: Page) => void;
 };
 
 type PlaybackLine = {
@@ -35,7 +36,15 @@ function playbackTip(latest?: FullDetail) {
   return "播放详情缺少可用链接，建议刷新资源或处理账号池。";
 }
 
-export function PlaybackPage({ state, onAction }: Props) {
+function taskTone(task?: DownloadTask | null) {
+  if (!task) return { label: "未创建", color: "bg-purple-50 text-purple-500" };
+  if (task.stage === "error") return { label: "下载失败", color: "bg-rose-50 text-rose-600" };
+  if (task.stage === "complete") return { label: "已保存", color: "bg-emerald-50 text-emerald-600" };
+  if (task.stage === "ready") return { label: "可保存", color: "bg-emerald-50 text-emerald-600" };
+  return { label: downloadStageLabel(task.stage), color: "bg-amber-50 text-amber-600" };
+}
+
+export function PlaybackPage({ state, onAction, onPage }: Props) {
   const latest = latestFullDetail(state);
   const records = (state.fullDetails || []).slice(-24).reverse();
   const lines: PlaybackLine[] = [
@@ -47,6 +56,9 @@ export function PlaybackPage({ state, onAction }: Props) {
   const duration = preferredLine?.stat?.duration || latest?.fullStat?.duration || latest?.backupStat?.duration;
   const readyCount = lines.filter((line) => lineState(line).ready && line.url).length;
   const fetchedAt = latest?.fetchedAt || String((latest as { ts?: string } | undefined)?.ts || "");
+  const currentTask = downloadTaskForMovie(state, latest?.movieId);
+  const taskProgress = currentTask ? downloadProgress(currentTask) : 0;
+  const currentTaskTone = taskTone(currentTask);
 
   return (
     <div className="space-y-4 p-4">
@@ -167,6 +179,62 @@ export function PlaybackPage({ state, onAction }: Props) {
           <div className="h-2 overflow-hidden rounded-full bg-pink-100">
             <div className="h-full rounded-full bg-gradient-to-r from-purple-400 to-violet-500 transition-all" style={{ width: latest ? "100%" : "6%" }} />
           </div>
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
+              <Download size={14} className="text-amber-400" /> 当前视频下载
+            </h3>
+            <p className="mt-1 truncate text-xs text-purple-400">
+              {currentTask ? downloadTitle(currentTask) : latest ? "当前视频还没有下载任务。" : "等待视频播放详情后可创建下载任务。"}
+            </p>
+          </div>
+          <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${currentTaskTone.color}`}>{currentTaskTone.label}</span>
+        </div>
+        {currentTask ? (
+          <div className="space-y-2 rounded-2xl bg-purple-50 p-3">
+            <div className="flex flex-wrap gap-1.5 text-[10px]">
+              <span className="rounded-full bg-white px-2 py-0.5 text-purple-500">{downloadFormat(currentTask)}</span>
+              <span className="rounded-full bg-white px-2 py-0.5 text-sky-500">{formatBytes(currentTask.bytes)}</span>
+              <span className="rounded-full bg-white px-2 py-0.5 text-gray-400">{shortTime(currentTask.updatedAt)}</span>
+            </div>
+            {currentTask.stage !== "complete" && (
+              <div>
+                <div className="mb-1 flex justify-between text-[10px] text-purple-400">
+                  <span>{downloadStageLabel(currentTask.stage)}</span>
+                  <span>{currentTask.total ? `${currentTask.current || 0}/${currentTask.total}` : `${taskProgress}%`}</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-white">
+                  <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${taskProgress}%` }} />
+                </div>
+              </div>
+            )}
+            {(currentTask.error || currentTask.transmuxError) && (
+              <p className="rounded-xl bg-rose-50 p-2 text-[10px] leading-relaxed text-rose-600">{currentTask.error || `MP4转封装失败，TS已保留：${currentTask.transmuxError}`}</p>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-2xl bg-purple-50 p-3 text-[11px] leading-relaxed text-purple-400">
+            点击「下载视频」后，下载任务会在这里显示进度；任务创建后可直接保存到设备或进入下载页查看全部记录。
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button
+            onClick={() => currentTask ? onAction("save-download-device", { taskId: currentTask.taskId || "" }) : onAction("download-full-video", { movieId: latest?.movieId || "" })}
+            disabled={currentTask ? !canSaveDownload(currentTask) : !latest?.movieId}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 py-2 text-xs font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-45"
+          >
+            {currentTask ? <><Save size={13} /> 保存到设备</> : <><Download size={13} /> 创建下载任务</>}
+          </button>
+          <button
+            onClick={() => onPage?.("downloads")}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95"
+          >
+            <Layers size={13} /> 下载页
+          </button>
         </div>
       </div>
 

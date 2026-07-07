@@ -192,6 +192,26 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
     window.setTimeout(() => setCopyStatus(""), 1600);
   };
 
+  const copyUpdateInfo = async () => {
+    const lines = [
+      "糖心志者更新信息",
+      `本地版本：${APP_VERSION_LABEL}`,
+      `本地构建：${APP_BUILD}`,
+      `远程版本：${remoteVersionText}`,
+      `远程构建：${remoteBuildText}`,
+      `发布时间：${remoteUpdate?.releasedAt || "未检测"}`,
+      `更新状态：${updateAvailable ? "发现新版本" : "当前版本可用"}`,
+      `更新说明：${updateSummary}`
+    ];
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      setCopyStatus("更新信息已复制");
+    } catch (_) {
+      setCopyStatus("复制失败，请稍后重试");
+    }
+    window.setTimeout(() => setCopyStatus(""), 1600);
+  };
+
   const updateAvailable = Boolean(state.repositoryUpdate?.updateAvailable);
   const remoteUpdate = state.repositoryUpdate?.remote;
   const remoteVersionText = remoteUpdate?.version ? `v${remoteUpdate.version}` : "未检测";
@@ -339,6 +359,9 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
         <div className="flex gap-2">
           <button onClick={checkUpdate} disabled={checkingUpdate} className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 disabled:opacity-70">
             {checkingUpdate ? <><RefreshCw size={13} className="animate-spin" /> 检查中…</> : <><RefreshCw size={13} /> 检查更新</>}
+          </button>
+          <button onClick={copyUpdateInfo} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-sky-200 py-2 text-xs font-medium text-sky-500 transition-transform active:scale-95">
+            <Copy size={13} /> 复制信息
           </button>
           <button onClick={() => onAction("download-latest")} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95">
             <Download size={13} /> 下载最新版

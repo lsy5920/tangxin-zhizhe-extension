@@ -138,6 +138,12 @@ export function canSaveDownload(task: DownloadTask) {
   return task.stage === "ready" || task.stage === "complete" || (task.mode === "direct" && Boolean(task.url));
 }
 
+export function downloadTaskForMovie(state: BridgeState, movieId?: string) {
+  const id = String(movieId || "").trim();
+  if (!id) return null;
+  return downloadTasks(state).find((task) => String(task.movieId || "") === id) || null;
+}
+
 export function latestFullDetail(state: BridgeState): FullDetail | undefined {
   const list = state.fullDetails || [];
   return list[list.length - 1];
