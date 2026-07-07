@@ -33,6 +33,19 @@ export function maskUrl(url?: string) {
   }
 }
 
+export function absoluteUrl(url?: string) {
+  // 面板只截断展示链接，但展示前先补全域名，确保用户理解复制结果是完整地址。
+  const value = String(url || "").trim();
+  if (!value) return "";
+  try {
+    const base = typeof window !== "undefined" ? window.location.href : "https://txh068.com/";
+    if (value.startsWith("//")) return `${new URL(base).protocol}${value}`;
+    return new URL(value, base).href;
+  } catch {
+    return value;
+  }
+}
+
 export function shortTime(value?: string) {
   if (!value) return "--:--";
   const date = new Date(value);

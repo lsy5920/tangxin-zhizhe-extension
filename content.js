@@ -1249,6 +1249,15 @@
     emitFlow("更新提醒", "远程仓库发现新的版本清单", "ok");
   }
 
+  function copyFullUrl(url, label) {
+    // 复制前统一补全域名，避免用户拿到只有路径的相对链接。
+    return copyText(normalizeUrl(url || ""), label || "完整链接");
+  }
+
+  function copyPlayableUrl(url, label) {
+    return copyFullUrl(url, label || "完整播放链接");
+  }
+
   async function closeRepositoryUpdateDialog(mode = "dismissed") {
     const updateId = uiState.repositoryUpdate?.remote?.id || "";
     if (updateId) {
@@ -1547,7 +1556,7 @@
 
   async function copyDownloadUrl(taskId = "") {
     const task = (state.downloadTasks || {})[taskId];
-    await copyText(task?.url || "", "下载链接");
+    await copyFullUrl(task?.url || "", "完整下载链接");
   }
 
   async function copyDownloadSnapshot(snapshotId = "") {
@@ -1740,19 +1749,19 @@
       if (action === "load-saved") await loadSavedState();
       if (action === "copy-latest") {
         const latest = [...state.playback].reverse().find((item) => item.url && !["play-api", "video-api"].includes(item.category)) || state.playback[state.playback.length - 1];
-        await copyText(latest?.url || "", "最新播放链接");
+        await copyPlayableUrl(latest?.url || "", "最新完整播放链接");
       }
       if (action === "copy-full-link") {
         const latest = state.fullDetails[state.fullDetails.length - 1];
-        await copyText(latest?.playLink || latest?.backupLink || "", "最近播放链接");
+        await copyPlayableUrl(latest?.playLink || latest?.backupLink || "", "最近完整播放链接");
       }
       if (action === "copy-play-link") {
         const latest = state.fullDetails[state.fullDetails.length - 1];
-        await copyText(payload.url || latest?.playLink || "", payload.label || "主线路完整链接");
+        await copyPlayableUrl(payload.url || latest?.playLink || "", payload.label || "主线路完整链接");
       }
       if (action === "copy-backup-link") {
         const latest = state.fullDetails[state.fullDetails.length - 1];
-        await copyText(payload.url || latest?.backupLink || "", payload.label || "备用线路完整链接");
+        await copyPlayableUrl(payload.url || latest?.backupLink || "", payload.label || "备用线路完整链接");
       }
       if (action === "copy-observations") {
         await copyText(JSON.stringify(state.observations.slice(-80), null, 2), "判定记录");

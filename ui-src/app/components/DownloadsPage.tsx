@@ -1,6 +1,6 @@
-import { AlertTriangle, CheckCircle, Copy, Download, FolderOpen, Loader, RefreshCw, Save, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, Copy, Download, FolderOpen, Link, Loader, RefreshCw, Save, Trash2, XCircle } from "lucide-react";
 import type { BridgeState, DownloadTask } from "../types";
-import { canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, shortTime } from "../helpers";
+import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, maskUrl, shortTime } from "../helpers";
 
 type Props = {
   state: BridgeState;
@@ -53,6 +53,7 @@ export function DownloadsPage({ state, onAction }: Props) {
         {tasks.length ? tasks.map((task) => {
           const tone = taskTone(task);
           const progress = downloadProgress(task);
+          const sourceUrl = absoluteUrl(task.url);
           return (
             <div key={task.taskId || task.movieId || task.url} className="space-y-2 rounded-2xl border border-pink-100 bg-white p-3 shadow-sm">
               <div className="flex items-start justify-between gap-2">
@@ -69,6 +70,13 @@ export function DownloadsPage({ state, onAction }: Props) {
                 <span className="rounded-full bg-sky-50 px-2 py-0.5 text-sky-500">{formatBytes(task.bytes)}</span>
                 <span className="rounded-full bg-gray-50 px-2 py-0.5 text-gray-400">{shortTime(task.updatedAt)}</span>
               </div>
+              {sourceUrl && (
+                <div className="flex items-center gap-1.5 rounded-xl bg-purple-50 px-2.5 py-1.5">
+                  <Link size={11} className="shrink-0 text-purple-300" />
+                  <span className="shrink-0 text-[10px] font-medium text-purple-400">完整源链接</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-purple-500">{maskUrl(sourceUrl)}</span>
+                </div>
+              )}
               {task.stage !== "complete" && (
                 <div>
                   <div className="mb-1 flex justify-between text-[10px] text-purple-400">
@@ -95,7 +103,7 @@ export function DownloadsPage({ state, onAction }: Props) {
                   <Save size={12} /> 保存到设备
                 </button>
                 {task.url && (
-                  <button onClick={() => onAction("copy-download-url", { taskId: task.taskId || "" })} className="flex items-center gap-1 rounded-xl border border-purple-200 px-2.5 py-1.5 text-[11px] text-purple-400 hover:bg-purple-50 transition-colors" title="复制下载链接">
+                  <button onClick={() => onAction("copy-download-url", { taskId: task.taskId || "" })} className="flex items-center gap-1 rounded-xl border border-purple-200 px-2.5 py-1.5 text-[11px] text-purple-400 hover:bg-purple-50 transition-colors" title="复制完整下载链接">
                     <Copy size={11} />
                   </button>
                 )}
