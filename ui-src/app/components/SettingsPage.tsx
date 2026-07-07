@@ -226,6 +226,11 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
     window.setTimeout(() => setCopyStatus(""), 1600);
   };
 
+  const openUpdateDownloadUrl = () => {
+    if (!updateDownloadUrl) return;
+    window.open(updateDownloadUrl, "_blank", "noopener,noreferrer");
+  };
+
   const updateAvailable = Boolean(state.repositoryUpdate?.updateAvailable);
   const remoteUpdate = state.repositoryUpdate?.remote;
   const updateFailed = state.repositoryUpdate?.ok === false;
@@ -381,7 +386,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
             {updateDownloadUrl && <p className="truncate">下载地址：{updateDownloadUrl}</p>}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           <button onClick={checkUpdate} disabled={checkingUpdate} className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 disabled:opacity-70">
             {checkingUpdate ? <><RefreshCw size={13} className="animate-spin" /> 检查中…</> : <><RefreshCw size={13} /> 检查更新</>}
           </button>
@@ -390,6 +395,9 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
           </button>
           <button onClick={copyUpdateDownloadUrl} disabled={!updateDownloadUrl} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-emerald-200 py-2 text-xs font-medium text-emerald-500 transition-transform active:scale-95 disabled:opacity-45">
             <Copy size={13} /> 复制地址
+          </button>
+          <button onClick={openUpdateDownloadUrl} disabled={!updateDownloadUrl} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-amber-200 py-2 text-xs font-medium text-amber-500 transition-transform active:scale-95 disabled:opacity-45">
+            <ExternalLink size={13} /> 打开地址
           </button>
           <button onClick={() => onAction("download-latest")} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95">
             <Download size={13} /> 检测并下载

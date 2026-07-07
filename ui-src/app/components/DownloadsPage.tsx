@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, CheckCircle, Copy, Download, FolderOpen, Link, Loader, RefreshCw, Save, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, Copy, Download, FolderOpen, Link, Loader, RefreshCw, Save, Search, Trash2, XCircle } from "lucide-react";
 import type { BridgeState, DownloadTask } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, isRunningDownloadTask, maskUrl, shortTime } from "../helpers";
 
@@ -21,13 +21,32 @@ export function DownloadsPage({ state, onAction }: Props) {
   const tasks = downloadTasks(state);
   const stats = downloadStats(tasks);
   const [filter, setFilter] = useState<DownloadFilter>("all");
+  const [searchText, setSearchText] = useState("");
   const readyCount = tasks.filter(canSaveDownload).length;
   // 下载任务较多时先按状态缩小范围，再查看具体任务卡片。
-  const filteredTasks = tasks.filter((task) => {
+  const statusFilteredTasks = tasks.filter((task) => {
     if (filter === "running") return isRunningDownloadTask(task);
     if (filter === "ready") return canSaveDownload(task);
     if (filter === "failed") return task.stage === "error";
     return true;
+  });
+  const searchKeyword = searchText.trim().toLowerCase();
+  const filteredTasks = statusFilteredTasks.filter((task) => {
+    // 搜索只在本地任务摘要里匹配，保证批量操作看到什么就处理什么。
+    if (!searchKeyword) return true;
+    const sourceUrl = absoluteUrl(task.url);
+    return [
+      downloadTitle(task),
+      task.movieId,
+      task.taskId,
+      task.filename,
+      task.url,
+      sourceUrl,
+      downloadFormat(task),
+      downloadStageLabel(task.stage),
+      task.error,
+      task.transmuxError
+    ].filter(Boolean).join(" ").toLowerCase().includes(searchKeyword);
   });
   const filterItems: { key: DownloadFilter; label: string; value: number; color: string }[] = [
     { key: "all", label: "全部", value: stats.total, color: "text-purple-600" },
@@ -78,6 +97,24 @@ export function DownloadsPage({ state, onAction }: Props) {
             </button>
           );
         })}
+      </div>
+
+      <div className="rounded-2xl border border-pink-100 bg-white p-2 shadow-sm">
+        <div className="flex items-center gap-2 rounded-xl bg-purple-50 px-2.5 py-1.5">
+          <Search size={12} className="shrink-0 text-purple-300" />
+          <input
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="搜索标题、编号、任务或链接"
+            className="min-w-0 flex-1 bg-transparent text-xs text-purple-700 outline-none placeholder:text-purple-300"
+          />
+          <span className="shrink-0 text-[10px] text-purple-300">{filteredTasks.length}/{statusFilteredTasks.length}</span>
+          {searchText && (
+            <button onClick={() => setSearchText("")} className="rounded-full bg-white px-2 py-0.5 text-[10px] text-purple-400">
+              清除
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -207,8 +244,8 @@ export function DownloadsPage({ state, onAction }: Props) {
         }) : tasks.length ? (
           <div className="rounded-2xl border border-pink-100 bg-white p-5 text-center shadow-sm">
             <Download size={28} className="mx-auto mb-2 text-purple-200" />
-            <p className="text-xs text-purple-400">当前筛选没有任务</p>
-            <p className="mt-1 text-[10px] text-purple-300">切换到「全部」可以查看所有下载记录</p>
+            <p className="text-xs text-purple-400">当前筛选或搜索没有任务</p>
+            <p className="mt-1 text-[10px] text-purple-300">切换到「全部」或清除搜索词可以查看更多下载记录</p>
           </div>
         ) : (
           <div className="rounded-2xl border border-pink-100 bg-white p-5 text-center shadow-sm">
