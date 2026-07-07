@@ -37,6 +37,14 @@ export function DownloadsPage({ state, onAction }: Props) {
   ];
   const filteredTaskIds = filteredTasks.map((task) => task.taskId || "").filter(Boolean);
   const filteredLinkCount = filteredTasks.filter((task) => Boolean(task.url)).length;
+  const retryMovieIds = Array.from(new Set(filteredTasks
+    .filter((task) => task.stage === "error" && task.movieId)
+    .map((task) => String(task.movieId))));
+
+  function retryFilteredFailedTasks() {
+    // 批量重试按视频编号去重，避免同一视频重复创建下载任务。
+    retryMovieIds.forEach((movieId) => onAction("download-full-video", { movieId }));
+  }
 
   return (
     <div className="space-y-4 p-4">
@@ -88,6 +96,16 @@ export function DownloadsPage({ state, onAction }: Props) {
         >
           <Copy size={13} /> 复制筛选链接
         </button>
+        {filter === "failed" && (
+          <button
+            onClick={retryFilteredFailedTasks}
+            disabled={!retryMovieIds.length}
+            className="flex items-center gap-1 rounded-xl border border-amber-200 px-3 py-2 text-xs text-amber-500 transition-transform active:scale-95 disabled:opacity-45"
+            title="批量重试当前失败任务"
+          >
+            <RefreshCw size={13} /> 重试失败
+          </button>
+        )}
         <button onClick={() => onAction("clear-downloads")} className="ml-auto flex items-center gap-1 rounded-xl border border-rose-200 px-3 py-2 text-xs text-rose-500 transition-transform active:scale-95">
           <Trash2 size={13} /> 清空
         </button>
