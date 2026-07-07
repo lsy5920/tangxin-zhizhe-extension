@@ -1559,6 +1559,19 @@
     await copyFullUrl(task?.url || "", "完整下载链接");
   }
 
+  async function copyFilteredDownloadUrls(taskIds = []) {
+    const ids = Array.isArray(taskIds) ? taskIds.map((item) => String(item || "")) : [];
+    const idSet = new Set(ids.filter(Boolean));
+    const tasks = downloadTasksArray().filter((task) => !idSet.size || idSet.has(String(task.taskId || "")));
+    // 批量复制仍统一补全域名，保证每一行都是可直接使用的完整下载地址。
+    const urls = [];
+    for (const task of tasks) {
+      const url = normalizeUrl(task.url || "");
+      if (url && !urls.includes(url)) urls.push(url);
+    }
+    await copyText(urls.join("\n"), "筛选下载完整链接");
+  }
+
   async function copyDownloadSnapshot(snapshotId = "") {
     const snapshot = (state.downloadSnapshots || []).find((item) => item.id === snapshotId);
     await copyText(snapshot ? JSON.stringify(snapshot, null, 2) : "", "保存记录");
@@ -1797,6 +1810,7 @@
       if (action === "save-downloads") await saveDownloadRecords();
       if (action === "copy-downloads") await copyDownloadRecords();
       if (action === "copy-download-url") await copyDownloadUrl(payload.taskId || "");
+      if (action === "copy-filtered-download-urls") await copyFilteredDownloadUrls(payload.taskIds || []);
       if (action === "copy-download-snapshot") await copyDownloadSnapshot(payload.snapshotId || "");
       if (action === "save-download-device") await saveDownloadDevice(payload.taskId || "");
       if (action === "remove-download-task") await removeDownloadTask(payload.taskId || "", payload.movieId || "");

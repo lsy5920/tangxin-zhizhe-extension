@@ -35,6 +35,8 @@ export function DownloadsPage({ state, onAction }: Props) {
     { key: "ready", label: "可保存", value: readyCount, color: "text-emerald-600" },
     { key: "failed", label: "失败", value: stats.failed, color: "text-rose-600" }
   ];
+  const filteredTaskIds = filteredTasks.map((task) => task.taskId || "").filter(Boolean);
+  const filteredLinkCount = filteredTasks.filter((task) => Boolean(task.url)).length;
 
   return (
     <div className="space-y-4 p-4">
@@ -77,6 +79,14 @@ export function DownloadsPage({ state, onAction }: Props) {
         </button>
         <button onClick={() => onAction("save-downloads")} className="flex items-center gap-1 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-500 px-3 py-2 text-xs text-white shadow-sm transition-transform active:scale-95">
           <Save size={13} /> 保存记录
+        </button>
+        <button
+          onClick={() => onAction("copy-filtered-download-urls", { taskIds: filteredTaskIds })}
+          disabled={!filteredLinkCount}
+          className="flex items-center gap-1 rounded-xl border border-purple-200 px-3 py-2 text-xs text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
+          title="复制当前筛选里的完整下载链接"
+        >
+          <Copy size={13} /> 复制筛选链接
         </button>
         <button onClick={() => onAction("clear-downloads")} className="ml-auto flex items-center gap-1 rounded-xl border border-rose-200 px-3 py-2 text-xs text-rose-500 transition-transform active:scale-95">
           <Trash2 size={13} /> 清空
