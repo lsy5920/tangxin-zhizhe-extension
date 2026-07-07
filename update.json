@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.5.8",
-  "build": "2026-07-08-0216",
-  "releasedAt": "2026-07-08 02:16",
+  "version": "2.5.9",
+  "build": "2026-07-08-0220",
+  "releasedAt": "2026-07-08 02:20",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -12,10 +12,10 @@
   ],
   "changelog": [
     {
-      "id": "2026-07-08-0216",
+      "id": "2026-07-08-0220",
       "type": "优化",
-      "title": "优化下载任务排序和升级检测提示",
-      "detail": "下载页新增排序切换，可按最近更新、失败优先、进度最高和文件大小重排当前筛选与搜索结果，批量保存、复制链接、复制报告和重试失败会沿用当前可见顺序；设置页更新管理补充自动检测保护间隔和手动检查绕过缓存说明。"
+      "title": "优化下载失败排查体验",
+      "detail": "下载页新增失败原因概览，会按当前筛选、搜索和排序后的结果聚合失败原因并显示数量；新增「失败摘要」复制入口，可导出失败原因、视频编号和完整源链接；批量复制链接和任务报告现在会按当前可见顺序输出。"
     }
   ]
 }

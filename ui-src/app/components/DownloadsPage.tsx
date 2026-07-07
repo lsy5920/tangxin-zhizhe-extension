@@ -81,6 +81,14 @@ export function DownloadsPage({ state, onAction }: Props) {
   ];
   const filteredTaskIds = filteredTasks.map((task) => task.taskId || task.movieId || task.url || "").filter(Boolean);
   const filteredLinkCount = filteredTasks.filter((task) => Boolean(task.url)).length;
+  const failedFilteredTasks = filteredTasks.filter((task) => task.stage === "error");
+  const failedReasonGroups = Array.from(failedFilteredTasks.reduce((map, task) => {
+    const reason = String(task.error || task.transmuxError || "未记录失败原因").trim();
+    const current = map.get(reason) || [];
+    current.push(task);
+    map.set(reason, current);
+    return map;
+  }, new Map<string, DownloadTask[]>()).entries()).sort((a, b) => b[1].length - a[1].length);
   const readyTaskIds = filteredTasks.filter(canSaveDownload).map((task) => task.taskId || "").filter(Boolean);
   const filterLabel = filterItems.find((item) => item.key === filter)?.label || "当前筛选";
   const retryMovieIds = Array.from(new Set(filteredTasks
@@ -191,6 +199,14 @@ export function DownloadsPage({ state, onAction }: Props) {
         >
           <Copy size={13} /> 复制报告
         </button>
+        <button
+          onClick={() => onAction("copy-failed-download-summary", { taskIds: filteredTaskIds, filterLabel })}
+          disabled={!failedFilteredTasks.length}
+          className="flex items-center gap-1 rounded-xl border border-rose-200 px-3 py-2 text-xs text-rose-500 transition-transform active:scale-95 disabled:opacity-45"
+          title="复制当前范围里的失败原因、视频编号和完整源链接"
+        >
+          <AlertTriangle size={13} /> 失败摘要
+        </button>
         {filter === "failed" && (
           <button
             onClick={retryFilteredFailedTasks}
@@ -205,6 +221,24 @@ export function DownloadsPage({ state, onAction }: Props) {
           <Trash2 size={13} /> 清空
         </button>
       </div>
+
+      {failedReasonGroups.length > 0 && (
+        <div className="space-y-2 rounded-2xl border border-rose-100 bg-rose-50 p-3 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 text-xs font-bold text-rose-600"><AlertTriangle size={13} /> 失败原因概览</p>
+            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] text-rose-500">{failedFilteredTasks.length} 个失败 / {failedReasonGroups.length} 类原因</span>
+          </div>
+          <div className="grid gap-1.5">
+            {failedReasonGroups.slice(0, 3).map(([reason, list]) => (
+              <div key={reason} className="flex items-start justify-between gap-2 rounded-xl bg-white/80 px-2.5 py-1.5">
+                <p className="min-w-0 flex-1 break-all text-[10px] leading-relaxed text-rose-600">{reason}</p>
+                <span className="shrink-0 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-600">{list.length} 个</span>
+              </div>
+            ))}
+          </div>
+          {failedReasonGroups.length > 3 && <p className="text-[10px] text-rose-400">还有 {failedReasonGroups.length - 3} 类原因，可点击「失败摘要」复制完整排查内容。</p>}
+        </div>
+      )}
 
       <div className="space-y-3">
         {filteredTasks.length ? filteredTasks.map((task) => {

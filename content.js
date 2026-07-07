@@ -323,6 +323,20 @@
     return [task.taskId, task.movieId, task.url].some((value) => value && idSet.has(String(value)));
   }
 
+  function orderedDownloadTasksByIds(taskIds = []) {
+    const allTasks = downloadTasksArray();
+    const ids = Array.isArray(taskIds) ? taskIds.map((item) => String(item || "")).filter(Boolean) : [];
+    if (!ids.length) return allTasks;
+    const usedTasks = new Set();
+    return ids
+      .map((id) => {
+        const task = allTasks.find((item) => !usedTasks.has(item) && [item.taskId, item.movieId, item.url].some((value) => value && String(value) === id));
+        if (task) usedTasks.add(task);
+        return task;
+      })
+      .filter(Boolean);
+  }
+
   function currentMovieId() {
     const match = String(location.pathname || "").match(/\/movie\/detail\/(\d+)/);
     return match ? match[1] : "";
@@ -1617,9 +1631,7 @@
   }
 
   async function copyFilteredDownloadUrls(taskIds = []) {
-    const ids = Array.isArray(taskIds) ? taskIds.map((item) => String(item || "")) : [];
-    const idSet = new Set(ids.filter(Boolean));
-    const tasks = downloadTasksArray().filter((task) => downloadTaskMatchesIdSet(task, idSet));
+    const tasks = orderedDownloadTasksByIds(taskIds);
     // 批量复制仍统一补全域名，保证每一行都是可直接使用的完整下载地址。
     const urls = [];
     for (const task of tasks) {
@@ -1630,9 +1642,7 @@
   }
 
   async function copyFilteredDownloadReport(taskIds = [], filterLabel = "当前筛选") {
-    const ids = Array.isArray(taskIds) ? taskIds.map((item) => String(item || "")) : [];
-    const idSet = new Set(ids.filter(Boolean));
-    const tasks = downloadTasksArray().filter((task) => downloadTaskMatchesIdSet(task, idSet));
+    const tasks = orderedDownloadTasksByIds(taskIds);
     if (!tasks.length) {
       emitFlow("下载管理", "当前筛选没有可复制的下载任务", "error");
       return;
@@ -1665,6 +1675,37 @@
       lines.push("");
     });
     await copyText(lines.join("\n"), "下载任务报告");
+  }
+
+  async function copyFailedDownloadSummary(taskIds = [], filterLabel = "当前筛选") {
+    const failedTasks = orderedDownloadTasksByIds(taskIds).filter((task) => task.stage === "error");
+    if (!failedTasks.length) {
+      emitFlow("下载管理", "当前范围没有失败任务", "error");
+      return;
+    }
+    const reasonGroups = new Map();
+    for (const task of failedTasks) {
+      const reason = String(task.error || task.transmuxError || "未记录失败原因").trim();
+      const list = reasonGroups.get(reason) || [];
+      list.push(task);
+      reasonGroups.set(reason, list);
+    }
+    const lines = [
+      "糖心志者下载失败摘要",
+      `筛选范围：${filterLabel || "当前筛选"}`,
+      `失败任务：${failedTasks.length} 个`,
+      `失败原因：${reasonGroups.size} 类`,
+      `生成时间：${new Date().toLocaleString("zh-CN", { hour12: false })}`,
+      ""
+    ];
+    Array.from(reasonGroups.entries()).forEach(([reason, list], groupIndex) => {
+      lines.push(`${groupIndex + 1}. ${reason}（${list.length} 个）`);
+      list.forEach((task) => {
+        lines.push(`- ${downloadTaskTitle(task)} / 视频 ${task.movieId || "未记录"} / ${normalizeUrl(task.url || "") || "无源链接"}`);
+      });
+      lines.push("");
+    });
+    await copyText(lines.join("\n"), "下载失败摘要");
   }
 
   async function copyDownloadSnapshot(snapshotId = "") {
@@ -1936,6 +1977,7 @@
       if (action === "copy-download-url") await copyDownloadUrl(payload.taskId || "");
       if (action === "copy-filtered-download-urls") await copyFilteredDownloadUrls(payload.taskIds || []);
       if (action === "copy-filtered-download-report") await copyFilteredDownloadReport(payload.taskIds || [], payload.filterLabel || "当前筛选");
+      if (action === "copy-failed-download-summary") await copyFailedDownloadSummary(payload.taskIds || [], payload.filterLabel || "当前筛选");
       if (action === "copy-download-snapshot") await copyDownloadSnapshot(payload.snapshotId || "");
       if (action === "save-download-device") await saveDownloadDevice(payload.taskId || "");
       if (action === "save-ready-downloads") await saveReadyDownloads(payload.taskIds || []);
