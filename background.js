@@ -37,9 +37,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-0136";
+const LOCAL_UPDATE_BUILD = "2026-07-08-0141";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 01:36 【优化】升级版本到 v2.5.3，播放记录主按钮按下载状态智能切换为下载、保存或重试。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 01:41 【优化】升级版本到 v2.5.4，播放记录新增单条报告复制，包含主备线路和关联下载任务。";
 
 const DEFAULT_STATE = {
   role: "guest",

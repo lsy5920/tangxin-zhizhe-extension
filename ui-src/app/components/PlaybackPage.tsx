@@ -142,6 +142,45 @@ function playbackHealthReport(
   ].join("\n");
 }
 
+function playbackRecordReport(item: FullDetail, recordTask?: DownloadTask | null) {
+  // 单条播放记录报告面向历史视频排查，保留主备线路和关联下载任务状态。
+  const playUrl = absoluteUrl(item.playLink || "");
+  const backupUrl = absoluteUrl(item.backupLink || "");
+  const taskUrl = absoluteUrl(recordTask?.url || "");
+  const taskLines = recordTask ? [
+    `任务名称：${downloadTitle(recordTask)}`,
+    `任务状态：${downloadStageLabel(recordTask.stage)}`,
+    `输出格式：${downloadFormat(recordTask)}`,
+    `下载进度：${recordTask.total ? `${recordTask.current || 0}/${recordTask.total}` : `${downloadProgress(recordTask)}%`}`,
+    `文件大小：${formatBytes(recordTask.bytes)}`,
+    `更新时间：${recordTask.updatedAt || "未记录"}`,
+    `完整源链接：${taskUrl || "暂无"}`,
+    recordTask.error ? `失败原因：${recordTask.error}` : "",
+    recordTask.transmuxError ? `转封装异常：${recordTask.transmuxError}` : ""
+  ].filter(Boolean) : ["当前播放记录还没有下载任务。"];
+
+  return [
+    "糖心志者播放记录报告",
+    `视频标题：${item.movieTitle || item.title || "未记录"}`,
+    `视频编号：${item.movieId || "未记录"}`,
+    `账号：${item.accountLabel || item.accountUser || "未记录"}`,
+    `获取时间：${String((item as { ts?: string }).ts || item.fetchedAt || "") || "未记录"}`,
+    `主线路：${playUrl || "暂无"}`,
+    `备用线路：${backupUrl || "暂无"}`,
+    `主线路分片：${item.fullStat?.segments || "未知"}`,
+    `主线路时长：${item.fullStat?.duration ? formatDuration(item.fullStat.duration) : "未知"}`,
+    `主线路状态：${item.fullStat?.status || "未知"}`,
+    item.fullStat?.error ? `主线路异常：${item.fullStat.error}` : "",
+    `备用线路分片：${item.backupStat?.segments || "未知"}`,
+    `备用线路时长：${item.backupStat?.duration ? formatDuration(item.backupStat.duration) : "未知"}`,
+    `备用线路状态：${item.backupStat?.status || "未知"}`,
+    item.backupStat?.error ? `备用线路异常：${item.backupStat.error}` : "",
+    "",
+    "下载任务：",
+    ...taskLines
+  ].filter((line) => line !== "").join("\n");
+}
+
 function taskTone(task?: DownloadTask | null) {
   if (!task) return { label: "未创建", color: "bg-purple-50 text-purple-500" };
   if (task.stage === "error") return { label: "下载失败", color: "bg-rose-50 text-rose-600" };
@@ -424,6 +463,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             const recordTaskState = taskTone(recordTask);
             const recordCanSave = recordTask ? canSaveDownload(recordTask) : false;
             const recordPrimaryAction = recordTask?.stage === "error" ? "重试" : recordCanSave ? "保存" : "下载";
+            const recordReport = playbackRecordReport(item, recordTask);
             return (
               <div key={`${item.movieId}-${index}`} className="rounded-2xl border border-pink-100 bg-white p-3 shadow-sm">
                 <div className="flex items-start justify-between gap-2">
@@ -462,12 +502,11 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                 )}
                 <div className="mt-2 grid grid-cols-3 gap-1.5">
                   <button
-                    onClick={() => onAction("copy-play-link", { url: recordUrl, label: "播放记录完整链接" })}
-                    disabled={!recordUrl}
+                    onClick={() => onAction("copy-playback-health-report", { report: recordReport })}
                     className="flex items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 py-1.5 text-[11px] text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
-                    title="复制完整链接"
+                    title="复制该播放记录报告"
                   >
-                    <Copy size={11} /> 复制
+                    <Copy size={11} /> 报告
                   </button>
                   <button
                     onClick={() => onAction("refresh-full-detail", { movieId: item.movieId || "" })}
