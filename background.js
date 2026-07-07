@@ -34,9 +34,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-0016";
+const LOCAL_UPDATE_BUILD = "2026-07-08-0031";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 00:16 【优化】升级版本到 v2.3.4，下载页复制下载链接时同样补全为包含域名的完整绝对地址，并在任务卡片展示完整源链接摘要。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 00:31 【优化】升级版本到 v2.3.5，播放记录新增复制完整链接、刷新该视频资源、下载该视频和下载状态展示，回看历史记录时可以直接继续操作。";
 
 const DEFAULT_STATE = {
   role: "guest",

@@ -1,6 +1,6 @@
 import { AlertCircle, CheckCircle, Clock, Copy, Download, Film, Layers, Link, RefreshCw, Route, Save, ShieldCheck, Timer, Wifi } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
-import { canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
+import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 
 type Props = {
   state: BridgeState;
@@ -246,37 +246,77 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           <span className="text-[10px] text-purple-400">{records.length} 条</span>
         </div>
         <div className="space-y-2">
-          {records.length ? records.map((item, index) => (
-            <div key={`${item.movieId}-${index}`} className="rounded-2xl border border-pink-100 bg-white p-3 shadow-sm">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-semibold text-purple-800">{item.movieTitle || item.title || item.movieId || "播放详情"}</p>
-                  <div className="mt-0.5 flex items-center gap-1">
-                    {item.playLink || item.backupLink ? <CheckCircle size={10} className="shrink-0 text-emerald-400" /> : <AlertCircle size={10} className="shrink-0 text-rose-400" />}
-                    <p className="truncate text-[10px] text-purple-400">
-                      {item.playLink || item.backupLink ? `已就绪 · ${maskUrl(item.playLink || item.backupLink)}` : "播放详情缺少链接"}
-                    </p>
+          {records.length ? records.map((item, index) => {
+            // 播放记录支持直接续操作，减少用户回到详情页反复查找。
+            const recordUrl = absoluteUrl(item.playLink || item.backupLink || "");
+            const recordTask = downloadTaskForMovie(state, item.movieId);
+            const recordTaskProgress = recordTask ? downloadProgress(recordTask) : 0;
+            const recordTaskState = taskTone(recordTask);
+            return (
+              <div key={`${item.movieId}-${index}`} className="rounded-2xl border border-pink-100 bg-white p-3 shadow-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-semibold text-purple-800">{item.movieTitle || item.title || item.movieId || "播放详情"}</p>
+                    <div className="mt-0.5 flex items-center gap-1">
+                      {recordUrl ? <CheckCircle size={10} className="shrink-0 text-emerald-400" /> : <AlertCircle size={10} className="shrink-0 text-rose-400" />}
+                      <p className="truncate text-[10px] text-purple-400">
+                        {recordUrl ? `已就绪 · ${maskUrl(recordUrl)}` : "播放详情缺少链接"}
+                      </p>
+                    </div>
                   </div>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${recordTaskState.color}`}>
+                    {recordTaskState.label}
+                  </span>
                 </div>
-                <button
-                  onClick={() => onAction("download-full-video", { movieId: item.movieId || "" })}
-                  className="shrink-0 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 p-1.5 text-white shadow-sm transition-transform active:scale-95"
-                  title="下载该视频"
-                >
-                  <Download size={13} />
-                </button>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className="flex items-center gap-0.5 rounded-full bg-purple-50 px-2 py-0.5 text-[10px] text-purple-500"><Wifi size={9} /> M3U8</span>
-                <span className="flex items-center gap-0.5 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] text-sky-500"><Layers size={9} /> {item.fullStat?.segments || "?"} 分片</span>
-                {item.fullStat?.duration && (
-                  <span className="flex items-center gap-0.5 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] text-violet-500"><Timer size={9} /> {formatDuration(item.fullStat.duration)}</span>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="flex items-center gap-0.5 rounded-full bg-purple-50 px-2 py-0.5 text-[10px] text-purple-500"><Wifi size={9} /> M3U8</span>
+                  <span className="flex items-center gap-0.5 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] text-sky-500"><Layers size={9} /> {item.fullStat?.segments || "?"} 分片</span>
+                  {item.fullStat?.duration && (
+                    <span className="flex items-center gap-0.5 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] text-violet-500"><Timer size={9} /> {formatDuration(item.fullStat.duration)}</span>
+                  )}
+                  <span className="rounded-full bg-pink-50 px-2 py-0.5 text-[10px] text-pink-500">{item.accountLabel || item.accountUser || "自动账号"}</span>
+                  <span className="flex items-center gap-0.5 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] text-gray-400"><Clock size={9} /> {shortTime(String((item as { ts?: string }).ts || item.fetchedAt || ""))}</span>
+                </div>
+                {recordTask && recordTask.stage !== "complete" && (
+                  <div className="mt-2">
+                    <div className="mb-1 flex justify-between text-[10px] text-purple-400">
+                      <span>{downloadStageLabel(recordTask.stage)}</span>
+                      <span>{recordTask.total ? `${recordTask.current || 0}/${recordTask.total}` : `${recordTaskProgress}%`}</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-pink-100">
+                      <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${recordTaskProgress}%` }} />
+                    </div>
+                  </div>
                 )}
-                <span className="rounded-full bg-pink-50 px-2 py-0.5 text-[10px] text-pink-500">{item.accountLabel || item.accountUser || "自动账号"}</span>
-                <span className="flex items-center gap-0.5 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] text-gray-400"><Clock size={9} /> {shortTime(String((item as { ts?: string }).ts || ""))}</span>
+                <div className="mt-2 grid grid-cols-3 gap-1.5">
+                  <button
+                    onClick={() => onAction("copy-play-link", { url: recordUrl, label: "播放记录完整链接" })}
+                    disabled={!recordUrl}
+                    className="flex items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 py-1.5 text-[11px] text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
+                    title="复制完整链接"
+                  >
+                    <Copy size={11} /> 复制
+                  </button>
+                  <button
+                    onClick={() => onAction("refresh-full-detail", { movieId: item.movieId || "" })}
+                    disabled={!item.movieId}
+                    className="flex items-center justify-center gap-1 rounded-xl border border-sky-200 px-2 py-1.5 text-[11px] text-sky-500 transition-transform active:scale-95 disabled:opacity-45"
+                    title="刷新该视频资源"
+                  >
+                    <RefreshCw size={11} /> 刷新
+                  </button>
+                  <button
+                    onClick={() => onAction("download-full-video", { movieId: item.movieId || "" })}
+                    disabled={!item.movieId}
+                    className="flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 px-2 py-1.5 text-[11px] font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-45"
+                    title="下载该视频"
+                  >
+                    <Download size={11} /> 下载
+                  </button>
+                </div>
               </div>
-            </div>
-          )) : (
+            );
+          }) : (
             <div className="rounded-2xl border border-pink-100 bg-white p-4 text-xs text-purple-400 shadow-sm">还没有播放详情记录。打开视频详情页后即会自动记录。</div>
           )}
         </div>
