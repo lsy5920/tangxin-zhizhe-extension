@@ -85,18 +85,26 @@ function buildDiagnosticsReport(diagnostics?: WorkerDiagnostics) {
   const suggestions = (diagnostics.suggestions || [])
     .map((item) => `- ${item}`)
     .join("\n");
+  const actions = (diagnostics.nextActions || [])
+    .map((item) => `- ${item.label || "处理动作"}：${item.detail || "暂无详情"}`)
+    .join("\n");
+  const account = diagnostics.accountsSummary;
   return [
     "糖心志者云端服务体检报告",
     `体检结果：${levelText(diagnostics.level)}`,
     `体检分数：${Math.round(Number(diagnostics.score ?? 0))}`,
     `体检摘要：${diagnostics.summary || "未记录"}`,
     `检查时间：${diagnostics.checkedAt || "未记录"}`,
+    account ? `账号摘要：总数 ${account.total ?? 0}，启用 ${account.enabled ?? 0}，可用 ${account.ok ?? 0}，异常 ${account.error ?? 0}，待验证 ${account.unverified ?? 0}` : "账号摘要：未返回",
     "",
     "分项检查：",
     checks || "- 暂无分项检查",
     "",
     "建议下一步：",
-    suggestions || "- 暂无建议"
+    suggestions || "- 暂无建议",
+    "",
+    "快捷动作：",
+    actions || "- 暂无快捷动作"
   ].join("\n");
 }
 
@@ -145,6 +153,8 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateCheckStartedAt, setUpdateCheckStartedAt] = useState(0);
+  const [previousUpdateCheckedAt, setPreviousUpdateCheckedAt] = useState("");
   const [cacheChecked, setCacheChecked] = useState(cacheItems.map((_, i) => i !== 3));
   const [serviceCheck, setServiceCheck] = useState<CloudServiceCheck | null>(null);
   const [checkingService, setCheckingService] = useState(false);
@@ -159,10 +169,30 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
     return () => { alive = false; };
   }, [state.remote?.baseUrl]);
 
+  useEffect(() => {
+    if (!checkingUpdate || !updateCheckStartedAt) return;
+    const currentCheckedAt = String(state.repositoryUpdate?.checkedAt || "");
+    const checkedAt = Date.parse(currentCheckedAt);
+    if (!currentCheckedAt || currentCheckedAt === previousUpdateCheckedAt || !Number.isFinite(checkedAt) || checkedAt < updateCheckStartedAt - 1000) return;
+    setCheckingUpdate(false);
+    setShowUpdateModal(true);
+  }, [checkingUpdate, updateCheckStartedAt, previousUpdateCheckedAt, state.repositoryUpdate?.checkedAt]);
+
+  useEffect(() => {
+    if (!checkingUpdate) return;
+    const timer = window.setTimeout(() => {
+      setCheckingUpdate(false);
+      setCopyStatus("检测还没返回，请稍后查看或再次检查");
+      window.setTimeout(() => setCopyStatus(""), 1800);
+    }, 9000);
+    return () => window.clearTimeout(timer);
+  }, [checkingUpdate, updateCheckStartedAt]);
+
   const checkUpdate = () => {
     setCheckingUpdate(true);
+    setPreviousUpdateCheckedAt(String(state.repositoryUpdate?.checkedAt || ""));
+    setUpdateCheckStartedAt(Date.now());
     onAction("check-update");
-    window.setTimeout(() => { setCheckingUpdate(false); setShowUpdateModal(true); }, 1400);
   };
 
   const checkWorkerHealth = async () => {
@@ -201,12 +231,16 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
       `远程构建：${remoteBuildText}`,
       `发布时间：${remoteUpdate?.releasedAt || "未检测"}`,
       `检测模式：${updateCheckMode}`,
+      `检测来源：${updateSourceText}`,
       `清单地址：${updateManifestUrl || "未检测"}`,
       `检测时间：${updateCheckedText}`,
       `下载地址：${updateDownloadUrl || "未检测"}`,
       `候选地址：${updateCandidates.length ? updateCandidates.join(" | ") : "未检测"}`,
+      `实际尝试地址：${updateAttemptUrls.length ? updateAttemptUrls.join(" | ") : "未开始下载"}`,
       `下载状态：${state.repositoryUpdate?.downloadStatus || "未开始"}`,
       `下载错误：${state.repositoryUpdate?.downloadError || state.repositoryUpdate?.error || "无"}`,
+      `缓存策略：${updateCacheTip}`,
+      `下载策略：${updateDownloadPolicy}`,
       `更新状态：${updateAvailable ? "发现新版本" : "当前版本可用"}`,
       `更新说明：${updateSummary}`
     ];
@@ -252,15 +286,19 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
     remoteUpdate?.archiveUrl || ""
   ].filter(Boolean)));
   const updateDownloadUrl = state.repositoryUpdate?.downloadUrl || remoteUpdate?.archiveUrl || updateCandidates[0] || "";
+  const updateAttemptUrls = Array.from(new Set([...(state.repositoryUpdate?.downloadAttemptUrls || [])].filter(Boolean)));
   const updateSummary = updateFailed
     ? `更新检测失败：${state.repositoryUpdate?.error || "请稍后重试"}`
     : remoteUpdate?.detail || remoteUpdate?.text || remoteUpdate?.title || (remoteUpdate?.version ? "远程版本与本地一致。" : "请点击检查更新获取远程版本。");
   const updateSystemTip = state.repositoryUpdate?.updateSystem?.ignoredLegacyCache
     ? "已忽略旧版更新缓存，本次按新版清单重新检测。"
     : "新版升级系统会实时读取远程清单，并保留候选下载地址用于兜底。";
-  const updateCacheTip = state.repositoryUpdate?.updateSystem?.cacheTtlMs
-    ? `自动检测保护间隔约 ${Math.max(1, Math.round(Number(state.repositoryUpdate.updateSystem.cacheTtlMs) / 1000))} 秒，手动检查会立即绕过缓存。`
-    : "手动检查会立即绕过缓存读取远程清单。";
+  const updateCacheTip = state.repositoryUpdate?.updateSystem?.cachePolicy
+    || (state.repositoryUpdate?.updateSystem?.cacheTtlMs
+      ? `自动检测保护间隔约 ${Math.max(1, Math.round(Number(state.repositoryUpdate.updateSystem.cacheTtlMs) / 1000))} 秒，手动检查会立即绕过缓存。`
+      : "本版本检查更新会重新读取远程清单，不再沿用旧更新缓存。");
+  const updateDownloadPolicy = state.repositoryUpdate?.updateSystem?.downloadPolicy || "下载前会重新检测远程清单，并按候选地址自动兜底。";
+  const updateSourceDetail = remoteUpdate?.detectionSource || updateSourceText;
   const diagnostics = serviceCheck?.diagnostics;
   const diagnosticTone = levelClasses(diagnostics?.level);
   const accountProblem = hasDiagnosticKey(diagnostics, ["accounts", "usable", "risk", "unverified"]);
@@ -325,6 +363,34 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
                 <p className="flex items-center gap-1 text-[11px] font-semibold text-purple-700"><Lightbulb size={11} className="text-amber-400" /> 建议下一步</p>
                 {(diagnostics.suggestions || []).slice(0, 3).map((item) => (
                   <p key={item} className="text-[10px] leading-relaxed text-purple-400">{item}</p>
+                ))}
+              </div>
+            )}
+
+            {diagnostics.accountsSummary && (
+              <div className="grid grid-cols-5 gap-1 rounded-xl bg-white/80 px-2 py-2 text-center">
+                {[
+                  { label: "总数", value: diagnostics.accountsSummary.total ?? 0 },
+                  { label: "启用", value: diagnostics.accountsSummary.enabled ?? 0 },
+                  { label: "可用", value: diagnostics.accountsSummary.ok ?? 0 },
+                  { label: "异常", value: diagnostics.accountsSummary.error ?? 0 },
+                  { label: "待验", value: diagnostics.accountsSummary.unverified ?? 0 }
+                ].map((item) => (
+                  <div key={item.label} className="min-w-0">
+                    <p className="text-[10px] text-purple-300">{item.label}</p>
+                    <p className="truncate text-xs font-semibold text-purple-700">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(diagnostics.nextActions || []).length > 0 && (
+              <div className="space-y-1 rounded-xl bg-white/80 px-3 py-2">
+                <p className="text-[11px] font-semibold text-purple-700">服务端建议动作</p>
+                {(diagnostics.nextActions || []).slice(0, 3).map((item) => (
+                  <p key={item.id || item.label} className="text-[10px] leading-relaxed text-purple-400">
+                    {item.label || "处理动作"}：{item.detail || "暂无详情"}
+                  </p>
                 ))}
               </div>
             )}
@@ -399,9 +465,9 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
           </div>
           <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-purple-400">{updateSummary}</p>
           <div className="mt-2 grid gap-1 text-[10px] text-purple-300 sm:grid-cols-2">
-            <p>检测来源：{updateSourceText}</p>
+            <p>检测来源：{updateSourceDetail}</p>
             <p>检测模式：{updateCheckMode}</p>
-            <p>检测时间：{updateCheckedText}</p>
+            <p>检测时间：{checkingUpdate ? "实时检测中..." : updateCheckedText}</p>
             {remoteUpdate?.releasedAt && <p>发布时间：{remoteUpdate.releasedAt}</p>}
             {updateManifestUrl && <p className="truncate">清单地址：{updateManifestUrl}</p>}
             {updateDownloadUrl && <p className="truncate">下载地址：{updateDownloadUrl}</p>}
@@ -409,7 +475,9 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
           <div className="mt-2 rounded-xl bg-white/70 px-2 py-1.5 text-[10px] leading-relaxed text-purple-400">
             <p>{updateSystemTip}</p>
             <p className="mt-1">{updateCacheTip}</p>
+            <p className="mt-1">{updateDownloadPolicy}</p>
             {updateCandidates.length > 1 && <p className="mt-1 truncate">候选地址：{updateCandidates.join(" ｜ ")}</p>}
+            {updateAttemptUrls.length > 0 && <p className="mt-1 truncate">上次尝试：{updateAttemptUrls.join(" ｜ ")}</p>}
             {state.repositoryUpdate?.downloadStatus && <p className="mt-1">上次下载：{state.repositoryUpdate.downloadStatus}</p>}
             {state.repositoryUpdate?.downloadError && <p className="mt-1 text-rose-500">下载错误：{state.repositoryUpdate.downloadError}</p>}
           </div>
@@ -472,7 +540,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
               </div>
               <button onClick={() => setShowUpdateModal(false)}><X size={18} className="text-purple-400" /></button>
             </div>
-            <p className="mb-4 text-xs text-purple-400">{updateFailed ? updateSummary : updateAvailable ? `远程版本 ${remoteVersionText}，构建 ${remoteBuildText}，点击下载最新版。` : `当前版本 ${APP_VERSION_LABEL} 已完成本地校验，可继续使用。`}</p>
+            <p className="mb-4 text-xs text-purple-400">{checkingUpdate ? "正在实时读取远程 update.json，请稍候。" : updateFailed ? updateSummary : updateAvailable ? `远程版本 ${remoteVersionText}，构建 ${remoteBuildText}，点击下载最新版。` : `当前版本 ${APP_VERSION_LABEL} 已完成本地校验，可继续使用。`}</p>
             <div className="flex gap-2">
               <button onClick={() => setShowUpdateModal(false)} className="flex-1 rounded-xl border border-pink-200 py-2 text-sm font-medium text-purple-500">稍后</button>
               <button

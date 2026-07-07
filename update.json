@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.6.1",
-  "build": "2026-07-08-0232",
-  "releasedAt": "2026-07-08 02:32",
+  "version": "2.6.2",
+  "build": "2026-07-08-0242",
+  "releasedAt": "2026-07-08 02:42",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -12,10 +12,10 @@
   ],
   "changelog": [
     {
-      "id": "2026-07-08-0232",
+      "id": "2026-07-08-0242",
       "type": "优化",
-      "title": "优化播放记录排序体验",
-      "detail": "播放页新增播放记录排序切换，可按最近、异常、可保存和备用线路重排当前搜索与筛选结果；播放记录列表和批量报告都会沿用当前可见顺序，方便优先处理异常记录、可保存任务或带备用线路的视频。"
+      "title": "全面重构升级检测和最新版下载链路",
+      "detail": "升级系统提升到 v3，旧更新缓存和旧运行数据不再沿用；检查更新每次都会重新读取远程 update.json，并用 README 更新日志兜底识别清单漏更；下载最新版会重新检测远程清单，给实际下载地址追加时间戳并自动尝试多个 GitHub 压缩包候选地址，设置页同步展示缓存策略、下载策略、尝试地址和失败原因。"
     }
   ]
 }

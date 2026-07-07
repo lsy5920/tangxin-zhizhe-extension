@@ -98,6 +98,20 @@ export type WorkerDiagnostics = {
     message?: string;
   }[];
   suggestions?: string[];
+  nextActions?: {
+    id?: string;
+    label?: string;
+    priority?: "high" | "medium" | "low" | string;
+    detail?: string;
+  }[];
+  accountsSummary?: {
+    total?: number;
+    enabled?: number;
+    ok?: number;
+    error?: number;
+    unverified?: number;
+    avgCoin?: number | null;
+  } | null;
 };
 
 export type BridgeState = {
@@ -133,6 +147,7 @@ export type BridgeState = {
     manifestUrl?: string;
     downloadUrl?: string;
     downloadCandidates?: string[];
+    downloadAttemptUrls?: string[];
     downloadStatus?: string;
     downloadError?: string;
     updateAvailable?: boolean;
@@ -140,6 +155,8 @@ export type BridgeState = {
       schemaVersion?: string;
       cacheTtlMs?: number;
       ignoredLegacyCache?: boolean;
+      cachePolicy?: string;
+      downloadPolicy?: string;
     };
     local?: {
       version?: string;
@@ -157,6 +174,7 @@ export type BridgeState = {
       text?: string;
       archiveUrl?: string;
       downloadCandidates?: string[];
+      detectionSource?: string;
     };
   } | null;
   publishedAt?: string;

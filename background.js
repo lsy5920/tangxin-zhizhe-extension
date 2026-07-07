@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 const API_CONFIG = {
   baseUrl: "https://txh068.com",
@@ -7,8 +7,8 @@ const API_CONFIG = {
   aesKey: "fd14f9f8e38808fa"
 };
 
-const STORAGE_SCHEMA_VERSION = "2026-07-08-upgrade-system-v2";
-const UPDATE_STATE_SCHEMA_VERSION = "2026-07-08-update-system-v2";
+const STORAGE_SCHEMA_VERSION = "2026-07-08-upgrade-system-v3";
+const UPDATE_STATE_SCHEMA_VERSION = "2026-07-08-update-system-v3";
 const LEGACY_REMOTE_BASE_URLS = [
   "https://txzz.lsy20.top",
   "https://txzz-secure-pool.3199912548.workers.dev"
@@ -34,13 +34,13 @@ const REPOSITORY_CONFIG = {
     "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/README.md",
     "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/master/README.md"
   ],
-  checkIntervalMs: 30 * 1000,
+  checkIntervalMs: 0,
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-0232";
+const LOCAL_UPDATE_BUILD = "2026-07-08-0242";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 02:32 【优化】升级版本到 v2.6.1，播放记录新增排序切换。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 02:42 【优化】升级版本到 v2.6.2，全面重构升级检测和最新版下载链路。";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1485,6 +1485,51 @@ function uniqueTextList(values = []) {
   return Array.from(new Set(values.map((item) => String(item || "").trim()).filter(Boolean)));
 }
 
+function safeHttpUrl(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  try {
+    const parsed = new URL(text);
+    if (!["http:", "https:"].includes(parsed.protocol)) return "";
+    return parsed.href;
+  } catch (_) {
+    return "";
+  }
+}
+
+function appendUrlCacheBuster(url = "", key = "txzz_download") {
+  const safeUrl = safeHttpUrl(url);
+  if (!safeUrl) return "";
+  try {
+    const parsed = new URL(safeUrl);
+    parsed.searchParams.set(key, `${Date.now()}_${Math.random().toString(16).slice(2)}`);
+    return parsed.href;
+  } catch (_) {
+    return safeUrl;
+  }
+}
+
+function parseBuildStamp(value = "") {
+  const digits = String(value || "").replace(/[^\d]/g, "");
+  if (digits.length < 12) return null;
+  const compact = digits.slice(0, 12);
+  const year = Number(compact.slice(0, 4));
+  const month = Number(compact.slice(4, 6));
+  const day = Number(compact.slice(6, 8));
+  const hour = Number(compact.slice(8, 10));
+  const minute = Number(compact.slice(10, 12));
+  if (![year, month, day, hour, minute].every(Number.isFinite)) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
+  return Date.UTC(year, month - 1, day, hour, minute);
+}
+
+function compareBuilds(a = "", b = "") {
+  const at = parseBuildStamp(a);
+  const bt = parseBuildStamp(b);
+  if (Number.isFinite(at) && Number.isFinite(bt)) return at - bt;
+  return String(a || "").localeCompare(String(b || ""), "zh-CN", { numeric: true, sensitivity: "base" });
+}
+
 function normalizeRemoteUpdateManifest(raw = {}) {
   const changelog = Array.isArray(raw.changelog) ? raw.changelog : [];
   const latest = changelog[0] || {};
@@ -1497,7 +1542,7 @@ function normalizeRemoteUpdateManifest(raw = {}) {
     ...(Array.isArray(raw.archiveUrls) ? raw.archiveUrls : []),
     ...(Array.isArray(raw.assets) ? raw.assets.map((item) => item?.downloadUrl || item?.url) : [])
   ];
-  const downloadCandidates = uniqueTextList(rawCandidates);
+  const downloadCandidates = uniqueTextList(rawCandidates.map(safeHttpUrl));
   return {
     schema: Number(raw.schema || 2),
     name: String(raw.name || "糖心志者"),
@@ -1515,10 +1560,41 @@ function normalizeRemoteUpdateManifest(raw = {}) {
 }
 
 function currentArchiveUrl(remoteManifest = {}) {
-  return remoteManifest.archiveUrl
-    || remoteManifest.downloadUrl
-    || REPOSITORY_CONFIG.archiveUrls[0]
+  return safeHttpUrl(remoteManifest.archiveUrl)
+    || safeHttpUrl(remoteManifest.downloadUrl)
+    || safeHttpUrl(REPOSITORY_CONFIG.archiveUrls[0])
     || `https://codeload.github.com/${REPOSITORY_CONFIG.owner}/${REPOSITORY_CONFIG.repo}/zip/refs/heads/main`;
+}
+
+function githubArchiveFallbackCandidates() {
+  return [
+    `https://codeload.github.com/${REPOSITORY_CONFIG.owner}/${REPOSITORY_CONFIG.repo}/zip/refs/heads/main`,
+    `https://github.com/${REPOSITORY_CONFIG.owner}/${REPOSITORY_CONFIG.repo}/archive/refs/heads/main.zip`,
+    `https://api.github.com/repos/${REPOSITORY_CONFIG.owner}/${REPOSITORY_CONFIG.repo}/zipball/main`,
+    ...REPOSITORY_CONFIG.archiveUrls
+  ];
+}
+
+function readmeFallbackUpdate(remoteManifest = {}, remoteReadmeHead = null, localReadmeHead = null) {
+  if (!remoteReadmeHead) return null;
+  const localLine = String(localReadmeHead?.line || "");
+  const remoteLine = String(remoteReadmeHead.line || "");
+  const readmeNewer = localLine
+    ? compareChangelogTime(remoteReadmeHead, localReadmeHead || {}) > 0 && remoteLine !== localLine
+    : Boolean(remoteLine);
+  if (!readmeNewer) return null;
+  const remoteVersion = String(remoteManifest.version || localExtensionVersion() || "").trim();
+  const remoteBuild = String(remoteManifest.build || remoteReadmeHead.id || LOCAL_UPDATE_BUILD || "").trim();
+  return {
+    id: `readme|${remoteReadmeHead.id || remoteLine}`,
+    title: remoteReadmeHead.text || "远程 README 有新的更新日志",
+    detail: remoteLine || remoteReadmeHead.text || "远程 README 出现本地没有的新记录。",
+    line: remoteLine,
+    type: remoteReadmeHead.type || "【更新】",
+    releasedAt: remoteReadmeHead.time || "",
+    version: remoteVersion,
+    build: remoteBuild
+  };
 }
 
 // 统一生成最新版压缩包候选地址，远程清单优先，固定 GitHub 地址兜底。
@@ -1529,35 +1605,42 @@ function repositoryArchiveCandidates(remoteManifest = {}, meta = {}) {
     remoteManifest.archiveUrl,
     remoteManifest.downloadUrl,
     ...(Array.isArray(remoteManifest.downloadCandidates) ? remoteManifest.downloadCandidates : []),
-    ...REPOSITORY_CONFIG.archiveUrls
-  ]);
+    ...githubArchiveFallbackCandidates()
+  ].map(safeHttpUrl));
+}
+
+function repositoryDownloadAttempts(remoteManifest = {}, meta = {}) {
+  // 实际提交下载时追加时间戳，降低浏览器或代理缓存拿到旧压缩包的概率。
+  return uniqueTextList(repositoryArchiveCandidates(remoteManifest, meta).map((url) => appendUrlCacheBuster(url)));
 }
 
 function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
   const localVersion = localExtensionVersion();
   const localBuild = LOCAL_UPDATE_BUILD;
-  const updateAvailable = shouldUpdateByManifest(remoteManifest, localVersion, localBuild);
-  const updateId = remoteManifest.id || `${remoteManifest.version}|${remoteManifest.build}`;
+  const readmeFallback = options.readmeFallback || null;
+  const updateAvailable = shouldUpdateByManifest(remoteManifest, localVersion, localBuild) || Boolean(readmeFallback);
+  const updateId = readmeFallback?.id || remoteManifest.id || `${remoteManifest.version}|${remoteManifest.build}`;
   const latest = remoteManifest.latest || {};
   const downloadCandidates = repositoryArchiveCandidates(remoteManifest);
   const downloadUrl = downloadCandidates[0] || currentArchiveUrl(remoteManifest);
   const remote = {
     id: updateId,
-    line: `${remoteManifest.releasedAt || remoteManifest.build} 【${latest.type || "更新"}】${latest.title || "发现新版本"}`,
-    time: remoteManifest.releasedAt || "",
-    type: `【${latest.type || "更新"}】`,
-    text: latest.detail || latest.title || "远程版本清单已发布新版本。",
-    title: latest.title || (updateAvailable ? "发现新版本" : "当前已是最新版本"),
-    detail: latest.detail || "",
-    version: remoteManifest.version,
-    build: remoteManifest.build,
-    releasedAt: remoteManifest.releasedAt,
+    line: readmeFallback?.line || `${remoteManifest.releasedAt || remoteManifest.build} 【${latest.type || "更新"}】${latest.title || "发现新版本"}`,
+    time: readmeFallback?.releasedAt || remoteManifest.releasedAt || "",
+    type: readmeFallback?.type || `【${latest.type || "更新"}】`,
+    text: readmeFallback?.detail || latest.detail || latest.title || "远程版本清单已发布新版本。",
+    title: readmeFallback?.title || latest.title || (updateAvailable ? "发现新版本" : "当前已是最新版本"),
+    detail: readmeFallback?.detail || latest.detail || "",
+    version: readmeFallback?.version || remoteManifest.version,
+    build: readmeFallback?.build || remoteManifest.build,
+    releasedAt: readmeFallback?.releasedAt || remoteManifest.releasedAt,
     archiveUrl: downloadUrl,
-    downloadCandidates
+    downloadCandidates,
+    detectionSource: readmeFallback ? "README 更新日志兜底" : "update.json"
   };
   return {
     ok: true,
-    source: "update.json",
+    source: readmeFallback ? "update.json + README" : "update.json",
     checkedAt: nowIso(),
     checkMode: options.realtime ? "实时检测" : "自动检测",
     updateAvailable,
@@ -1569,10 +1652,13 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
     local: { version: localVersion, build: localBuild },
     remote,
     updateManifest: remoteManifest,
+    readmeFallback,
     updateSystem: {
       schemaVersion: UPDATE_STATE_SCHEMA_VERSION,
       cacheTtlMs: REPOSITORY_CONFIG.checkIntervalMs,
-      ignoredLegacyCache: Boolean(options.ignoredLegacyCache)
+      ignoredLegacyCache: Boolean(options.ignoredLegacyCache),
+      cachePolicy: "本版本不再复用旧更新缓存，手动和自动检测都会重新读取远程清单。",
+      downloadPolicy: "下载前重新检测远程清单，实际下载地址会追加时间戳并自动尝试候选地址。"
     },
     ...(options.extra || {})
   };
@@ -1596,7 +1682,23 @@ function shouldUpdateByManifest(remote = {}, localVersion = localExtensionVersio
   const versionDiff = compareVersions(remote.version, localVersion);
   if (versionDiff > 0) return true;
   if (versionDiff < 0) return false;
-  return Boolean(remote.build && remote.build !== localBuild);
+  return compareBuilds(remote.build, localBuild) > 0;
+}
+
+/*
+  旧升级系统曾在这里保留一套 README 对比和短缓存链路。当前版本改为每次检测
+  都以远程 update.json 为主，README 只作为清单漏更新时的兜底信号。
+*/
+async function resolveReadmeFallback(remoteManifest = {}) {
+  try {
+    const [remoteReadme, localEntries] = await Promise.all([
+      fetchRemoteReadme(),
+      getLocalChangelogEntries()
+    ]);
+    return readmeFallbackUpdate(remoteManifest, parseChangelogHead(remoteReadme.text), localEntries[0] || null);
+  } catch (_) {
+    return null;
+  }
 }
 
 async function fetchTextWithTimeout(url, timeoutMs = REPOSITORY_CONFIG.timeoutMs) {
@@ -1619,7 +1721,7 @@ async function fetchRemoteReadme() {
   const errors = [];
   for (const url of REPOSITORY_CONFIG.readmeUrls) {
     try {
-      return { url, text: await fetchTextWithTimeout(url) };
+      return { url, text: await fetchTextWithTimeout(appendUrlCacheBuster(url, "txzz_readme")) };
     } catch (err) {
       errors.push(`${url}: ${err?.message || String(err)}`);
     }
@@ -1642,33 +1744,20 @@ async function getLocalChangelogEntries() {
 async function checkRepositoryUpdate(options = {}) {
   const stored = await chrome.storage.local.get("txzzUpdateState");
   const updateState = stored.txzzUpdateState || {};
-  const now = Date.now();
-  const cached = updateState.lastUpdateResult || {};
   const stateSchemaOk = updateState.schemaVersion === UPDATE_STATE_SCHEMA_VERSION;
-  const cacheMatchesLocal = stateSchemaOk && cached.local?.version === localExtensionVersion() && cached.local?.build === LOCAL_UPDATE_BUILD;
-  const canUseCache = !options.force
-    && !options.realtime
-    && cacheMatchesLocal
-    && updateState.lastCheckedAt
-    && now - Number(updateState.lastCheckedAt || 0) < REPOSITORY_CONFIG.checkIntervalMs;
-  if (canUseCache) {
-    return {
-      ok: true,
-      skipped: true,
-      fromCache: true,
-      updateAvailable: Boolean(cached.updateAvailable),
-      shouldNotify: Boolean(cached.updateAvailable),
-      ...cached,
-      updateState
-    };
+  if (!stateSchemaOk && Object.keys(updateState).length) {
+    await chrome.storage.local.remove("txzzUpdateState");
   }
+  const now = Date.now();
   try {
     const remoteManifest = await fetchRemoteUpdateManifest({ force: true, realtime: true });
-    const updateId = remoteManifest.id || `${remoteManifest.version}|${remoteManifest.build}`;
+    const readmeFallback = await resolveReadmeFallback(remoteManifest);
+    const updateId = readmeFallback?.id || remoteManifest.id || `${remoteManifest.version}|${remoteManifest.build}`;
     const result = buildRepositoryUpdateResult(remoteManifest, {
       realtime: Boolean(options.realtime || options.force),
       manifestUrl: remoteManifest.manifestUrl,
-      ignoredLegacyCache: !stateSchemaOk
+      ignoredLegacyCache: !stateSchemaOk,
+      readmeFallback
     });
     const nextUpdateState = {
       schemaVersion: UPDATE_STATE_SCHEMA_VERSION,
@@ -1712,7 +1801,9 @@ async function checkRepositoryUpdate(options = {}) {
       updateSystem: {
         schemaVersion: UPDATE_STATE_SCHEMA_VERSION,
         cacheTtlMs: REPOSITORY_CONFIG.checkIntervalMs,
-        ignoredLegacyCache: !stateSchemaOk
+        ignoredLegacyCache: !stateSchemaOk,
+        cachePolicy: "本版本不再复用旧更新缓存，检测失败时也会记录最新失败原因。",
+        downloadPolicy: "下载最新版仍会尝试固定 GitHub 压缩包候选地址。"
       }
     };
     const nextUpdateState = {
@@ -1748,12 +1839,15 @@ async function buildLatestArchiveDownloadPlan(meta = {}) {
   const version = safeFileName(String(meta.version || remote.version || manifest.version || localExtensionVersion() || "latest"));
   const build = safeFileName(String(meta.build || remote.build || manifest.build || LOCAL_UPDATE_BUILD || "main"));
   const filename = `糖心志者/糖心志者_${version}_${build}_最新版.zip`;
-  // 下载计划不信任前端旧地址，始终重新合并远程清单和固定候选地址。
   const candidates = repositoryArchiveCandidates(manifest, {
     url: meta.url || remote.archiveUrl || update?.downloadUrl,
     downloadUrl: meta.downloadUrl
   });
-  return { update, manifestError, version, build, filename, candidates };
+  const attempts = repositoryDownloadAttempts(manifest, {
+    url: meta.url || remote.archiveUrl || update?.downloadUrl,
+    downloadUrl: meta.downloadUrl
+  });
+  return { update, manifestError, version, build, filename, candidates, attempts };
 }
 
 async function recordRepositoryArchiveDownload(result = {}) {
@@ -1769,8 +1863,9 @@ async function recordRepositoryArchiveDownload(result = {}) {
     lastUpdateResult: updateState.lastUpdateResult
       ? {
           ...updateState.lastUpdateResult,
-          downloadUrl: result.url || updateState.lastUpdateResult.downloadUrl,
+          downloadUrl: result.displayUrl || result.url || updateState.lastUpdateResult.downloadUrl,
           downloadCandidates: result.candidates || updateState.lastUpdateResult.downloadCandidates || [],
+          downloadAttemptUrls: result.attempts || [],
           downloadStatus: result.ok ? "已提交下载" : "下载失败",
           downloadError: result.ok ? "" : (result.errors || []).join("；")
         }
@@ -1795,30 +1890,36 @@ async function markRepositoryUpdateNotified(updateId = "", mode = "notified") {
 
 async function downloadRepositoryArchive(meta = {}) {
   const plan = await buildLatestArchiveDownloadPlan(meta);
-  const { update, manifestError, filename, candidates } = plan;
+  const { update, manifestError, filename, candidates, attempts } = plan;
   const errors = [];
-  for (const url of candidates) {
+  for (let i = 0; i < attempts.length; i += 1) {
+    const url = attempts[i];
+    const displayUrl = candidates[i] || url;
+    if (!safeHttpUrl(url)) {
+      errors.push(`${displayUrl || url}：下载地址不是有效的 HTTP 链接`);
+      continue;
+    }
     try {
       const downloadId = await chrome.downloads.download({
         url,
         filename,
-        saveAs: true,
+        saveAs: Boolean(meta.saveAs),
         conflictAction: "uniquify"
       });
-      const result = { ok: true, downloadId, filename, url, candidates, manifestError, update };
+      const result = { ok: true, downloadId, filename, url, displayUrl, candidates, attempts, manifestError, update };
       await recordRepositoryArchiveDownload(result);
       return result;
     } catch (err) {
-      errors.push(`${url}：${err?.message || String(err)}`);
+      errors.push(`${displayUrl}：${err?.message || String(err)}`);
     }
   }
   const finalErrors = [
     manifestError ? `远程清单检测失败：${manifestError}` : "",
     ...errors
   ].filter(Boolean);
-  await recordRepositoryArchiveDownload({ ok: false, filename, url: "", candidates, errors: finalErrors });
+  await recordRepositoryArchiveDownload({ ok: false, filename, url: "", candidates, attempts, errors: finalErrors });
   const error = `最新版下载失败：${finalErrors.join("；") || "没有可用下载地址"}`;
-  return { ok: false, error, filename, url: "", candidates, errors: finalErrors, manifestError, update };
+  return { ok: false, error, filename, url: "", candidates, attempts, errors: finalErrors, manifestError, update };
 }
 
 async function upsertAccount(raw) {

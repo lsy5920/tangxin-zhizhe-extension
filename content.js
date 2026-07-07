@@ -2026,6 +2026,7 @@
             error: failed.error || err?.message || String(err),
             downloadUrl: latest?.downloadUrl || uiState.repositoryUpdate?.downloadUrl || "",
             downloadCandidates: failed.candidates || latest?.downloadCandidates || uiState.repositoryUpdate?.downloadCandidates || [],
+            downloadAttemptUrls: failed.attempts || [],
             downloadStatus: "下载失败",
             downloadError: failed.error || err?.message || String(err)
           });
@@ -2033,13 +2034,14 @@
         }
         const mergedUpdate = {
           ...(latest || uiState.repositoryUpdate || {}),
-          downloadUrl: response.url || latest?.downloadUrl || uiState.repositoryUpdate?.downloadUrl || "",
+          downloadUrl: response.displayUrl || latest?.downloadUrl || uiState.repositoryUpdate?.downloadUrl || "",
           downloadCandidates: response.candidates || latest?.downloadCandidates || uiState.repositoryUpdate?.downloadCandidates || [],
+          downloadAttemptUrls: response.attempts || [],
           downloadStatus: response.downloadId ? "已提交下载" : "已发送下载请求",
           downloadError: ""
         };
         rememberRepositoryUpdate(mergedUpdate);
-        emitFlow("版本更新", response.downloadId ? `已开始下载最新版压缩包：${response.filename}，地址 ${response.url}` : "已提交最新版下载任务", "ok");
+        emitFlow("版本更新", response.downloadId ? `已开始下载最新版压缩包：${response.filename}，地址 ${response.displayUrl || response.url}` : "已提交最新版下载任务", "ok");
       }
       if (action === "show-update-dialog") {
         if (uiState.repositoryUpdate?.updateAvailable) showRepositoryUpdateDialog(uiState.repositoryUpdate);
