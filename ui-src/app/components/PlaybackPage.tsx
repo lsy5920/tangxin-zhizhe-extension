@@ -422,6 +422,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             const recordTask = downloadTaskForMovie(state, item.movieId);
             const recordTaskProgress = recordTask ? downloadProgress(recordTask) : 0;
             const recordTaskState = taskTone(recordTask);
+            const recordCanSave = recordTask ? canSaveDownload(recordTask) : false;
+            const recordPrimaryAction = recordTask?.stage === "error" ? "重试" : recordCanSave ? "保存" : "下载";
             return (
               <div key={`${item.movieId}-${index}`} className="rounded-2xl border border-pink-100 bg-white p-3 shadow-sm">
                 <div className="flex items-start justify-between gap-2">
@@ -476,12 +478,17 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                     <RefreshCw size={11} /> 刷新
                   </button>
                   <button
-                    onClick={() => onAction("download-full-video", { movieId: item.movieId || "" })}
-                    disabled={!item.movieId}
+                    onClick={() => {
+                      // 播放记录里的主按钮按当前下载状态智能切换，减少用户再跳回下载页找任务。
+                      if (recordTask?.stage === "error") onAction("download-full-video", { movieId: recordTask.movieId || item.movieId || "" });
+                      else if (recordCanSave) onAction("save-download-device", { taskId: recordTask?.taskId || "" });
+                      else onAction("download-full-video", { movieId: item.movieId || "" });
+                    }}
+                    disabled={recordCanSave ? !recordTask?.taskId : !item.movieId}
                     className="flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 px-2 py-1.5 text-[11px] font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-45"
-                    title="下载该视频"
+                    title={recordCanSave ? "保存该视频到设备" : recordTask?.stage === "error" ? "重新创建下载任务" : "下载该视频"}
                   >
-                    <Download size={11} /> 下载
+                    {recordCanSave ? <Save size={11} /> : recordTask?.stage === "error" ? <RefreshCw size={11} /> : <Download size={11} />} {recordPrimaryAction}
                   </button>
                 </div>
               </div>
