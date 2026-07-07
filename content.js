@@ -1590,6 +1590,32 @@
     showToast("已处理保存到设备", "ok");
   }
 
+  async function saveReadyDownloads(taskIds = []) {
+    const ids = Array.isArray(taskIds) ? taskIds.map((item) => String(item || "")).filter(Boolean) : [];
+    if (!ids.length) {
+      emitFlow("下载管理", "当前筛选没有可保存任务", "error");
+      return;
+    }
+    let success = 0;
+    let lastState = null;
+    const errors = [];
+    // 浏览器下载保存可能弹出系统确认，批量入口按顺序处理，避免同时打开过多保存任务。
+    for (const taskId of ids) {
+      try {
+        const response = await sendRuntime("saveDownloadToDevice", { taskId });
+        success += 1;
+        lastState = response.state || lastState;
+      } catch (err) {
+        errors.push(err?.message || String(err));
+      }
+    }
+    if (lastState) syncSavedState(lastState);
+    else await refreshLocalDownloadState();
+    if (errors.length) emitFlow("下载管理", `已处理 ${success} 个可保存任务，${errors.length} 个失败`, success ? "ok" : "error");
+    else emitFlow("下载管理", `已处理 ${success} 个可保存任务`, "ok");
+    showToast(`已处理 ${success} 个可保存任务`, success ? "ok" : "error");
+  }
+
   async function removeDownloadTask(taskId = "", movieId = "") {
     const response = await sendRuntime("removeDownloadTask", { taskId, movieId });
     syncSavedState(response.state || {});
@@ -1822,6 +1848,7 @@
       if (action === "copy-filtered-download-urls") await copyFilteredDownloadUrls(payload.taskIds || []);
       if (action === "copy-download-snapshot") await copyDownloadSnapshot(payload.snapshotId || "");
       if (action === "save-download-device") await saveDownloadDevice(payload.taskId || "");
+      if (action === "save-ready-downloads") await saveReadyDownloads(payload.taskIds || []);
       if (action === "remove-download-task") await removeDownloadTask(payload.taskId || "", payload.movieId || "");
       if (action === "clear-downloads") await clearDownloadTasks();
       if (action === "clear-download-snapshots") await clearDownloadSnapshots();

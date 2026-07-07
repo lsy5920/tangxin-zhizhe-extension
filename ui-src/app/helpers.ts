@@ -153,7 +153,7 @@ export function downloadTitle(task: DownloadTask) {
 }
 
 export function canSaveDownload(task: DownloadTask) {
-  return task.stage === "ready" || task.stage === "complete" || (task.mode === "direct" && Boolean(task.url));
+  return task.stage === "ready" || (task.mode === "direct" && task.stage !== "complete" && task.stage !== "error" && Boolean(task.url));
 }
 
 export function downloadTaskForMovie(state: BridgeState, movieId?: string) {

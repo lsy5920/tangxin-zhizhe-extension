@@ -37,6 +37,7 @@ export function DownloadsPage({ state, onAction }: Props) {
   ];
   const filteredTaskIds = filteredTasks.map((task) => task.taskId || "").filter(Boolean);
   const filteredLinkCount = filteredTasks.filter((task) => Boolean(task.url)).length;
+  const readyTaskIds = filteredTasks.filter(canSaveDownload).map((task) => task.taskId || "").filter(Boolean);
   const retryMovieIds = Array.from(new Set(filteredTasks
     .filter((task) => task.stage === "error" && task.movieId)
     .map((task) => String(task.movieId))));
@@ -87,6 +88,14 @@ export function DownloadsPage({ state, onAction }: Props) {
         </button>
         <button onClick={() => onAction("save-downloads")} className="flex items-center gap-1 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-500 px-3 py-2 text-xs text-white shadow-sm transition-transform active:scale-95">
           <Save size={13} /> 保存记录
+        </button>
+        <button
+          onClick={() => onAction("save-ready-downloads", { taskIds: readyTaskIds })}
+          disabled={!readyTaskIds.length}
+          className="flex items-center gap-1 rounded-xl border border-emerald-200 px-3 py-2 text-xs text-emerald-500 transition-transform active:scale-95 disabled:opacity-45"
+          title="逐个处理当前筛选里的可保存任务"
+        >
+          <Save size={13} /> 保存全部
         </button>
         <button
           onClick={() => onAction("copy-filtered-download-urls", { taskIds: filteredTaskIds })}
