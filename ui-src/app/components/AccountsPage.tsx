@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle, Cloud, Coins, Crown, Edit2, Eye, EyeOff, HardDrive, Heart, Key, Plus, RefreshCw, ShieldCheck, Trash2, Upload, X, XCircle } from "lucide-react";
-import type { AccountItem, BridgeState } from "../types";
+import type { AccountItem, AccountsPageIntent, BridgeState } from "../types";
 import { accountAvailable, accountName, accountRights, accountStats, accountStatusLabel, formatRelativeTime, isCloudAccount, visibleAccounts } from "../helpers";
 
 type AddType = "password" | "qrcode" | "token";
-type Props = { state: BridgeState; onAction: (action: string, payload?: Record<string, unknown>) => void; };
+type Props = {
+  state: BridgeState;
+  onAction: (action: string, payload?: Record<string, unknown>) => void;
+  intent?: AccountsPageIntent;
+};
 
 const modeOptions = [
   { val: "cloud", label: "云端自动轮换" },
@@ -18,7 +22,7 @@ function accountTypeText(type: AddType) {
   return "token/deviceId";
 }
 
-export function AccountsPage({ state, onAction }: Props) {
+export function AccountsPage({ state, onAction, intent }: Props) {
   const [showInvalid, setShowInvalid] = useState(false);
   const [workerUrl, setWorkerUrl] = useState(state.remote?.baseUrl || "");
   const [sourceMode, setSourceMode] = useState(state.remote?.accountSourceMode || "cloud");
@@ -34,6 +38,11 @@ export function AccountsPage({ state, onAction }: Props) {
     setWorkerUrl(state.remote?.baseUrl || "");
     setSourceMode(state.remote?.accountSourceMode || "cloud");
   }, [state.remote?.baseUrl, state.remote?.accountSourceMode]);
+
+  useEffect(() => {
+    if (typeof intent?.showInvalid === "boolean") setShowInvalid(intent.showInvalid);
+    if (intent?.openAdd) setShowTypeSelect(true);
+  }, [intent?.showInvalid, intent?.openAdd]);
 
   const saveRemote = () => onAction("save-remote", { remoteBaseUrl: workerUrl, accountSourceMode: sourceMode });
 
@@ -120,7 +129,7 @@ export function AccountsPage({ state, onAction }: Props) {
       <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
         <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><Cloud size={14} className="text-sky-400" /> 远程配置</h3>
         <div>
-          <label className="mb-1 block text-[11px] text-purple-400">Worker URL</label>
+          <label className="mb-1 block text-[11px] text-purple-400">云端服务地址</label>
           <input value={workerUrl} onChange={(e) => setWorkerUrl(e.target.value)} className="w-full rounded-xl border border-pink-200 bg-pink-50 px-3 py-2 text-xs text-purple-700 outline-none focus:border-purple-400" placeholder="https://txzzsecure.lsy20.top" />
         </div>
         <div>
@@ -146,7 +155,7 @@ export function AccountsPage({ state, onAction }: Props) {
         </div>
         <div className="space-y-2">
           {accounts.filter(isCloudAccount).map(renderAccount)}
-          {!accounts.filter(isCloudAccount).length && <div className="rounded-2xl border border-pink-100 bg-white p-3 text-xs text-purple-400 shadow-sm">暂无云端账号，请先同步账号池。</div>}
+          {!accounts.filter(isCloudAccount).length && <div className="rounded-2xl border border-pink-100 bg-white p-3 text-xs text-purple-400 shadow-sm">暂无云端账号，请先保存云端服务地址并同步账号池。</div>}
         </div>
       </div>
 

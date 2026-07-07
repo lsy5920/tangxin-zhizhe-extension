@@ -64,7 +64,7 @@ export function OverviewPage({ state, onAction, onPage }: Props) {
           {state.session?.nickname ? `你好，${state.session.nickname} 👋` : "你好，欢迎回来 👋"}
         </h2>
         <p className="text-[11px] opacity-60 mb-3">
-          {state.session?.userId ? `ID ${state.session.userId}` : "等待读取当前页面会话"} · v2.2.0
+          {state.session?.userId ? `ID ${state.session.userId}` : "等待读取当前页面会话"} · v2.3.0
         </p>
         <div className="flex flex-wrap gap-2 text-[11px]">
           <span className="rounded-full bg-white/20 px-3 py-1 backdrop-blur">账号 {state.accountPool?.length || 0}</span>

@@ -1,31 +1,108 @@
 import { useState } from "react";
-import { AlertTriangle, CheckCircle, Download, ExternalLink, Info, Package, Radio, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
-import type { BridgeState } from "../types";
+import { Activity, AlertTriangle, CheckCircle, Copy, Download, ExternalLink, Info, Lightbulb, Package, Radio, RefreshCw, Sparkles, Trash2, Users, X } from "lucide-react";
+import type { BridgeState, Page, WorkerDiagnostics } from "../types";
+import { formatRelativeTime } from "../helpers";
 
-type Props = { state: BridgeState; onAction: (action: string, payload?: Record<string, unknown>) => void; };
+type Props = {
+  state: BridgeState;
+  onAction: (action: string, payload?: Record<string, unknown>) => void;
+  onPage?: (page: Page, intent?: Record<string, unknown>) => void;
+};
 
 const cacheItems = ["插件本地账号池缓存","远程账号池摘要缓存","播放状态缓存","下载任务缓存","页面监听运行缓存","旧版本默认配置"];
 
-async function pingWorker(baseUrl: string): Promise<{ ok: boolean; text: string }> {
-  const url = `${String(baseUrl || "").replace(/\/+$/, "")}/v1/health`;
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data?.ok) return { ok: true, text: `在线 · 服务正常 (${data.build || "—"})` };
-    return { ok: false, text: `HTTP ${res.status}，服务异常` };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, text: `连接失败：${msg.slice(0, 60)}` };
+type CloudServiceCheck = { ok: boolean; text: string; diagnostics?: WorkerDiagnostics };
+
+// 按新旧服务端能力逐级探测，兼容还没有升级智能诊断接口的旧部署。
+async function inspectCloudService(baseUrl: string): Promise<CloudServiceCheck> {
+  const base = String(baseUrl || "").replace(/\/+$/, "");
+  const endpoints = ["/v1/diagnostics", "/v1/status", "/v1/health"];
+  let lastError = "";
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(`${base}${endpoint}`, { signal: AbortSignal.timeout(5000) });
+      const data = await res.json().catch(() => ({}));
+      const diagnostics: WorkerDiagnostics | undefined = data?.diagnostics || data?.status?.diagnostics;
+      if (res.ok && diagnostics) {
+        return {
+          ok: data?.ok !== false && diagnostics.level !== "error",
+          text: diagnostics.summary || "云端服务诊断完成。",
+          diagnostics
+        };
+      }
+      if (res.ok && data?.ok) {
+        return {
+          ok: true,
+          text: `云端服务在线，当前部署暂未提供智能诊断摘要。`,
+          diagnostics: {
+            level: "info",
+            score: 72,
+            summary: "连接正常，但建议升级云端服务以获得密钥、数据库和账号池分项诊断。",
+            checkedAt: data.time,
+            checks: [{ key: "health", label: "基础连接", level: "ok", message: `服务在线，构建 ${data.build || "未记录"}。` }],
+            suggestions: ["部署新版云端服务后，可在此查看完整体检结果和处理建议。"]
+          }
+        };
+      }
+      lastError = `HTTP ${res.status}`;
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
   }
+
+  return { ok: false, text: `连接失败：${lastError.slice(0, 80) || "请检查地址是否正确"}` };
 }
 
-export function SettingsPage({ state, onAction }: Props) {
+function levelClasses(level?: string) {
+  if (level === "ok") return { bg: "bg-emerald-50", text: "text-emerald-600", dot: "bg-emerald-400", border: "border-emerald-100" };
+  if (level === "warn") return { bg: "bg-amber-50", text: "text-amber-600", dot: "bg-amber-400", border: "border-amber-100" };
+  if (level === "error") return { bg: "bg-rose-50", text: "text-rose-600", dot: "bg-rose-400", border: "border-rose-100" };
+  return { bg: "bg-sky-50", text: "text-sky-600", dot: "bg-sky-400", border: "border-sky-100" };
+}
+
+function levelText(level?: string) {
+  if (level === "ok") return "正常";
+  if (level === "warn") return "需关注";
+  if (level === "error") return "需处理";
+  return "提示";
+}
+
+function buildDiagnosticsReport(diagnostics?: WorkerDiagnostics) {
+  if (!diagnostics) return "";
+  const checks = (diagnostics.checks || [])
+    .map((item) => `- ${item.label || "检查项"}：${levelText(item.level)}，${item.message || "暂无详情"}`)
+    .join("\n");
+  const suggestions = (diagnostics.suggestions || [])
+    .map((item) => `- ${item}`)
+    .join("\n");
+  return [
+    "糖心志者云端服务体检报告",
+    `体检结果：${levelText(diagnostics.level)}`,
+    `体检分数：${Math.round(Number(diagnostics.score ?? 0))}`,
+    `体检摘要：${diagnostics.summary || "未记录"}`,
+    `检查时间：${diagnostics.checkedAt || "未记录"}`,
+    "",
+    "分项检查：",
+    checks || "- 暂无分项检查",
+    "",
+    "建议下一步：",
+    suggestions || "- 暂无建议"
+  ].join("\n");
+}
+
+function hasDiagnosticKey(diagnostics: WorkerDiagnostics | undefined, keys: string[]) {
+  return (diagnostics?.checks || []).some((item) => keys.includes(String(item.key || "")) && item.level !== "ok");
+}
+
+export function SettingsPage({ state, onAction, onPage }: Props) {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [cacheChecked, setCacheChecked] = useState(cacheItems.map((_, i) => i !== 3));
-  const [pingStatus, setPingStatus] = useState<{ ok: boolean; text: string } | null>(null);
-  const [pinging, setPinging] = useState(false);
+  const [serviceCheck, setServiceCheck] = useState<CloudServiceCheck | null>(null);
+  const [checkingService, setCheckingService] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
 
   const checkUpdate = () => {
     setCheckingUpdate(true);
@@ -35,13 +112,30 @@ export function SettingsPage({ state, onAction }: Props) {
 
   const checkWorkerHealth = async () => {
     const url = state.remote?.baseUrl || "";
-    if (!url) { setPingStatus({ ok: false, text: "请先在账号池页面配置 Worker URL" }); return; }
-    setPinging(true); setPingStatus(null);
-    const result = await pingWorker(url);
-    setPingStatus(result); setPinging(false);
+    if (!url) { setServiceCheck({ ok: false, text: "请先在账号池页面配置云端服务地址" }); return; }
+    setCheckingService(true); setServiceCheck(null);
+    const result = await inspectCloudService(url);
+    setServiceCheck(result); setCheckingService(false);
+  };
+
+  const copyDiagnostics = async () => {
+    const report = buildDiagnosticsReport(diagnostics);
+    if (!report) return;
+    try {
+      await navigator.clipboard.writeText(report);
+      setCopyStatus("体检报告已复制");
+    } catch (_) {
+      setCopyStatus("复制失败，请稍后重试");
+    }
+    window.setTimeout(() => setCopyStatus(""), 1600);
   };
 
   const updateAvailable = Boolean(state.repositoryUpdate?.updateAvailable);
+  const diagnostics = serviceCheck?.diagnostics;
+  const diagnosticTone = levelClasses(diagnostics?.level);
+  const accountProblem = hasDiagnosticKey(diagnostics, ["accounts", "usable", "risk", "unverified"]);
+  const shouldShowInvalid = hasDiagnosticKey(diagnostics, ["risk"]);
+  const shouldOpenAdd = hasDiagnosticKey(diagnostics, ["accounts"]);
 
   return (
     <div className="space-y-4 p-4">
@@ -49,7 +143,7 @@ export function SettingsPage({ state, onAction }: Props) {
         <div className="absolute right-3 top-2 select-none text-5xl opacity-15 pointer-events-none">🍭</div>
         <div className="mb-2 flex items-center gap-2"><Package size={18} /><span className="font-bold">糖心志者</span></div>
         <div className="grid grid-cols-2 gap-2 text-xs">
-          {[{ label: "版本", value: "v2.2.0" }, { label: "Manifest", value: "V3" }, { label: "mux.js", value: "7.0.0" }, { label: "React", value: "18 + TSX" }].map((item) => (
+          {[{ label: "版本", value: "v2.3.0" }, { label: "Manifest", value: "V3" }, { label: "mux.js", value: "7.0.0" }, { label: "React", value: "18 + TSX" }].map((item) => (
             <div key={item.label} className="rounded-xl bg-white/20 px-3 py-1.5 backdrop-blur">
               <p className="text-[10px] opacity-70">{item.label}</p>
               <p className="font-semibold">{item.value}</p>
@@ -59,18 +153,62 @@ export function SettingsPage({ state, onAction }: Props) {
       </div>
 
       <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
-        <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><Radio size={14} className="text-sky-400" /> Worker 连接检测</h3>
-        <p className="text-xs text-purple-400">检测 Worker 端点 <code className="rounded bg-purple-50 px-1 py-0.5 font-mono text-[10px] text-purple-600">/v1/health</code> 的响应情况。</p>
-        {pingStatus && (
-          <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${pingStatus.ok ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
-            {pingStatus.ok ? <CheckCircle size={13} className="shrink-0" /> : <AlertTriangle size={13} className="shrink-0" />}
-            <span>{pingStatus.text}</span>
+        <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><Activity size={14} className="text-sky-400" /> 云端服务体检</h3>
+        <p className="text-xs text-purple-400">依次检测智能诊断、整体状态和基础连接，帮助快速定位密钥、数据库和账号池问题。</p>
+        {serviceCheck && !diagnostics && (
+          <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${serviceCheck.ok ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+            {serviceCheck.ok ? <CheckCircle size={13} className="shrink-0" /> : <AlertTriangle size={13} className="shrink-0" />}
+            <span>{serviceCheck.text}</span>
+          </div>
+        )}
+        {diagnostics && (
+          <div className={`space-y-3 rounded-2xl border ${diagnosticTone.border} ${diagnosticTone.bg} p-3`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className={`text-[11px] font-semibold ${diagnosticTone.text}`}>体检结果 · {levelText(diagnostics.level)}</p>
+                <p className="mt-1 text-xs leading-relaxed text-purple-700">{diagnostics.summary || serviceCheck.text}</p>
+                {diagnostics.checkedAt && <p className="mt-1 text-[10px] text-purple-300">检查于 {formatRelativeTime(diagnostics.checkedAt)}</p>}
+              </div>
+              <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/80 shadow-sm">
+                <span className={`text-lg font-bold ${diagnosticTone.text}`}>{Math.round(Number(diagnostics.score ?? 0))}</span>
+                <span className="text-[9px] text-purple-300">分</span>
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              {(diagnostics.checks || []).map((item) => {
+                const tone = levelClasses(item.level);
+                return (
+                  <div key={`${item.key}-${item.label}`} className="flex items-start gap-2 rounded-xl bg-white/80 px-3 py-2">
+                    <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold text-purple-700">{item.label || "检查项"} · {levelText(item.level)}</p>
+                      <p className="text-[10px] leading-relaxed text-purple-400">{item.message || "暂无详情"}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {(diagnostics.suggestions || []).length > 0 && (
+              <div className="space-y-1 rounded-xl bg-white/80 px-3 py-2">
+                <p className="flex items-center gap-1 text-[11px] font-semibold text-purple-700"><Lightbulb size={11} className="text-amber-400" /> 建议下一步</p>
+                {(diagnostics.suggestions || []).slice(0, 3).map((item) => (
+                  <p key={item} className="text-[10px] leading-relaxed text-purple-400">{item}</p>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {state.remote?.baseUrl && <p className="truncate text-[10px] text-purple-300 font-mono">{state.remote.baseUrl}</p>}
-        <button onClick={checkWorkerHealth} disabled={pinging} className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 disabled:opacity-70">
-          {pinging ? <><RefreshCw size={13} className="animate-spin" /> 检测中…</> : <><Radio size={13} /> 检测 Worker 连接</>}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={checkWorkerHealth} disabled={checkingService} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 disabled:opacity-70">
+            {checkingService ? <><RefreshCw size={13} className="animate-spin" /> 体检中…</> : <><Radio size={13} /> 开始体检</>}
+          </button>
+          <button onClick={() => onAction("sync-remote")} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95">
+            <RefreshCw size={13} /> 同步账号
+          </button>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
@@ -83,7 +221,7 @@ export function SettingsPage({ state, onAction }: Props) {
 
       <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
         <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><RefreshCw size={14} className="text-sky-400" /> 更新管理</h3>
-        <p className="text-xs text-purple-400">{updateAvailable ? `发现新版本：${state.repositoryUpdate?.remote?.version || "远程版本"}` : "当前版本 v2.2.0 已是最新。"}</p>
+        <p className="text-xs text-purple-400">{updateAvailable ? `发现新版本：${state.repositoryUpdate?.remote?.version || "远程版本"}` : "当前版本 v2.3.0 已是最新。"}</p>
         <div className="flex gap-2">
           <button onClick={checkUpdate} disabled={checkingUpdate} className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 disabled:opacity-70">
             {checkingUpdate ? <><RefreshCw size={13} className="animate-spin" /> 检查中…</> : <><RefreshCw size={13} /> 检查更新</>}
@@ -114,7 +252,7 @@ export function SettingsPage({ state, onAction }: Props) {
 
       <div className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
         <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-purple-700"><Info size={14} className="text-purple-400" /> 关于项目</h3>
-        <p className="mb-3 text-xs text-purple-400">糖心志者 v2.2.0 是一个 Chrome Manifest V3 浏览器插件，提供账号池管理、展示覆盖、播放资源获取、视频下载等功能。</p>
+        <p className="mb-3 text-xs text-purple-400">糖心志者 v2.3.0 是一个 Chrome Manifest V3 浏览器插件，提供账号池管理、展示覆盖、播放资源获取、视频下载等功能。</p>
         <button onClick={() => onAction("about")} className="flex w-full items-center justify-center gap-1 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95">
           <ExternalLink size={13} /> 打开项目主页
         </button>
@@ -132,7 +270,7 @@ export function SettingsPage({ state, onAction }: Props) {
               </div>
               <button onClick={() => setShowUpdateModal(false)}><X size={18} className="text-purple-400" /></button>
             </div>
-            <p className="mb-4 text-xs text-purple-400">{updateAvailable ? `远程版本 ${state.repositoryUpdate?.remote?.version || "未知"}，点击下载最新版。` : "当前版本 v2.2.0 已是最新，无需更新。"}</p>
+            <p className="mb-4 text-xs text-purple-400">{updateAvailable ? `远程版本 ${state.repositoryUpdate?.remote?.version || "未知"}，点击下载最新版。` : "当前版本 v2.3.0 已是最新，无需更新。"}</p>
             <button onClick={() => setShowUpdateModal(false)} className="w-full rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 py-2 text-sm font-medium text-white shadow-md">好的</button>
           </div>
         </div>

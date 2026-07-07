@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bell, Download, Info, LayoutDashboard, Play, Settings, Users, X, Zap } from "lucide-react";
 import { listenBridgeState, notifyUiReady, sendUiAction } from "./bridge";
-import type { BridgeState, Page } from "./types";
+import type { AccountsPageIntent, BridgeState, Page } from "./types";
 import { OverviewPage } from "./components/OverviewPage";
 import { AccountsPage } from "./components/AccountsPage";
 import { PlaybackPage } from "./components/PlaybackPage";
@@ -59,6 +59,7 @@ export default function App() {
   const [showFlow, setShowFlow] = useState(true);
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
   const [bridgeState, setBridgeState] = useState<BridgeState>({});
+  const [accountsIntent, setAccountsIntent] = useState<AccountsPageIntent>({});
   const dragging = useRef(false);
   const dragStart = useRef({ mx: 0, my: 0, bx: 0, by: 0 });
   const moved = useRef(false);
@@ -103,12 +104,17 @@ export default function App() {
   };
   const onBallPointerUp = () => { dragging.current = false; if (!moved.current) openPanel(); };
 
+  const goPage = (target: Page, intent: AccountsPageIntent = {}) => {
+    if (target === "accounts") setAccountsIntent(intent);
+    setPage(target);
+  };
+
   const renderPage = () => {
     if (page === "overview") return <OverviewPage state={bridgeState} onAction={action} onPage={setPage} />;
-    if (page === "accounts") return <AccountsPage state={bridgeState} onAction={action} />;
+    if (page === "accounts") return <AccountsPage state={bridgeState} onAction={action} intent={accountsIntent} />;
     if (page === "playback") return <PlaybackPage state={bridgeState} onAction={action} />;
     if (page === "downloads") return <DownloadsPage state={bridgeState} onAction={action} />;
-    return <SettingsPage state={bridgeState} onAction={action} />;
+    return <SettingsPage state={bridgeState} onAction={action} onPage={goPage} />;
   };
 
   const updateAvailable = Boolean(bridgeState.repositoryUpdate?.updateAvailable);
@@ -167,7 +173,7 @@ export default function App() {
               <div className="w-12 h-12 rounded-2xl bg-white/25 backdrop-blur flex items-center justify-center mb-2 shadow-inner">
                 <span className="text-white text-xl font-bold">志</span>
               </div>
-              <span className="text-white/70 text-[9px] font-medium mb-3">v2.2.0</span>
+              <span className="text-white/70 text-[9px] font-medium mb-3">v2.3.0</span>
 
               {navItems.map((item) => {
                 const active = page === item.id;
@@ -206,7 +212,7 @@ export default function App() {
                   </div>
                   <div>
                     <h1 className="text-sm font-bold text-purple-800">{pageTitles[page]}</h1>
-                    <p className="text-[10px] text-purple-400 hidden sm:block">糖心志者控制台 · v2.2.0</p>
+                    <p className="text-[10px] text-purple-400 hidden sm:block">糖心志者控制台 · v2.3.0</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">

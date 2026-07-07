@@ -74,6 +74,20 @@ export type AccountItem = {
   } | null;
 };
 
+export type WorkerDiagnostics = {
+  level?: "ok" | "warn" | "error" | "info";
+  score?: number;
+  summary?: string;
+  checkedAt?: string;
+  checks?: {
+    key?: string;
+    label?: string;
+    level?: "ok" | "warn" | "error" | "info";
+    message?: string;
+  }[];
+  suggestions?: string[];
+};
+
 export type BridgeState = {
   expanded?: boolean;
   role?: string;
@@ -112,4 +126,9 @@ export type BridgeState = {
 export type UiActionPayload = {
   action: string;
   payload?: Record<string, unknown>;
+};
+
+export type AccountsPageIntent = {
+  showInvalid?: boolean;
+  openAdd?: boolean;
 };

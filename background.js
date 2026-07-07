@@ -34,7 +34,7 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-04-2200";
+const LOCAL_UPDATE_BUILD = "2026-07-07-2333";
 
 const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-06-14 15:15 【删除】删除旧版 UI 图片素材、旧默认种子账号和测试播放详情数据，清理不再需要的旧数据。";
 
