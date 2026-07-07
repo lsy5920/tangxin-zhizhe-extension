@@ -1,11 +1,14 @@
+import { useState } from "react";
 import { AlertTriangle, CheckCircle, Copy, Download, FolderOpen, Link, Loader, RefreshCw, Save, Trash2, XCircle } from "lucide-react";
 import type { BridgeState, DownloadTask } from "../types";
-import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, maskUrl, shortTime } from "../helpers";
+import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, isRunningDownloadTask, maskUrl, shortTime } from "../helpers";
 
 type Props = {
   state: BridgeState;
   onAction: (action: string, payload?: Record<string, unknown>) => void;
 };
+
+type DownloadFilter = "all" | "running" | "ready" | "failed";
 
 function taskTone(task: DownloadTask) {
   if (task.stage === "complete" || task.stage === "ready") return { label: downloadStageLabel(task.stage), color: "bg-emerald-100 text-emerald-600", icon: <CheckCircle size={11} /> };
@@ -17,6 +20,21 @@ function taskTone(task: DownloadTask) {
 export function DownloadsPage({ state, onAction }: Props) {
   const tasks = downloadTasks(state);
   const stats = downloadStats(tasks);
+  const [filter, setFilter] = useState<DownloadFilter>("all");
+  const readyCount = tasks.filter(canSaveDownload).length;
+  // 下载任务较多时先按状态缩小范围，再查看具体任务卡片。
+  const filteredTasks = tasks.filter((task) => {
+    if (filter === "running") return isRunningDownloadTask(task);
+    if (filter === "ready") return canSaveDownload(task);
+    if (filter === "failed") return task.stage === "error";
+    return true;
+  });
+  const filterItems: { key: DownloadFilter; label: string; value: number; color: string }[] = [
+    { key: "all", label: "全部", value: stats.total, color: "text-purple-600" },
+    { key: "running", label: "进行中", value: stats.running, color: "text-amber-600" },
+    { key: "ready", label: "可保存", value: readyCount, color: "text-emerald-600" },
+    { key: "failed", label: "失败", value: stats.failed, color: "text-rose-600" }
+  ];
 
   return (
     <div className="space-y-4 p-4">
@@ -32,6 +50,22 @@ export function DownloadsPage({ state, onAction }: Props) {
             <p className="text-[10px] opacity-75">{item.label}</p>
           </div>
         ))}
+      </div>
+
+      <div className="grid grid-cols-4 gap-1.5 rounded-2xl bg-white p-1.5 shadow-sm border border-pink-100">
+        {filterItems.map((item) => {
+          const active = filter === item.key;
+          return (
+            <button
+              key={item.key}
+              onClick={() => setFilter(item.key)}
+              className={`rounded-xl px-1.5 py-2 text-center transition-all ${active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "text-purple-300 hover:bg-purple-50"}`}
+            >
+              <p className={`text-sm font-bold ${active ? "text-white" : item.color}`}>{item.value}</p>
+              <p className="mt-0.5 text-[10px]">{item.label}</p>
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -50,7 +84,7 @@ export function DownloadsPage({ state, onAction }: Props) {
       </div>
 
       <div className="space-y-3">
-        {tasks.length ? tasks.map((task) => {
+        {filteredTasks.length ? filteredTasks.map((task) => {
           const tone = taskTone(task);
           const progress = downloadProgress(task);
           const sourceUrl = absoluteUrl(task.url);
@@ -113,7 +147,13 @@ export function DownloadsPage({ state, onAction }: Props) {
               </div>
             </div>
           );
-        }) : (
+        }) : tasks.length ? (
+          <div className="rounded-2xl border border-pink-100 bg-white p-5 text-center shadow-sm">
+            <Download size={28} className="mx-auto mb-2 text-purple-200" />
+            <p className="text-xs text-purple-400">当前筛选没有任务</p>
+            <p className="mt-1 text-[10px] text-purple-300">切换到「全部」可以查看所有下载记录</p>
+          </div>
+        ) : (
           <div className="rounded-2xl border border-pink-100 bg-white p-5 text-center shadow-sm">
             <Download size={28} className="mx-auto mb-2 text-purple-200" />
             <p className="text-xs text-purple-400">暂无下载任务</p>

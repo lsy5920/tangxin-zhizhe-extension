@@ -111,10 +111,15 @@ export function downloadTasks(state: BridgeState) {
 export function downloadStats(tasks: DownloadTask[]) {
   return {
     total: tasks.length,
-    running: tasks.filter((t) => ["queued","playlist","segments","segment","save-dialog","ready"].includes(String(t.stage||""))).length,
+    running: tasks.filter(isRunningDownloadTask).length,
     completed: tasks.filter((t) => t.stage === "complete").length,
     failed: tasks.filter((t) => t.stage === "error").length
   };
+}
+
+export function isRunningDownloadTask(task: DownloadTask) {
+  // “可保存”已经单独展示，进行中只统计仍在下载或等待保存位置的任务。
+  return ["queued", "playlist", "segments", "segment", "save-dialog"].includes(String(task.stage || ""));
 }
 
 export function downloadProgress(task: DownloadTask) {
