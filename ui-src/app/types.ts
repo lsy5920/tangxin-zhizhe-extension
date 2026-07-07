@@ -125,6 +125,11 @@ export type BridgeState = {
     lastError?: string;
   } | null;
   repositoryUpdate?: {
+    ok?: boolean;
+    source?: string;
+    checkedAt?: string;
+    error?: string;
+    downloadUrl?: string;
     updateAvailable?: boolean;
     local?: {
       version?: string;
@@ -140,6 +145,7 @@ export type BridgeState = {
       notes?: string;
       line?: string;
       text?: string;
+      archiveUrl?: string;
     };
   } | null;
   publishedAt?: string;

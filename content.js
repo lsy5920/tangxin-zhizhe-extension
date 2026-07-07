@@ -1224,10 +1224,11 @@
   }
 
   function rememberRepositoryUpdate(update = null) {
-    const hasUpdate = Boolean(update?.updateAvailable && update?.remote?.id);
-    uiState.repositoryUpdate = hasUpdate ? update : null;
+    const hasResult = Boolean(update?.remote?.id || update?.checkedAt || update?.ok === false);
+    uiState.repositoryUpdate = hasResult ? update : null;
     renderRepositoryUpdateBanner(uiState.repositoryUpdate);
-    return hasUpdate;
+    publishState();
+    return Boolean(update?.updateAvailable && update?.remote?.id);
   }
 
   function showRepositoryUpdateDialog(update = {}) {
@@ -1272,14 +1273,19 @@
     if (repositoryUpdateCheckTask) return repositoryUpdateCheckTask;
     repositoryUpdateCheckTask = (async () => {
       try {
-        const response = await sendRuntime("checkRepositoryUpdate", { force });
+        const response = await sendRuntime("checkRepositoryUpdate", { force, realtime: Boolean(force || options.realtime) });
         const hasUpdate = rememberRepositoryUpdate(response);
         if (hasUpdate && showDialog) showRepositoryUpdateDialog(response);
         else if (force && !silent) {
-          emitFlow("更新提醒", "当前已是最新版本", "ok");
+          const remote = response?.remote || {};
+          const text = remote.version
+            ? `当前已是最新版本：本地 ${response.local?.version || "未知"} / 远程 ${remote.version}，构建 ${remote.build || "未记录"}`
+            : "当前已是最新版本";
+          emitFlow("更新提醒", text, "ok");
         }
         return response;
       } catch (err) {
+        rememberRepositoryUpdate({ ok: false, checkedAt: new Date().toISOString(), error: err?.message || String(err), local: { version: "", build: "" }, remote: null });
         if (!silent) emitFlow("更新检查失败", err?.message || String(err), "error");
         return { ok: false, error: err?.message || String(err) };
       } finally {
@@ -1776,6 +1782,9 @@
         const latest = state.fullDetails[state.fullDetails.length - 1];
         await copyPlayableUrl(payload.url || latest?.backupLink || "", payload.label || "备用线路完整链接");
       }
+      if (action === "copy-playback-health-report") {
+        await copyText(String(payload.report || ""), "播放资源体检报告");
+      }
       if (action === "copy-observations") {
         await copyText(JSON.stringify(state.observations.slice(-80), null, 2), "判定记录");
       }
@@ -1843,11 +1852,13 @@
         emitFlow("清空", "已清空当前会话捕获记录", "ok");
       }
       if (action === "clear-cache") await clearDataCache();
-      if (action === "check-update") await checkRepositoryUpdate(true);
+      if (action === "check-update") await checkRepositoryUpdate(true, { realtime: true });
       if (action === "download-latest") {
+        const latest = await checkRepositoryUpdate(true, { realtime: true, silent: true });
         const response = await sendRuntime("downloadRepositoryArchive", {
-          version: uiState.repositoryUpdate?.remote?.version || "",
-          build: uiState.repositoryUpdate?.remote?.build || ""
+          version: latest?.remote?.version || uiState.repositoryUpdate?.remote?.version || "",
+          build: latest?.remote?.build || uiState.repositoryUpdate?.remote?.build || "",
+          url: latest?.downloadUrl || uiState.repositoryUpdate?.downloadUrl || ""
         });
         emitFlow("版本更新", response.downloadId ? `已开始下载最新版压缩包：${response.filename}` : "已提交最新版下载任务", "ok");
       }

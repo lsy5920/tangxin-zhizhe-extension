@@ -200,6 +200,8 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
       `远程版本：${remoteVersionText}`,
       `远程构建：${remoteBuildText}`,
       `发布时间：${remoteUpdate?.releasedAt || "未检测"}`,
+      `检测时间：${updateCheckedText}`,
+      `下载地址：${state.repositoryUpdate?.downloadUrl || remoteUpdate?.archiveUrl || "未检测"}`,
       `更新状态：${updateAvailable ? "发现新版本" : "当前版本可用"}`,
       `更新说明：${updateSummary}`
     ];
@@ -214,9 +216,14 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
 
   const updateAvailable = Boolean(state.repositoryUpdate?.updateAvailable);
   const remoteUpdate = state.repositoryUpdate?.remote;
+  const updateFailed = state.repositoryUpdate?.ok === false;
   const remoteVersionText = remoteUpdate?.version ? `v${remoteUpdate.version}` : "未检测";
   const remoteBuildText = remoteUpdate?.build || "未检测";
-  const updateSummary = remoteUpdate?.detail || remoteUpdate?.text || remoteUpdate?.title || (updateAvailable ? "发现远程新版本。" : "暂无远程更新。");
+  const updateCheckedText = state.repositoryUpdate?.checkedAt ? formatRelativeTime(state.repositoryUpdate.checkedAt) : "未检测";
+  const updateSourceText = state.repositoryUpdate?.source === "update.json" ? "远程版本清单" : state.repositoryUpdate?.source || "未检测";
+  const updateSummary = updateFailed
+    ? `更新检测失败：${state.repositoryUpdate?.error || "请稍后重试"}`
+    : remoteUpdate?.detail || remoteUpdate?.text || remoteUpdate?.title || (remoteUpdate?.version ? "远程版本与本地一致。" : "请点击检查更新获取远程版本。");
   const diagnostics = serviceCheck?.diagnostics;
   const diagnosticTone = levelClasses(diagnostics?.level);
   const accountProblem = hasDiagnosticKey(diagnostics, ["accounts", "usable", "risk", "unverified"]);
@@ -336,10 +343,10 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
 
       <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
         <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><RefreshCw size={14} className="text-sky-400" /> 更新管理</h3>
-        <div className={`rounded-2xl px-3 py-2 ${updateAvailable ? "bg-amber-50" : "bg-emerald-50"}`}>
+        <div className={`rounded-2xl px-3 py-2 ${updateFailed ? "bg-rose-50" : updateAvailable ? "bg-amber-50" : "bg-emerald-50"}`}>
           <div className="flex items-center justify-between gap-2">
-            <p className={`text-xs font-semibold ${updateAvailable ? "text-amber-600" : "text-emerald-600"}`}>{updateAvailable ? "发现新版本" : "当前版本可用"}</p>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] ${updateAvailable ? "bg-white text-amber-600" : "bg-white text-emerald-600"}`}>{APP_VERSION_LABEL}</span>
+            <p className={`text-xs font-semibold ${updateFailed ? "text-rose-600" : updateAvailable ? "text-amber-600" : "text-emerald-600"}`}>{updateFailed ? "检测失败" : updateAvailable ? "发现新版本" : remoteUpdate?.version ? "当前版本可用" : "等待检测"}</p>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] ${updateFailed ? "bg-white text-rose-600" : updateAvailable ? "bg-white text-amber-600" : "bg-white text-emerald-600"}`}>{APP_VERSION_LABEL}</span>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
             <div className="rounded-xl bg-white/80 px-2 py-1.5">
@@ -354,7 +361,12 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
             </div>
           </div>
           <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-purple-400">{updateSummary}</p>
-          {remoteUpdate?.releasedAt && <p className="mt-1 text-[10px] text-purple-300">发布时间：{remoteUpdate.releasedAt}</p>}
+          <div className="mt-2 grid gap-1 text-[10px] text-purple-300 sm:grid-cols-2">
+            <p>检测来源：{updateSourceText}</p>
+            <p>检测时间：{updateCheckedText}</p>
+            {remoteUpdate?.releasedAt && <p>发布时间：{remoteUpdate.releasedAt}</p>}
+            {(state.repositoryUpdate?.downloadUrl || remoteUpdate?.archiveUrl) && <p className="truncate">下载地址：{state.repositoryUpdate?.downloadUrl || remoteUpdate?.archiveUrl}</p>}
+          </div>
         </div>
         <div className="flex gap-2">
           <button onClick={checkUpdate} disabled={checkingUpdate} className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 disabled:opacity-70">
@@ -364,7 +376,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
             <Copy size={13} /> 复制信息
           </button>
           <button onClick={() => onAction("download-latest")} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95">
-            <Download size={13} /> 下载最新版
+            <Download size={13} /> 检测并下载
           </button>
         </div>
       </div>
@@ -408,7 +420,18 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
               <button onClick={() => setShowUpdateModal(false)}><X size={18} className="text-purple-400" /></button>
             </div>
             <p className="mb-4 text-xs text-purple-400">{updateAvailable ? `远程版本 ${remoteVersionText}，构建 ${remoteBuildText}，点击下载最新版。` : `当前版本 ${APP_VERSION_LABEL} 已完成本地校验，可继续使用。`}</p>
-            <button onClick={() => setShowUpdateModal(false)} className="w-full rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 py-2 text-sm font-medium text-white shadow-md">好的</button>
+            <div className="flex gap-2">
+              <button onClick={() => setShowUpdateModal(false)} className="flex-1 rounded-xl border border-pink-200 py-2 text-sm font-medium text-purple-500">稍后</button>
+              <button
+                onClick={() => {
+                  onAction("download-latest");
+                  setShowUpdateModal(false);
+                }}
+                className="flex-1 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 py-2 text-sm font-medium text-white shadow-md"
+              >
+                检测并下载
+              </button>
+            </div>
           </div>
         </div>
       )}

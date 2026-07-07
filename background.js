@@ -7,7 +7,7 @@ const API_CONFIG = {
   aesKey: "fd14f9f8e38808fa"
 };
 
-const STORAGE_SCHEMA_VERSION = "2026-06-14-clean-runtime-v1";
+const STORAGE_SCHEMA_VERSION = "2026-07-08-upgrade-system-v1";
 const LEGACY_REMOTE_BASE_URLS = [
   "https://txzz.lsy20.top",
   "https://txzz-secure-pool.3199912548.workers.dev"
@@ -24,19 +24,22 @@ const REPOSITORY_CONFIG = {
   owner: "lsy5920",
   repo: "tangxin-zhizhe-extension",
   url: "https://github.com/lsy5920/tangxin-zhizhe-extension",
-  archiveUrl: "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip",
+  archiveUrls: [
+    "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
+    "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
+  ],
   updateManifestUrl: "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/update.json",
   readmeUrls: [
     "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/README.md",
     "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/master/README.md"
   ],
-  checkIntervalMs: 6 * 60 * 60 * 1000,
+  checkIntervalMs: 2 * 60 * 1000,
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-0100";
+const LOCAL_UPDATE_BUILD = "2026-07-08-0109";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 01:00 【优化】升级版本到 v2.4.1，播放页新增播放资源体检卡片，展示推荐线路、体检分和风险提示。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 01:09 【优化】升级版本到 v2.5.0，全面重构升级系统，实时检测远程版本、修复最新版下载，并不再保留旧运行数据。";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -356,19 +359,11 @@ function isHealthyAccount(account = {}) {
 
 function buildAutoCleanState(storedState = {}) {
   const previousRemote = normalizeRemoteConfig(storedState.remote || {});
-  const keepManualAccounts = (Array.isArray(storedState.accountPool) ? storedState.accountPool : [])
-    .map(normalizeAccount)
-    .filter((account) => !isRemoteAccount(account) && account.id !== "full-lsyhook" && account.source !== "seed" && account.source !== "remote-seed");
-  const accountMap = new Map();
-  for (const account of keepManualAccounts) accountMap.set(account.id, account);
-  const selectedFullAccountId = accountMap.has(storedState.selectedFullAccountId)
-    ? storedState.selectedFullAccountId
-    : Array.from(accountMap.keys())[0] || "";
   return {
     ...DEFAULT_STATE,
-    role: storedState.role || DEFAULT_STATE.role,
-    selectedFullAccountId,
-    accountPool: Array.from(accountMap.values()),
+    role: DEFAULT_STATE.role,
+    selectedFullAccountId: "",
+    accountPool: [],
     remote: {
       ...REMOTE_CONFIG,
       accountSourceMode: REMOTE_CONFIG.accountSourceMode,
@@ -377,13 +372,13 @@ function buildAutoCleanState(storedState = {}) {
       lastAutoCleanAt: nowIso(),
       lastAutoCleanReason: isLegacyRemoteBaseUrl(previousRemote.baseUrl)
         ? "检测到旧 Worker 地址或空地址，已自动切换到当前默认 Worker 并清理旧缓存"
-        : "检测到插件覆盖安装后的旧版本缓存，已自动刷新远程账号池状态"
+        : "升级系统已重构，旧账号、播放、下载和更新缓存不再沿用，请重新同步云端账号池"
     },
     fullDetails: [],
     fullDetailCache: {},
     lastFullTrace: null,
     lastGuestTrace: null,
-    notes: Array.isArray(storedState.notes) ? storedState.notes.slice(-20) : [],
+    notes: [],
     downloadTasks: {},
     downloadSnapshots: [],
     downloadDeletedTaskIds: [],
@@ -489,7 +484,10 @@ async function getStateInternal() {
   state.downloadTasks = compactDownloadTasks(state.downloadTasks && typeof state.downloadTasks === "object" ? state.downloadTasks : {});
   state.downloadSnapshots = Array.isArray(state.downloadSnapshots) ? state.downloadSnapshots.slice(-30) : [];
   state.downloadDeletedTaskIds = Array.isArray(state.downloadDeletedTaskIds) ? state.downloadDeletedTaskIds.slice(-120).map(String) : [];
-  if (autoCleaned) await saveState({ ...state, autoCleanedThisLoad: false });
+  if (autoCleaned) {
+    await chrome.storage.local.remove(["txzzUpdateState", "txzzLastWorkerDiagnostics"]);
+    await saveState({ ...state, autoCleanedThisLoad: false });
+  }
   return state;
 }
 
@@ -1500,6 +1498,44 @@ function normalizeRemoteUpdateManifest(raw = {}) {
   };
 }
 
+function currentArchiveUrl() {
+  return REPOSITORY_CONFIG.archiveUrls[0] || `https://codeload.github.com/${REPOSITORY_CONFIG.owner}/${REPOSITORY_CONFIG.repo}/zip/refs/heads/main`;
+}
+
+function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
+  const localVersion = localExtensionVersion();
+  const localBuild = LOCAL_UPDATE_BUILD;
+  const updateAvailable = shouldUpdateByManifest(remoteManifest, localVersion, localBuild);
+  const updateId = remoteManifest.id || `${remoteManifest.version}|${remoteManifest.build}`;
+  const latest = remoteManifest.latest || {};
+  const remote = {
+    id: updateId,
+    line: `${remoteManifest.releasedAt || remoteManifest.build} 【${latest.type || "更新"}】${latest.title || "发现新版本"}`,
+    time: remoteManifest.releasedAt || "",
+    type: `【${latest.type || "更新"}】`,
+    text: latest.detail || latest.title || "远程版本清单已发布新版本。",
+    title: latest.title || (updateAvailable ? "发现新版本" : "当前已是最新版本"),
+    detail: latest.detail || "",
+    version: remoteManifest.version,
+    build: remoteManifest.build,
+    releasedAt: remoteManifest.releasedAt,
+    archiveUrl: currentArchiveUrl()
+  };
+  return {
+    ok: true,
+    source: "update.json",
+    checkedAt: nowIso(),
+    updateAvailable,
+    shouldNotify: Boolean(updateAvailable),
+    repositoryUrl: remoteManifest.homepage || REPOSITORY_CONFIG.url,
+    downloadUrl: currentArchiveUrl(),
+    local: { version: localVersion, build: localBuild },
+    remote,
+    updateManifest: remoteManifest,
+    ...(options.extra || {})
+  };
+}
+
 async function fetchRemoteUpdateManifest(options = {}) {
   const url = options.force
     ? `${REPOSITORY_CONFIG.updateManifestUrl}?txzz_update=${Date.now()}`
@@ -1563,7 +1599,7 @@ async function checkRepositoryUpdate(options = {}) {
   const now = Date.now();
   const cached = updateState.lastUpdateResult || {};
   const cacheMatchesLocal = cached.local?.version === localExtensionVersion() && cached.local?.build === LOCAL_UPDATE_BUILD;
-  if (!options.force && cacheMatchesLocal && updateState.lastCheckedAt && now - Number(updateState.lastCheckedAt || 0) < REPOSITORY_CONFIG.checkIntervalMs) {
+  if (!options.force && !options.realtime && cacheMatchesLocal && updateState.lastCheckedAt && now - Number(updateState.lastCheckedAt || 0) < REPOSITORY_CONFIG.checkIntervalMs) {
     return {
       ok: true,
       skipped: true,
@@ -1575,34 +1611,9 @@ async function checkRepositoryUpdate(options = {}) {
     };
   }
   try {
-    const remoteManifest = await fetchRemoteUpdateManifest({ force: Boolean(options.force) });
-    const localVersion = localExtensionVersion();
-    const localBuild = LOCAL_UPDATE_BUILD;
-    const updateAvailable = shouldUpdateByManifest(remoteManifest, localVersion, localBuild);
+    const remoteManifest = await fetchRemoteUpdateManifest({ force: true });
     const updateId = remoteManifest.id || `${remoteManifest.version}|${remoteManifest.build}`;
-    const shouldNotify = Boolean(updateAvailable);
-    const latest = remoteManifest.latest || {};
-    const remote = {
-      id: updateId,
-      line: `${remoteManifest.releasedAt || remoteManifest.build} 【${latest.type || "更新"}】${latest.title || "发现新版本"}`,
-      time: remoteManifest.releasedAt || "",
-      type: `【${latest.type || "更新"}】`,
-      text: latest.detail || latest.title || "远程版本清单已发布新版本。",
-      title: latest.title || "发现新版本",
-      detail: latest.detail || "",
-      version: remoteManifest.version,
-      build: remoteManifest.build,
-      releasedAt: remoteManifest.releasedAt
-    };
-    const result = {
-      source: "update.json",
-      updateAvailable,
-      shouldNotify,
-      repositoryUrl: remoteManifest.homepage || REPOSITORY_CONFIG.url,
-      local: { version: localVersion, build: localBuild },
-      remote,
-      updateManifest: remoteManifest
-    };
+    const result = buildRepositoryUpdateResult(remoteManifest);
     const nextUpdateState = {
       ...updateState,
       lastCheckedAt: now,
@@ -1673,16 +1684,30 @@ async function markRepositoryUpdateNotified(updateId = "", mode = "notified") {
 }
 
 async function downloadRepositoryArchive(meta = {}) {
-  const version = safeFileName(String(meta.version || localExtensionVersion() || "latest"));
-  const build = safeFileName(String(meta.build || LOCAL_UPDATE_BUILD || "main"));
+  const update = await checkRepositoryUpdate({ force: true, realtime: true, manifestOnly: true }).catch(() => null);
+  const remote = update?.remote || {};
+  const version = safeFileName(String(meta.version || remote.version || localExtensionVersion() || "latest"));
+  const build = safeFileName(String(meta.build || remote.build || LOCAL_UPDATE_BUILD || "main"));
   const filename = `糖心志者/糖心志者_${version}_${build}_最新版.zip`;
-  const downloadId = await chrome.downloads.download({
-    url: REPOSITORY_CONFIG.archiveUrl,
-    filename,
-    saveAs: false,
-    conflictAction: "uniquify"
-  });
-  return { ok: true, downloadId, filename, url: REPOSITORY_CONFIG.archiveUrl };
+  const candidates = Array.from(new Set([
+    String(meta.url || remote.archiveUrl || update?.downloadUrl || ""),
+    ...REPOSITORY_CONFIG.archiveUrls
+  ].filter(Boolean)));
+  const errors = [];
+  for (const url of candidates) {
+    try {
+      const downloadId = await chrome.downloads.download({
+        url,
+        filename,
+        saveAs: true,
+        conflictAction: "uniquify"
+      });
+      return { ok: true, downloadId, filename, url, update };
+    } catch (err) {
+      errors.push(`${url}：${err?.message || String(err)}`);
+    }
+  }
+  throw new Error(`最新版下载失败：${errors.join("；")}`);
 }
 
 async function upsertAccount(raw) {
@@ -1814,7 +1839,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
     if (message?.type === "checkRepositoryUpdate") {
-      sendResponse(await checkRepositoryUpdate({ force: Boolean(message.force) }));
+      sendResponse(await checkRepositoryUpdate({
+        force: Boolean(message.force),
+        realtime: Boolean(message.realtime),
+        manifestOnly: Boolean(message.manifestOnly)
+      }));
       return;
     }
     if (message?.type === "markRepositoryUpdateNotified") {
