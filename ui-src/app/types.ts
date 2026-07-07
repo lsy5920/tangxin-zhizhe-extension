@@ -17,11 +17,23 @@ export type FullDetail = {
   playLink?: string;
   backupLink?: string;
   fullStat?: {
+    url?: string;
+    status?: number;
     segments?: number;
     duration?: number;
     error?: string;
+    pending?: boolean;
+  };
+  backupStat?: {
+    url?: string;
+    status?: number;
+    segments?: number;
+    duration?: number;
+    error?: string;
+    pending?: boolean;
   };
   hasBuy?: string | boolean;
+  fetchedAt?: string;
 };
 
 export type DownloadTask = {
@@ -114,10 +126,20 @@ export type BridgeState = {
   } | null;
   repositoryUpdate?: {
     updateAvailable?: boolean;
-    remote?: {
+    local?: {
       version?: string;
       build?: string;
+    };
+    remote?: {
+      id?: string;
+      version?: string;
+      build?: string;
+      releasedAt?: string;
+      title?: string;
+      detail?: string;
       notes?: string;
+      line?: string;
+      text?: string;
     };
   } | null;
   publishedAt?: string;

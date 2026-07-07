@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Activity, AlertTriangle, CheckCircle, Copy, Download, ExternalLink, Info, Lightbulb, Package, Radio, RefreshCw, Sparkles, Trash2, Users, X } from "lucide-react";
 import type { BridgeState, Page, WorkerDiagnostics } from "../types";
 import { formatRelativeTime } from "../helpers";
+import { APP_BUILD, APP_VERSION, APP_VERSION_LABEL } from "../constants";
 
 type Props = {
   state: BridgeState;
@@ -192,6 +193,10 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
   };
 
   const updateAvailable = Boolean(state.repositoryUpdate?.updateAvailable);
+  const remoteUpdate = state.repositoryUpdate?.remote;
+  const remoteVersionText = remoteUpdate?.version ? `v${remoteUpdate.version}` : "未检测";
+  const remoteBuildText = remoteUpdate?.build || "未检测";
+  const updateSummary = remoteUpdate?.detail || remoteUpdate?.text || remoteUpdate?.title || (updateAvailable ? "发现远程新版本。" : "暂无远程更新。");
   const diagnostics = serviceCheck?.diagnostics;
   const diagnosticTone = levelClasses(diagnostics?.level);
   const accountProblem = hasDiagnosticKey(diagnostics, ["accounts", "usable", "risk", "unverified"]);
@@ -204,7 +209,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
         <div className="absolute right-3 top-2 select-none text-5xl opacity-15 pointer-events-none">🍭</div>
         <div className="mb-2 flex items-center gap-2"><Package size={18} /><span className="font-bold">糖心志者</span></div>
         <div className="grid grid-cols-2 gap-2 text-xs">
-          {[{ label: "版本", value: "v2.3.0" }, { label: "Manifest", value: "V3" }, { label: "mux.js", value: "7.0.0" }, { label: "React", value: "18 + TSX" }].map((item) => (
+          {[{ label: "版本", value: APP_VERSION_LABEL }, { label: "构建", value: APP_BUILD }, { label: "mux.js", value: "7.0.0" }, { label: "React", value: "18 + TSX" }].map((item) => (
             <div key={item.label} className="rounded-xl bg-white/20 px-3 py-1.5 backdrop-blur">
               <p className="text-[10px] opacity-70">{item.label}</p>
               <p className="font-semibold">{item.value}</p>
@@ -311,7 +316,26 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
 
       <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
         <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><RefreshCw size={14} className="text-sky-400" /> 更新管理</h3>
-        <p className="text-xs text-purple-400">{updateAvailable ? `发现新版本：${state.repositoryUpdate?.remote?.version || "远程版本"}` : "当前版本 v2.3.0 已是最新。"}</p>
+        <div className={`rounded-2xl px-3 py-2 ${updateAvailable ? "bg-amber-50" : "bg-emerald-50"}`}>
+          <div className="flex items-center justify-between gap-2">
+            <p className={`text-xs font-semibold ${updateAvailable ? "text-amber-600" : "text-emerald-600"}`}>{updateAvailable ? "发现新版本" : "当前版本可用"}</p>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] ${updateAvailable ? "bg-white text-amber-600" : "bg-white text-emerald-600"}`}>{APP_VERSION_LABEL}</span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+            <div className="rounded-xl bg-white/80 px-2 py-1.5">
+              <p className="text-purple-300">本地版本</p>
+              <p className="truncate font-semibold text-purple-700">v{APP_VERSION}</p>
+              <p className="truncate font-mono text-purple-300">{APP_BUILD}</p>
+            </div>
+            <div className="rounded-xl bg-white/80 px-2 py-1.5">
+              <p className="text-purple-300">远程版本</p>
+              <p className="truncate font-semibold text-purple-700">{remoteVersionText}</p>
+              <p className="truncate font-mono text-purple-300">{remoteBuildText}</p>
+            </div>
+          </div>
+          <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-purple-400">{updateSummary}</p>
+          {remoteUpdate?.releasedAt && <p className="mt-1 text-[10px] text-purple-300">发布时间：{remoteUpdate.releasedAt}</p>}
+        </div>
         <div className="flex gap-2">
           <button onClick={checkUpdate} disabled={checkingUpdate} className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 disabled:opacity-70">
             {checkingUpdate ? <><RefreshCw size={13} className="animate-spin" /> 检查中…</> : <><RefreshCw size={13} /> 检查更新</>}
@@ -342,7 +366,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
 
       <div className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
         <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-purple-700"><Info size={14} className="text-purple-400" /> 关于项目</h3>
-        <p className="mb-3 text-xs text-purple-400">糖心志者 v2.3.0 是一个 Chrome Manifest V3 浏览器插件，提供账号池管理、展示覆盖、播放资源获取、视频下载等功能。</p>
+        <p className="mb-3 text-xs text-purple-400">糖心志者 {APP_VERSION_LABEL} 是一个 Chrome Manifest V3 浏览器插件，提供账号池管理、展示覆盖、播放资源获取、视频下载等功能。</p>
         <button onClick={() => onAction("about")} className="flex w-full items-center justify-center gap-1 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95">
           <ExternalLink size={13} /> 打开项目主页
         </button>
@@ -360,7 +384,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
               </div>
               <button onClick={() => setShowUpdateModal(false)}><X size={18} className="text-purple-400" /></button>
             </div>
-            <p className="mb-4 text-xs text-purple-400">{updateAvailable ? `远程版本 ${state.repositoryUpdate?.remote?.version || "未知"}，点击下载最新版。` : "当前版本 v2.3.0 已是最新，无需更新。"}</p>
+            <p className="mb-4 text-xs text-purple-400">{updateAvailable ? `远程版本 ${remoteVersionText}，构建 ${remoteBuildText}，点击下载最新版。` : `当前版本 ${APP_VERSION_LABEL} 已完成本地校验，可继续使用。`}</p>
             <button onClick={() => setShowUpdateModal(false)} className="w-full rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 py-2 text-sm font-medium text-white shadow-md">好的</button>
           </div>
         </div>

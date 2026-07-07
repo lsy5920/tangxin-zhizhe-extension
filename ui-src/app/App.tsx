@@ -7,6 +7,7 @@ import { AccountsPage } from "./components/AccountsPage";
 import { PlaybackPage } from "./components/PlaybackPage";
 import { DownloadsPage } from "./components/DownloadsPage";
 import { SettingsPage } from "./components/SettingsPage";
+import { APP_VERSION_LABEL } from "./constants";
 import { flowItemText } from "./helpers";
 
 const navItems: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
@@ -173,7 +174,7 @@ export default function App() {
               <div className="w-12 h-12 rounded-2xl bg-white/25 backdrop-blur flex items-center justify-center mb-2 shadow-inner">
                 <span className="text-white text-xl font-bold">志</span>
               </div>
-              <span className="text-white/70 text-[9px] font-medium mb-3">v2.3.0</span>
+              <span className="text-white/70 text-[9px] font-medium mb-3">{APP_VERSION_LABEL}</span>
 
               {navItems.map((item) => {
                 const active = page === item.id;
@@ -212,7 +213,7 @@ export default function App() {
                   </div>
                   <div>
                     <h1 className="text-sm font-bold text-purple-800">{pageTitles[page]}</h1>
-                    <p className="text-[10px] text-purple-400 hidden sm:block">糖心志者控制台 · v2.3.0</p>
+                    <p className="text-[10px] text-purple-400 hidden sm:block">糖心志者控制台 · {APP_VERSION_LABEL}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">

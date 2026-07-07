@@ -1,6 +1,7 @@
 import { AlertCircle, CheckCircle, Copy, Download, Play, RefreshCw, Sparkles, Star, TrendingUp, Zap } from "lucide-react";
 import type { BridgeState, Page } from "../types";
 import { accountName, downloadStats, downloadTasks, flowItemText, formatRelativeTime, latestFullDetail, selectedAccount, shortTime } from "../helpers";
+import { APP_VERSION_LABEL } from "../constants";
 
 type Props = {
   state: BridgeState;
@@ -64,7 +65,7 @@ export function OverviewPage({ state, onAction, onPage }: Props) {
           {state.session?.nickname ? `你好，${state.session.nickname} 👋` : "你好，欢迎回来 👋"}
         </h2>
         <p className="text-[11px] opacity-60 mb-3">
-          {state.session?.userId ? `ID ${state.session.userId}` : "等待读取当前页面会话"} · v2.3.0
+          {state.session?.userId ? `ID ${state.session.userId}` : "等待读取当前页面会话"} · {APP_VERSION_LABEL}
         </p>
         <div className="flex flex-wrap gap-2 text-[11px]">
           <span className="rounded-full bg-white/20 px-3 py-1 backdrop-blur">账号 {state.accountPool?.length || 0}</span>
@@ -79,7 +80,7 @@ export function OverviewPage({ state, onAction, onPage }: Props) {
             onClick={() => onAction("copy-full-link")}
             className="mt-3 flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 px-3 py-1.5 text-[11px] font-medium backdrop-blur transition-all"
           >
-            <Copy size={11} /> 复制最新播放链接
+            <Copy size={11} /> 复制完整链接
           </button>
         )}
       </div>

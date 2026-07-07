@@ -1643,6 +1643,34 @@
     }
   }
 
+  async function refreshFullDetail(movieId = currentMovieId()) {
+    const id = String(movieId || currentMovieId()).trim();
+    if (!id) throw new Error("当前页面不是视频详情页，无法识别视频编号");
+    emitFlow("播放资源", `正在刷新视频 ${id} 的播放线路`);
+    showToast("正在刷新播放资源");
+    const bootstrapSession = await collectSession();
+    const response = await sendRuntime("getFullDetail", {
+      movieId: id,
+      movieTitle: currentMovieTitle(),
+      accountId: state.selectedFullAccountId,
+      bootstrapSession
+    });
+    if (response.state) syncSavedState(response.state);
+    if (response.summary) {
+      emitCloudAccountFlow(response.summary, id);
+      emitFlow(
+        response.summary.playLink || response.summary.backupLink ? "播放资源" : "播放资源缺少链接",
+        response.summary.playLink || response.summary.backupLink
+          ? `已刷新 ${response.summary.movieId || id} 的播放线路`
+          : `视频 ${response.summary.movieId || id} 未返回可播放链接`,
+        response.summary.playLink || response.summary.backupLink ? "ok" : "error"
+      );
+    }
+    renderFullDetails();
+    showToast("播放资源已刷新", "ok");
+    return response;
+  }
+
   function switchTab(tab) {
     const targetTab = PAGE_TITLES[tab] ? tab : "overview";
     if (views.pageTitle) views.pageTitle.textContent = PAGE_TITLES[targetTab] || "功能面板";
@@ -1718,6 +1746,14 @@
         const latest = state.fullDetails[state.fullDetails.length - 1];
         await copyText(latest?.playLink || latest?.backupLink || "", "最近播放链接");
       }
+      if (action === "copy-play-link") {
+        const latest = state.fullDetails[state.fullDetails.length - 1];
+        await copyText(payload.url || latest?.playLink || "", payload.label || "主线路完整链接");
+      }
+      if (action === "copy-backup-link") {
+        const latest = state.fullDetails[state.fullDetails.length - 1];
+        await copyText(payload.url || latest?.backupLink || "", payload.label || "备用线路完整链接");
+      }
       if (action === "copy-observations") {
         await copyText(JSON.stringify(state.observations.slice(-80), null, 2), "判定记录");
       }
@@ -1743,6 +1779,7 @@
       if (action === "sync-remote") await syncRemoteAccounts();
       if (action === "upload-account-remote") await uploadAccountRemote(payload);
       if (action === "upload-local-account-remote") await uploadLocalAccountRemote(accountId);
+      if (action === "refresh-full-detail") await refreshFullDetail(payload.movieId || currentMovieId());
       if (action === "download-full-video") await downloadFullVideo(payload.movieId || currentMovieId());
       if (action === "refresh-downloads") {
         await refreshLocalDownloadState();

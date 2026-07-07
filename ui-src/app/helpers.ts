@@ -143,6 +143,15 @@ export function latestFullDetail(state: BridgeState): FullDetail | undefined {
   return list[list.length - 1];
 }
 
+export function formatDuration(seconds?: number) {
+  const total = Number(seconds || 0);
+  if (!total) return "未记录";
+  const minute = Math.floor(total / 60);
+  const second = Math.floor(total % 60);
+  if (minute <= 0) return `${second}秒`;
+  return `${minute}分${String(second).padStart(2, "0")}秒`;
+}
+
 export function accountName(account?: AccountItem | null) {
   if (!account) return "账号池账号";
   return account.userInfo?.nickname || account.userInfo?.account_name || account.userInfo?.name

@@ -1,17 +1,52 @@
-import { AlertCircle, CheckCircle, Clock, Copy, Download, Film, Layers, Link, Timer, Wifi } from "lucide-react";
-import type { BridgeState } from "../types";
-import { latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
+import { AlertCircle, CheckCircle, Clock, Copy, Download, Film, Layers, Link, RefreshCw, Route, ShieldCheck, Timer, Wifi } from "lucide-react";
+import type { BridgeState, FullDetail } from "../types";
+import { formatDuration, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 
 type Props = {
   state: BridgeState;
   onAction: (action: string, payload?: Record<string, unknown>) => void;
 };
 
+type PlaybackLine = {
+  key: "play" | "backup";
+  label: string;
+  url?: string;
+  stat?: FullDetail["fullStat"];
+  copyAction: string;
+};
+
+function lineState(line: PlaybackLine) {
+  if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false };
+  if (line.stat?.error) return { label: "探测异常", color: "text-amber-600", bg: "bg-amber-50", ready: false };
+  if (line.stat?.pending) return { label: "探测中", color: "text-sky-600", bg: "bg-sky-50", ready: true };
+  return { label: "可播放", color: "text-emerald-600", bg: "bg-emerald-50", ready: true };
+}
+
+function bestLine(lines: PlaybackLine[]) {
+  return lines.find((line) => lineState(line).ready && line.url) || lines.find((line) => line.url);
+}
+
+function playbackTip(latest?: FullDetail) {
+  if (!latest) return "打开视频详情页后会自动记录播放资源。";
+  if (latest.fullStat?.error && latest.backupStat?.error) return "主备线路探测都异常，建议刷新播放资源或检查账号池。";
+  if (!latest.playLink && latest.backupLink) return "主线路缺失，已检测到备用线路，可先复制备用线路或重新刷新资源。";
+  if (latest.playLink && latest.backupLink) return "主备线路都已记录，播放卡顿时可切换备用线路。";
+  if (latest.playLink) return "主线路已就绪，播放不稳时可刷新资源获取最新链接。";
+  return "播放详情缺少可用链接，建议刷新资源或处理账号池。";
+}
+
 export function PlaybackPage({ state, onAction }: Props) {
   const latest = latestFullDetail(state);
   const records = (state.fullDetails || []).slice(-24).reverse();
-  const segmentTotal = latest?.fullStat?.segments || 0;
-  const duration = latest?.fullStat?.duration;
+  const lines: PlaybackLine[] = [
+    { key: "play", label: "主线路", url: latest?.playLink, stat: latest?.fullStat, copyAction: "copy-play-link" },
+    { key: "backup", label: "备用线路", url: latest?.backupLink, stat: latest?.backupStat, copyAction: "copy-backup-link" }
+  ];
+  const preferredLine = bestLine(lines);
+  const segmentTotal = preferredLine?.stat?.segments || latest?.fullStat?.segments || latest?.backupStat?.segments || 0;
+  const duration = preferredLine?.stat?.duration || latest?.fullStat?.duration || latest?.backupStat?.duration;
+  const readyCount = lines.filter((line) => lineState(line).ready && line.url).length;
+  const fetchedAt = latest?.fetchedAt || String((latest as { ts?: string } | undefined)?.ts || "");
 
   return (
     <div className="space-y-4 p-4">
@@ -25,7 +60,7 @@ export function PlaybackPage({ state, onAction }: Props) {
           {latest ? <CheckCircle size={12} className="text-emerald-300 shrink-0" /> : <AlertCircle size={12} className="text-amber-200 shrink-0" />}
           <span className="opacity-85">
             {latest
-              ? `已获取播放详情 · ${segmentTotal || "?"} 个分片${duration ? ` · ${Math.floor(duration / 60)}分${Math.floor(duration % 60)}秒` : ""}`
+              ? `已获取播放详情 · ${readyCount || 0} 条可用线路 · ${segmentTotal || "?"} 个分片${duration ? ` · ${formatDuration(duration)}` : ""}`
               : "打开视频详情页后会记录完整播放资源"}
           </span>
         </div>
@@ -33,28 +68,78 @@ export function PlaybackPage({ state, onAction }: Props) {
           <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">M3U8</span>
           <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">{latest?.accountLabel || latest?.accountUser || "自动轮换账号"}</span>
           <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">{localizeFlowText(latest?.action || "full_detail")}</span>
+          {fetchedAt && <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">{shortTime(fetchedAt)}</span>}
         </div>
-        {latest?.playLink && (
+        {preferredLine?.url && (
           <div className="flex items-center gap-1.5 mb-2 rounded-lg bg-black/20 px-2 py-1.5">
             <Link size={10} className="shrink-0 text-white/60" />
-            <span className="flex-1 truncate text-[10px] text-white/80 font-mono">{maskUrl(latest.playLink)}</span>
+            <span className="flex-1 truncate text-[10px] text-white/80 font-mono">{preferredLine.label} · {maskUrl(preferredLine.url)}</span>
           </div>
         )}
         <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => onAction("refresh-full-detail", { movieId: latest?.movieId || "" })}
+            className="flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 px-3 py-1.5 text-xs font-medium backdrop-blur transition-all"
+          >
+            <RefreshCw size={12} /> 刷新资源
+          </button>
           <button
             onClick={() => onAction("download-full-video", { movieId: latest?.movieId || "" })}
             className="flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 px-3 py-1.5 text-xs font-medium backdrop-blur transition-all"
           >
             <Download size={12} /> 下载视频
           </button>
-          {latest?.playLink && (
+          {preferredLine?.url && (
             <button
-              onClick={() => onAction("copy-full-link")}
+              onClick={() => onAction(preferredLine.copyAction, { url: preferredLine.url, label: `${preferredLine.label}完整链接` })}
               className="flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 px-3 py-1.5 text-xs font-medium backdrop-blur transition-all"
             >
-              <Copy size={12} /> 复制播放链接
+              <Copy size={12} /> 复制完整链接
             </button>
           )}
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
+              <ShieldCheck size={14} className="text-emerald-400" /> 播放就绪
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-purple-400">{playbackTip(latest)}</p>
+          </div>
+          <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${readyCount ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+            {readyCount ? `${readyCount} 条可用` : "待获取"}
+          </span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {lines.map((line) => {
+            const stateInfo = lineState(line);
+            return (
+              <div key={line.key} className={`rounded-2xl ${stateInfo.bg} p-3`}>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className={`flex items-center gap-1 text-xs font-semibold ${stateInfo.color}`}>
+                    <Route size={12} /> {line.label}
+                  </p>
+                  <span className={`text-[10px] ${stateInfo.color}`}>{stateInfo.label}</span>
+                </div>
+                <p className="truncate font-mono text-[10px] text-purple-500">{line.url ? maskUrl(line.url) : "暂无链接"}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                  <span className="rounded-full bg-white/70 px-2 py-0.5 text-purple-500">{line.stat?.segments ? `${line.stat.segments} 分片` : "分片未知"}</span>
+                  <span className="rounded-full bg-white/70 px-2 py-0.5 text-purple-500">{line.stat?.duration ? formatDuration(line.stat.duration) : "时长未知"}</span>
+                  {line.stat?.status && <span className="rounded-full bg-white/70 px-2 py-0.5 text-purple-500">HTTP {line.stat.status}</span>}
+                </div>
+                {line.stat?.error && <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-amber-600">{line.stat.error}</p>}
+                <button
+                  onClick={() => onAction(line.copyAction, { url: line.url || "", label: `${line.label}完整链接` })}
+                  disabled={!line.url}
+                  className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl bg-white/80 px-3 py-1.5 text-[11px] font-medium text-purple-500 shadow-sm transition-transform active:scale-95 disabled:opacity-50"
+                >
+                  <Copy size={11} /> 复制完整链接
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -65,8 +150,8 @@ export function PlaybackPage({ state, onAction }: Props) {
         <div className="grid grid-cols-3 gap-3">
           {[
             { label: "总分片", value: segmentTotal || "—", color: "text-purple-600", bg: "bg-purple-50" },
-            { label: "总时长", value: duration ? `${Math.floor(duration / 60)}m${Math.floor(duration % 60)}s` : "—", color: "text-emerald-600", bg: "bg-emerald-50" },
-            { label: "状态", value: latest?.fullStat?.error ? "异常" : latest ? "正常" : "—", color: latest?.fullStat?.error ? "text-rose-600" : "text-sky-600", bg: latest?.fullStat?.error ? "bg-rose-50" : "bg-sky-50" }
+            { label: "总时长", value: duration ? formatDuration(duration) : "—", color: "text-emerald-600", bg: "bg-emerald-50" },
+            { label: "状态", value: readyCount ? "正常" : latest ? "异常" : "—", color: readyCount ? "text-sky-600" : "text-rose-600", bg: readyCount ? "bg-sky-50" : "bg-rose-50" }
           ].map((item) => (
             <div key={item.label} className={`${item.bg} rounded-xl p-2.5 text-center`}>
               <p className={`text-base font-bold ${item.color}`}>{item.value}</p>
@@ -117,7 +202,7 @@ export function PlaybackPage({ state, onAction }: Props) {
                 <span className="flex items-center gap-0.5 rounded-full bg-purple-50 px-2 py-0.5 text-[10px] text-purple-500"><Wifi size={9} /> M3U8</span>
                 <span className="flex items-center gap-0.5 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] text-sky-500"><Layers size={9} /> {item.fullStat?.segments || "?"} 分片</span>
                 {item.fullStat?.duration && (
-                  <span className="flex items-center gap-0.5 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] text-violet-500"><Timer size={9} /> {Math.floor(item.fullStat.duration / 60)}m</span>
+                  <span className="flex items-center gap-0.5 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] text-violet-500"><Timer size={9} /> {formatDuration(item.fullStat.duration)}</span>
                 )}
                 <span className="rounded-full bg-pink-50 px-2 py-0.5 text-[10px] text-pink-500">{item.accountLabel || item.accountUser || "自动账号"}</span>
                 <span className="flex items-center gap-0.5 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] text-gray-400"><Clock size={9} /> {shortTime(String((item as { ts?: string }).ts || ""))}</span>
