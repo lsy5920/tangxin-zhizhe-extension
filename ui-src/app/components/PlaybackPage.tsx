@@ -59,6 +59,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const currentTask = downloadTaskForMovie(state, latest?.movieId);
   const taskProgress = currentTask ? downloadProgress(currentTask) : 0;
   const currentTaskTone = taskTone(currentTask);
+  const currentTaskUrl = absoluteUrl(currentTask?.url || "");
 
   return (
     <div className="space-y-4 p-4">
@@ -201,6 +202,13 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               <span className="rounded-full bg-white px-2 py-0.5 text-sky-500">{formatBytes(currentTask.bytes)}</span>
               <span className="rounded-full bg-white px-2 py-0.5 text-gray-400">{shortTime(currentTask.updatedAt)}</span>
             </div>
+            {currentTaskUrl && (
+              <div className="flex items-center gap-1.5 rounded-xl bg-white px-2.5 py-1.5">
+                <Link size={11} className="shrink-0 text-purple-300" />
+                <span className="shrink-0 text-[10px] font-medium text-purple-400">完整源链接</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-purple-500">{maskUrl(currentTaskUrl)}</span>
+              </div>
+            )}
             {currentTask.stage !== "complete" && (
               <div>
                 <div className="mb-1 flex justify-between text-[10px] text-purple-400">
@@ -221,17 +229,30 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             点击「下载视频」后，下载任务会在这里显示进度；任务创建后可直接保存到设备或进入下载页查看全部记录。
           </div>
         )}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => currentTask ? onAction("save-download-device", { taskId: currentTask.taskId || "" }) : onAction("download-full-video", { movieId: latest?.movieId || "" })}
-            disabled={currentTask ? !canSaveDownload(currentTask) : !latest?.movieId}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 py-2 text-xs font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-45"
+            onClick={() => {
+              // 下载失败时直接重新创建当前视频任务，其他可保存状态继续走保存流程。
+              if (currentTask?.stage === "error") onAction("download-full-video", { movieId: currentTask.movieId || latest?.movieId || "" });
+              else if (currentTask) onAction("save-download-device", { taskId: currentTask.taskId || "" });
+              else onAction("download-full-video", { movieId: latest?.movieId || "" });
+            }}
+            disabled={currentTask ? currentTask.stage !== "error" && !canSaveDownload(currentTask) : !latest?.movieId}
+            className="flex min-w-[8rem] flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 py-2 text-xs font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-45"
           >
-            {currentTask ? <><Save size={13} /> 保存到设备</> : <><Download size={13} /> 创建下载任务</>}
+            {currentTask?.stage === "error" ? <><RefreshCw size={13} /> 重试下载</> : currentTask ? <><Save size={13} /> 保存到设备</> : <><Download size={13} /> 创建下载任务</>}
           </button>
+          {currentTaskUrl && (
+            <button
+              onClick={() => onAction("copy-download-url", { taskId: currentTask?.taskId || "" })}
+              className="flex min-w-[8rem] flex-1 items-center justify-center gap-1.5 rounded-xl border border-sky-200 py-2 text-xs font-medium text-sky-500 transition-transform active:scale-95"
+            >
+              <Copy size={13} /> 复制链接
+            </button>
+          )}
           <button
             onClick={() => onPage?.("downloads")}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95"
+            className="flex min-w-[8rem] flex-1 items-center justify-center gap-1.5 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95"
           >
             <Layers size={13} /> 下载页
           </button>
