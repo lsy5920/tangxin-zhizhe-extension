@@ -184,6 +184,48 @@ function playbackRecordReport(item: FullDetail, recordTask?: DownloadTask | null
   ].filter((line) => line !== "").join("\n");
 }
 
+function playbackRecordsReport(rows: { item: FullDetail; recordTask?: DownloadTask | null; recordFailed?: boolean }[], filterLabel = "当前筛选") {
+  // 批量报告用于一次性排查多个历史视频，保留当前筛选结果和完整链接。
+  const readyCount = rows.filter((row) => absoluteUrl(row.item.playLink || row.item.backupLink || "")).length;
+  const failedCount = rows.filter((row) => row.recordFailed).length;
+  const backupCount = rows.filter((row) => row.item.backupLink).length;
+  const lines = [
+    "糖心志者播放记录批量报告",
+    `筛选范围：${filterLabel}`,
+    `记录数量：${rows.length}`,
+    `可播放记录：${readyCount}`,
+    `异常记录：${failedCount}`,
+    `含备用线路：${backupCount}`,
+    `生成时间：${new Date().toLocaleString("zh-CN", { hour12: false })}`,
+    ""
+  ];
+  rows.forEach((row, index) => {
+    const item = row.item;
+    const recordTask = row.recordTask || null;
+    const playUrl = absoluteUrl(item.playLink || "");
+    const backupUrl = absoluteUrl(item.backupLink || "");
+    const taskUrl = absoluteUrl(recordTask?.url || "");
+    lines.push(
+      `${index + 1}. ${item.movieTitle || item.title || item.movieId || "播放详情"}`,
+      `视频编号：${item.movieId || "未记录"}`,
+      `账号：${item.accountLabel || item.accountUser || "未记录"}`,
+      `获取时间：${String((item as { ts?: string }).ts || item.fetchedAt || "") || "未记录"}`,
+      `主线路：${playUrl || "暂无"}`,
+      `备用线路：${backupUrl || "暂无"}`,
+      `主线路分片：${item.fullStat?.segments || "未知"}`,
+      `主线路时长：${item.fullStat?.duration ? formatDuration(item.fullStat.duration) : "未知"}`,
+      item.fullStat?.error ? `主线路异常：${item.fullStat.error}` : "",
+      item.backupStat?.error ? `备用线路异常：${item.backupStat.error}` : "",
+      recordTask ? `下载任务：${downloadStageLabel(recordTask.stage)} / ${downloadFormat(recordTask)} / ${recordTask.total ? `${recordTask.current || 0}/${recordTask.total}` : `${downloadProgress(recordTask)}%`}` : "下载任务：未创建",
+      recordTask ? `下载源链接：${taskUrl || "暂无"}` : "",
+      recordTask?.error ? `下载失败：${recordTask.error}` : "",
+      recordTask?.transmuxError ? `转封装异常：${recordTask.transmuxError}` : "",
+      ""
+    );
+  });
+  return lines.filter((line) => line !== "").join("\n");
+}
+
 function taskTone(task?: DownloadTask | null) {
   if (!task) return { label: "未创建", color: "bg-purple-50 text-purple-500" };
   if (task.stage === "error") return { label: "下载失败", color: "bg-rose-50 text-rose-600" };
@@ -265,6 +307,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     if (recordFilter === "backup" && !row.item.backupLink) return false;
     return !recordKeyword || row.searchText.includes(recordKeyword);
   });
+  const recordFilterLabel = recordFilterItems.find((item) => item.key === recordFilter)?.label || "当前筛选";
+  const batchRecordReport = playbackRecordsReport(filteredRecordRows, recordFilterLabel);
 
   return (
     <div className="space-y-4 p-4">
@@ -509,7 +553,17 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
             <Film size={14} className="text-pink-400" /> 播放记录
           </h3>
-          <span className="text-[10px] text-purple-400">{filteredRecordRows.length}/{recordStats.total} 条</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onAction("copy-playback-health-report", { report: batchRecordReport })}
+              disabled={!filteredRecordRows.length}
+              className="flex items-center gap-1 rounded-xl border border-purple-200 px-2.5 py-1.5 text-[10px] font-medium text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
+              title="复制当前筛选播放记录的批量报告"
+            >
+              <Copy size={11} /> 批量报告
+            </button>
+            <span className="text-[10px] text-purple-400">{filteredRecordRows.length}/{recordStats.total} 条</span>
+          </div>
         </div>
         <div className="rounded-2xl border border-pink-100 bg-white p-2 shadow-sm">
           <div className="flex items-center gap-2 rounded-xl bg-purple-50 px-2.5 py-1.5">

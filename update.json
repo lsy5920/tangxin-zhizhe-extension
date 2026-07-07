@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.5.9",
-  "build": "2026-07-08-0220",
-  "releasedAt": "2026-07-08 02:20",
+  "version": "2.6.0",
+  "build": "2026-07-08-0226",
+  "releasedAt": "2026-07-08 02:26",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -12,10 +12,10 @@
   ],
   "changelog": [
     {
-      "id": "2026-07-08-0220",
+      "id": "2026-07-08-0226",
       "type": "优化",
-      "title": "优化下载失败排查体验",
-      "detail": "下载页新增失败原因概览，会按当前筛选、搜索和排序后的结果聚合失败原因并显示数量；新增「失败摘要」复制入口，可导出失败原因、视频编号和完整源链接；批量复制链接和任务报告现在会按当前可见顺序输出。"
+      "title": "优化播放记录批量排查体验",
+      "detail": "播放页新增「批量报告」入口，可按当前搜索和筛选结果一次性复制播放记录批量报告，包含可播放数量、异常数量、备用线路数量、主备完整链接、分片、时长、关联下载任务、失败原因和完整下载源链接。"
     }
   ]
 }
