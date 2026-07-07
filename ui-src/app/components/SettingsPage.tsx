@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Activity, AlertTriangle, CheckCircle, Copy, Download, ExternalLink, Info, Lightbulb, Package, Radio, RefreshCw, Sparkles, Trash2, Users, X } from "lucide-react";
 import type { BridgeState, Page, WorkerDiagnostics } from "../types";
 import { formatRelativeTime } from "../helpers";
@@ -10,12 +10,18 @@ type Props = {
 };
 
 const cacheItems = ["插件本地账号池缓存","远程账号池摘要缓存","播放状态缓存","下载任务缓存","页面监听运行缓存","旧版本默认配置"];
+const DIAGNOSTICS_CACHE_KEY = "txzzLastWorkerDiagnostics";
 
-type CloudServiceCheck = { ok: boolean; text: string; diagnostics?: WorkerDiagnostics };
+type CloudServiceCheck = { ok: boolean; text: string; diagnostics?: WorkerDiagnostics; cached?: boolean; baseUrl?: string };
+
+// 统一服务地址格式，让上次体检记录只匹配同一个云端服务地址。
+function normalizeServiceBaseUrl(baseUrl: string) {
+  return String(baseUrl || "").trim().replace(/\/+$/, "");
+}
 
 // 按新旧服务端能力逐级探测，兼容还没有升级智能诊断接口的旧部署。
 async function inspectCloudService(baseUrl: string): Promise<CloudServiceCheck> {
-  const base = String(baseUrl || "").replace(/\/+$/, "");
+  const base = normalizeServiceBaseUrl(baseUrl);
   const endpoints = ["/v1/diagnostics", "/v1/status", "/v1/health"];
   let lastError = "";
 
@@ -28,7 +34,8 @@ async function inspectCloudService(baseUrl: string): Promise<CloudServiceCheck> 
         return {
           ok: data?.ok !== false && diagnostics.level !== "error",
           text: diagnostics.summary || "云端服务诊断完成。",
-          diagnostics
+          diagnostics,
+          baseUrl: base
         };
       }
       if (res.ok && data?.ok) {
@@ -42,7 +49,8 @@ async function inspectCloudService(baseUrl: string): Promise<CloudServiceCheck> 
             checkedAt: data.time,
             checks: [{ key: "health", label: "基础连接", level: "ok", message: `服务在线，构建 ${data.build || "未记录"}。` }],
             suggestions: ["部署新版云端服务后，可在此查看完整体检结果和处理建议。"]
-          }
+          },
+          baseUrl: base
         };
       }
       lastError = `HTTP ${res.status}`;
@@ -51,7 +59,7 @@ async function inspectCloudService(baseUrl: string): Promise<CloudServiceCheck> 
     }
   }
 
-  return { ok: false, text: `连接失败：${lastError.slice(0, 80) || "请检查地址是否正确"}` };
+  return { ok: false, text: `连接失败：${lastError.slice(0, 80) || "请检查地址是否正确"}`, baseUrl: base };
 }
 
 function levelClasses(level?: string) {
@@ -95,6 +103,43 @@ function hasDiagnosticKey(diagnostics: WorkerDiagnostics | undefined, keys: stri
   return (diagnostics?.checks || []).some((item) => keys.includes(String(item.key || "")) && item.level !== "ok");
 }
 
+function readCachedDiagnostics(baseUrl: string): Promise<CloudServiceCheck | null> {
+  return new Promise((resolve) => {
+    const expectedBaseUrl = normalizeServiceBaseUrl(baseUrl);
+    if (!expectedBaseUrl) { resolve(null); return; }
+    try {
+      chrome.storage.local.get(DIAGNOSTICS_CACHE_KEY, (result) => {
+        const cached = result?.[DIAGNOSTICS_CACHE_KEY] as CloudServiceCheck | undefined;
+        if (!cached?.diagnostics || cached.baseUrl !== expectedBaseUrl) { resolve(null); return; }
+        resolve(cached?.diagnostics ? { ...cached, cached: true } : null);
+      });
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
+// 只缓存脱敏后的体检摘要，不保存任何密钥、账号凭据或服务端敏感字段。
+function saveCachedDiagnostics(check: CloudServiceCheck | null) {
+  try {
+    if (!check?.diagnostics) return;
+    chrome.storage.local.set({
+      [DIAGNOSTICS_CACHE_KEY]: {
+        ok: check.ok,
+        text: check.text,
+        baseUrl: check.baseUrl,
+        diagnostics: check.diagnostics
+      }
+    });
+  } catch (_) {}
+}
+
+function clearCachedDiagnostics() {
+  try {
+    chrome.storage.local.remove(DIAGNOSTICS_CACHE_KEY);
+  } catch (_) {}
+}
+
 export function SettingsPage({ state, onAction, onPage }: Props) {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -103,6 +148,15 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
   const [serviceCheck, setServiceCheck] = useState<CloudServiceCheck | null>(null);
   const [checkingService, setCheckingService] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    readCachedDiagnostics(state.remote?.baseUrl || "").then((cached) => {
+      if (!alive) return;
+      setServiceCheck(cached);
+    });
+    return () => { alive = false; };
+  }, [state.remote?.baseUrl]);
 
   const checkUpdate = () => {
     setCheckingUpdate(true);
@@ -115,7 +169,14 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
     if (!url) { setServiceCheck({ ok: false, text: "请先在账号池页面配置云端服务地址" }); return; }
     setCheckingService(true); setServiceCheck(null);
     const result = await inspectCloudService(url);
-    setServiceCheck(result); setCheckingService(false);
+    setServiceCheck(result);
+    saveCachedDiagnostics(result);
+    setCheckingService(false);
+  };
+
+  const clearDiagnosticsHistory = () => {
+    clearCachedDiagnostics();
+    setServiceCheck(null);
   };
 
   const copyDiagnostics = async () => {
@@ -165,9 +226,9 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
           <div className={`space-y-3 rounded-2xl border ${diagnosticTone.border} ${diagnosticTone.bg} p-3`}>
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className={`text-[11px] font-semibold ${diagnosticTone.text}`}>体检结果 · {levelText(diagnostics.level)}</p>
+                <p className={`text-[11px] font-semibold ${diagnosticTone.text}`}>{serviceCheck?.cached ? "上次体检" : "体检结果"} · {levelText(diagnostics.level)}</p>
                 <p className="mt-1 text-xs leading-relaxed text-purple-700">{diagnostics.summary || serviceCheck.text}</p>
-                {diagnostics.checkedAt && <p className="mt-1 text-[10px] text-purple-300">检查于 {formatRelativeTime(diagnostics.checkedAt)}</p>}
+                {diagnostics.checkedAt && <p className="mt-1 text-[10px] text-purple-300">检查于 {formatRelativeTime(diagnostics.checkedAt)}{serviceCheck?.cached ? "，可重新体检刷新状态" : ""}</p>}
               </div>
               <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/80 shadow-sm">
                 <span className={`text-lg font-bold ${diagnosticTone.text}`}>{Math.round(Number(diagnostics.score ?? 0))}</span>
@@ -198,6 +259,35 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
                 ))}
               </div>
             )}
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <button
+                onClick={() => onPage?.("accounts", { showInvalid: shouldShowInvalid, openAdd: shouldOpenAdd })}
+                className="flex items-center justify-center gap-1 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-medium text-purple-600 shadow-sm transition-transform active:scale-95"
+              >
+                <Users size={12} /> {accountProblem ? "处理账号池" : "查看账号池"}
+              </button>
+              <button
+                onClick={() => onAction("sync-remote")}
+                className="flex items-center justify-center gap-1 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-medium text-sky-600 shadow-sm transition-transform active:scale-95"
+              >
+                <RefreshCw size={12} /> 同步账号
+              </button>
+              <button
+                onClick={copyDiagnostics}
+                className="flex items-center justify-center gap-1 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-medium text-pink-600 shadow-sm transition-transform active:scale-95"
+              >
+                <Copy size={12} /> 复制报告
+              </button>
+            </div>
+            <div className="flex items-center justify-center gap-2 text-[10px] text-purple-400">
+              {copyStatus && <span>{copyStatus}</span>}
+              {serviceCheck?.cached && (
+                <button onClick={clearDiagnosticsHistory} className="rounded-full bg-white/80 px-2 py-0.5 text-purple-500">
+                  清除上次体检
+                </button>
+              )}
+            </div>
           </div>
         )}
         {state.remote?.baseUrl && <p className="truncate text-[10px] text-purple-300 font-mono">{state.remote.baseUrl}</p>}
