@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle, Clock, Copy, Download, Film, Layers, Link, RefreshCw, Route, Save, ShieldCheck, Timer, Wifi } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, Film, Gauge, Layers, Link, RefreshCw, Route, Save, ShieldCheck, Signal, Timer, Wifi } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 
@@ -36,6 +36,58 @@ function playbackTip(latest?: FullDetail) {
   return "播放详情缺少可用链接，建议刷新资源或处理账号池。";
 }
 
+function playbackHealth(latest: FullDetail | undefined, lines: PlaybackLine[], preferredLine?: PlaybackLine) {
+  // 播放体检只使用当前已捕获的探测数据，不额外发请求，避免影响用户正在播放的视频。
+  const usableLines = lines.filter((line) => line.url && !line.stat?.error);
+  const readyLines = lines.filter((line) => lineState(line).ready && line.url);
+  const errorLines = lines.filter((line) => line.stat?.error);
+  const pendingLines = lines.filter((line) => line.stat?.pending);
+  const segmentTotal = preferredLine?.stat?.segments || latest?.fullStat?.segments || latest?.backupStat?.segments || 0;
+  const duration = preferredLine?.stat?.duration || latest?.fullStat?.duration || latest?.backupStat?.duration || 0;
+  const risks: string[] = [];
+  let score = 0;
+
+  if (latest) score += 15;
+  if (usableLines.length) score += 30;
+  if (readyLines.length > 1) score += 15;
+  else if (readyLines.length === 1) score += 10;
+  if (segmentTotal) score += 20;
+  if (duration) score += 10;
+  if (!errorLines.length && usableLines.length) score += 10;
+  else if (errorLines.length < lines.length) score += 4;
+  score = Math.max(0, Math.min(100, score));
+
+  if (!latest) {
+    risks.push("等待打开视频详情页后捕获播放资源。");
+  } else {
+    if (!usableLines.length) risks.push("暂未检测到可用线路，建议刷新播放资源或检查账号池。");
+    if (errorLines.length === lines.length) risks.push("主备线路都出现探测异常，需要优先刷新资源。");
+    else errorLines.forEach((line) => risks.push(`${line.label}探测异常，可先使用另一条线路。`));
+    if (pendingLines.length) risks.push("仍有线路在探测中，稍等片刻后可再次查看体检结果。");
+    if (!segmentTotal) risks.push("分片数量未知，播放卡顿时建议先刷新资源。");
+    if (usableLines.length === 1) risks.push("仅检测到一条线路，建议保留备用线路用于卡顿时切换。");
+    if (!risks.length) risks.push("线路信息完整，可以优先使用推荐线路播放或下载。");
+  }
+
+  const label = score >= 85 ? "优秀" : score >= 65 ? "可用" : score >= 35 ? "需观察" : latest ? "待刷新" : "待捕获";
+  const tone = score >= 85 ? "text-emerald-600" : score >= 65 ? "text-sky-600" : score >= 35 ? "text-amber-600" : "text-rose-600";
+  const bg = score >= 85 ? "bg-emerald-50" : score >= 65 ? "bg-sky-50" : score >= 35 ? "bg-amber-50" : "bg-rose-50";
+  const summary = preferredLine?.url
+    ? `推荐优先使用${preferredLine.label}，体检分 ${score}。`
+    : "暂未找到可推荐线路。";
+
+  return {
+    score,
+    label,
+    tone,
+    bg,
+    summary,
+    recommendedLabel: preferredLine?.url ? preferredLine.label : "暂无推荐",
+    riskCount: latest ? Math.max(0, risks.filter((item) => !item.includes("信息完整")).length) : risks.length,
+    risks
+  };
+}
+
 function taskTone(task?: DownloadTask | null) {
   if (!task) return { label: "未创建", color: "bg-purple-50 text-purple-500" };
   if (task.stage === "error") return { label: "下载失败", color: "bg-rose-50 text-rose-600" };
@@ -60,6 +112,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const taskProgress = currentTask ? downloadProgress(currentTask) : 0;
   const currentTaskTone = taskTone(currentTask);
   const currentTaskUrl = absoluteUrl(currentTask?.url || "");
+  const preferredLineUrl = absoluteUrl(preferredLine?.url || "");
+  const health = playbackHealth(latest, lines, preferredLine);
 
   return (
     <div className="space-y-4 p-4">
@@ -81,12 +135,13 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">M3U8</span>
           <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">{latest?.accountLabel || latest?.accountUser || "自动轮换账号"}</span>
           <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">{localizeFlowText(latest?.action || "full_detail")}</span>
+          <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">体检 {health.score} 分</span>
           {fetchedAt && <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">{shortTime(fetchedAt)}</span>}
         </div>
-        {preferredLine?.url && (
+        {preferredLineUrl && (
           <div className="flex items-center gap-1.5 mb-2 rounded-lg bg-black/20 px-2 py-1.5">
             <Link size={10} className="shrink-0 text-white/60" />
-            <span className="flex-1 truncate text-[10px] text-white/80 font-mono">{preferredLine.label} · {maskUrl(preferredLine.url)}</span>
+            <span className="flex-1 truncate text-[10px] text-white/80 font-mono">{preferredLine?.label} · {maskUrl(preferredLineUrl)}</span>
           </div>
         )}
         <div className="flex flex-wrap gap-2">
@@ -104,7 +159,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           </button>
           {preferredLine?.url && (
             <button
-              onClick={() => onAction(preferredLine.copyAction, { url: preferredLine.url, label: `${preferredLine.label}完整链接` })}
+              onClick={() => onAction(preferredLine.copyAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}
               className="flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 px-3 py-1.5 text-xs font-medium backdrop-blur transition-all"
             >
               <Copy size={12} /> 复制完整链接
@@ -125,9 +180,41 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             {readyCount ? `${readyCount} 条可用` : "待获取"}
           </span>
         </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className={`rounded-xl px-3 py-2 ${health.bg}`}>
+            <p className={`flex items-center gap-1 text-xs font-semibold ${health.tone}`}>
+              <Gauge size={12} /> 体检分
+            </p>
+            <p className={`mt-1 text-lg font-bold ${health.tone}`}>{health.score}</p>
+            <p className="text-[10px] text-purple-400">{health.label}</p>
+          </div>
+          <div className="rounded-xl bg-sky-50 px-3 py-2">
+            <p className="flex items-center gap-1 text-xs font-semibold text-sky-600">
+              <Signal size={12} /> 推荐线路
+            </p>
+            <p className="mt-1 truncate text-sm font-bold text-sky-600">{health.recommendedLabel}</p>
+            <p className="text-[10px] text-purple-400">{readyCount ? `${readyCount} 条可用线路` : "等待线路"}</p>
+          </div>
+          <div className="rounded-xl bg-purple-50 px-3 py-2">
+            <p className="flex items-center gap-1 text-xs font-semibold text-purple-600">
+              <Activity size={12} /> 风险项
+            </p>
+            <p className="mt-1 text-lg font-bold text-purple-600">{health.riskCount}</p>
+            <p className="truncate text-[10px] text-purple-400">{health.summary}</p>
+          </div>
+        </div>
+        <div className="space-y-1 rounded-xl bg-gray-50 p-2">
+          {health.risks.slice(0, 3).map((item) => (
+            <p key={item} className="flex items-start gap-1.5 text-[10px] leading-relaxed text-purple-500">
+              <Activity size={10} className="mt-0.5 shrink-0 text-purple-300" />
+              <span>{item}</span>
+            </p>
+          ))}
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
           {lines.map((line) => {
             const stateInfo = lineState(line);
+            const lineUrl = absoluteUrl(line.url || "");
             return (
               <div key={line.key} className={`rounded-2xl ${stateInfo.bg} p-3`}>
                 <div className="mb-2 flex items-center justify-between gap-2">
@@ -136,7 +223,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                   </p>
                   <span className={`text-[10px] ${stateInfo.color}`}>{stateInfo.label}</span>
                 </div>
-                <p className="truncate font-mono text-[10px] text-purple-500">{line.url ? maskUrl(line.url) : "暂无链接"}</p>
+                <p className="truncate font-mono text-[10px] text-purple-500">{lineUrl ? maskUrl(lineUrl) : "暂无链接"}</p>
                 <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
                   <span className="rounded-full bg-white/70 px-2 py-0.5 text-purple-500">{line.stat?.segments ? `${line.stat.segments} 分片` : "分片未知"}</span>
                   <span className="rounded-full bg-white/70 px-2 py-0.5 text-purple-500">{line.stat?.duration ? formatDuration(line.stat.duration) : "时长未知"}</span>
@@ -144,7 +231,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                 </div>
                 {line.stat?.error && <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-amber-600">{line.stat.error}</p>}
                 <button
-                  onClick={() => onAction(line.copyAction, { url: line.url || "", label: `${line.label}完整链接` })}
+                  onClick={() => onAction(line.copyAction, { url: lineUrl, label: `${line.label}完整链接` })}
                   disabled={!line.url}
                   className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl bg-white/80 px-3 py-1.5 text-[11px] font-medium text-purple-500 shadow-sm transition-transform active:scale-95 disabled:opacity-50"
                 >

@@ -34,9 +34,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-0055";
+const LOCAL_UPDATE_BUILD = "2026-07-08-0100";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 00:55 【优化】升级版本到 v2.4.0，播放页当前视频下载卡片新增完整源链接、复制链接和失败重试入口。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 01:00 【优化】升级版本到 v2.4.1，播放页新增播放资源体检卡片，展示推荐线路、体检分和风险提示。";
 
 const DEFAULT_STATE = {
   role: "guest",
