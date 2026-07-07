@@ -201,13 +201,25 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
       `远程构建：${remoteBuildText}`,
       `发布时间：${remoteUpdate?.releasedAt || "未检测"}`,
       `检测时间：${updateCheckedText}`,
-      `下载地址：${state.repositoryUpdate?.downloadUrl || remoteUpdate?.archiveUrl || "未检测"}`,
+      `下载地址：${updateDownloadUrl || "未检测"}`,
       `更新状态：${updateAvailable ? "发现新版本" : "当前版本可用"}`,
       `更新说明：${updateSummary}`
     ];
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
       setCopyStatus("更新信息已复制");
+    } catch (_) {
+      setCopyStatus("复制失败，请稍后重试");
+    }
+    window.setTimeout(() => setCopyStatus(""), 1600);
+  };
+
+  const copyUpdateDownloadUrl = async () => {
+    // 单独复制最新版压缩包地址，下载按钮受浏览器限制时也能手动保存。
+    if (!updateDownloadUrl) return;
+    try {
+      await navigator.clipboard.writeText(updateDownloadUrl);
+      setCopyStatus("下载地址已复制");
     } catch (_) {
       setCopyStatus("复制失败，请稍后重试");
     }
@@ -221,6 +233,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
   const remoteBuildText = remoteUpdate?.build || "未检测";
   const updateCheckedText = state.repositoryUpdate?.checkedAt ? formatRelativeTime(state.repositoryUpdate.checkedAt) : "未检测";
   const updateSourceText = state.repositoryUpdate?.source === "update.json" ? "远程版本清单" : state.repositoryUpdate?.source || "未检测";
+  const updateDownloadUrl = state.repositoryUpdate?.downloadUrl || remoteUpdate?.archiveUrl || "";
   const updateSummary = updateFailed
     ? `更新检测失败：${state.repositoryUpdate?.error || "请稍后重试"}`
     : remoteUpdate?.detail || remoteUpdate?.text || remoteUpdate?.title || (remoteUpdate?.version ? "远程版本与本地一致。" : "请点击检查更新获取远程版本。");
@@ -365,20 +378,24 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
             <p>检测来源：{updateSourceText}</p>
             <p>检测时间：{updateCheckedText}</p>
             {remoteUpdate?.releasedAt && <p>发布时间：{remoteUpdate.releasedAt}</p>}
-            {(state.repositoryUpdate?.downloadUrl || remoteUpdate?.archiveUrl) && <p className="truncate">下载地址：{state.repositoryUpdate?.downloadUrl || remoteUpdate?.archiveUrl}</p>}
+            {updateDownloadUrl && <p className="truncate">下载地址：{updateDownloadUrl}</p>}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <button onClick={checkUpdate} disabled={checkingUpdate} className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 disabled:opacity-70">
             {checkingUpdate ? <><RefreshCw size={13} className="animate-spin" /> 检查中…</> : <><RefreshCw size={13} /> 检查更新</>}
           </button>
           <button onClick={copyUpdateInfo} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-sky-200 py-2 text-xs font-medium text-sky-500 transition-transform active:scale-95">
             <Copy size={13} /> 复制信息
           </button>
+          <button onClick={copyUpdateDownloadUrl} disabled={!updateDownloadUrl} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-emerald-200 py-2 text-xs font-medium text-emerald-500 transition-transform active:scale-95 disabled:opacity-45">
+            <Copy size={13} /> 复制地址
+          </button>
           <button onClick={() => onAction("download-latest")} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95">
             <Download size={13} /> 检测并下载
           </button>
         </div>
+        {copyStatus && <p className="text-center text-[10px] text-purple-400">{copyStatus}</p>}
       </div>
 
       <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">

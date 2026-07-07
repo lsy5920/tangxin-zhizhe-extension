@@ -1,6 +1,7 @@
-import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, Film, Gauge, Layers, Link, RefreshCw, Route, Save, ShieldCheck, Signal, Timer, Wifi } from "lucide-react";
+import { useState } from "react";
+import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, Film, Gauge, Layers, Link, RefreshCw, Route, Save, Search, ShieldCheck, Signal, Timer, Wifi } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
-import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
+import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 
 type Props = {
   state: BridgeState;
@@ -15,6 +16,8 @@ type PlaybackLine = {
   stat?: FullDetail["fullStat"];
   copyAction: string;
 };
+
+type PlaybackRecordFilter = "all" | "downloadable" | "saveable" | "failed" | "backup";
 
 function lineState(line: PlaybackLine) {
   if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false };
@@ -190,6 +193,8 @@ function taskTone(task?: DownloadTask | null) {
 }
 
 export function PlaybackPage({ state, onAction, onPage }: Props) {
+  const [recordFilter, setRecordFilter] = useState<PlaybackRecordFilter>("all");
+  const [recordSearch, setRecordSearch] = useState("");
   const latest = latestFullDetail(state);
   const records = (state.fullDetails || []).slice(-24).reverse();
   const lines: PlaybackLine[] = [
@@ -208,6 +213,58 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const preferredLineUrl = absoluteUrl(preferredLine?.url || "");
   const health = playbackHealth(latest, lines, preferredLine);
   const healthReport = playbackHealthReport(latest, lines, health, currentTask);
+  const recordRows = records.map((item, index) => {
+    // 播放记录筛选全部使用本地已有状态，避免为了筛选再次请求播放接口。
+    const recordUrl = absoluteUrl(item.playLink || item.backupLink || "");
+    const recordTask = downloadTaskForMovie(state, item.movieId);
+    const recordCanSave = recordTask ? canSaveDownload(recordTask) : false;
+    const recordRunning = recordTask ? isRunningDownloadTask(recordTask) : false;
+    const recordFailed = recordTask?.stage === "error" || Boolean(item.fullStat?.error || item.backupStat?.error);
+    const recordCanDownload = Boolean(item.movieId) && !recordTask;
+    const searchText = [
+      item.movieTitle,
+      item.title,
+      item.movieId,
+      item.accountLabel,
+      item.accountUser,
+      item.playLink,
+      item.backupLink,
+      recordTask ? downloadTitle(recordTask) : ""
+    ].filter(Boolean).join(" ").toLowerCase();
+    return {
+      item,
+      index,
+      recordUrl,
+      recordTask,
+      recordCanSave,
+      recordRunning,
+      recordFailed,
+      recordCanDownload,
+      searchText
+    };
+  });
+  const recordStats = {
+    total: recordRows.length,
+    downloadable: recordRows.filter((row) => row.recordCanDownload).length,
+    saveable: recordRows.filter((row) => row.recordCanSave).length,
+    failed: recordRows.filter((row) => row.recordFailed).length,
+    backup: recordRows.filter((row) => Boolean(row.item.backupLink)).length
+  };
+  const recordFilterItems: { key: PlaybackRecordFilter; label: string; value: number; color: string }[] = [
+    { key: "all", label: "全部", value: recordStats.total, color: "text-purple-600" },
+    { key: "downloadable", label: "可下载", value: recordStats.downloadable, color: "text-pink-600" },
+    { key: "saveable", label: "可保存", value: recordStats.saveable, color: "text-emerald-600" },
+    { key: "failed", label: "失败", value: recordStats.failed, color: "text-rose-600" },
+    { key: "backup", label: "有备用", value: recordStats.backup, color: "text-sky-600" }
+  ];
+  const recordKeyword = recordSearch.trim().toLowerCase();
+  const filteredRecordRows = recordRows.filter((row) => {
+    if (recordFilter === "downloadable" && !row.recordCanDownload) return false;
+    if (recordFilter === "saveable" && !row.recordCanSave) return false;
+    if (recordFilter === "failed" && !row.recordFailed) return false;
+    if (recordFilter === "backup" && !row.item.backupLink) return false;
+    return !recordKeyword || row.searchText.includes(recordKeyword);
+  });
 
   return (
     <div className="space-y-4 p-4">
@@ -447,22 +504,50 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
         </div>
       </div>
 
-      <div>
-        <div className="mb-2 flex items-center justify-between">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
             <Film size={14} className="text-pink-400" /> 播放记录
           </h3>
-          <span className="text-[10px] text-purple-400">{records.length} 条</span>
+          <span className="text-[10px] text-purple-400">{filteredRecordRows.length}/{recordStats.total} 条</span>
+        </div>
+        <div className="rounded-2xl border border-pink-100 bg-white p-2 shadow-sm">
+          <div className="flex items-center gap-2 rounded-xl bg-purple-50 px-2.5 py-1.5">
+            <Search size={12} className="shrink-0 text-purple-300" />
+            <input
+              value={recordSearch}
+              onChange={(event) => setRecordSearch(event.target.value)}
+              placeholder="搜索标题、编号、账号或链接"
+              className="min-w-0 flex-1 bg-transparent text-xs text-purple-700 outline-none placeholder:text-purple-300"
+            />
+            {recordSearch && (
+              <button onClick={() => setRecordSearch("")} className="rounded-full bg-white px-2 py-0.5 text-[10px] text-purple-400">
+                清除
+              </button>
+            )}
+          </div>
+          <div className="mt-2 grid grid-cols-5 gap-1">
+            {recordFilterItems.map((filterItem) => {
+              const active = recordFilter === filterItem.key;
+              return (
+                <button
+                  key={filterItem.key}
+                  onClick={() => setRecordFilter(filterItem.key)}
+                  className={`rounded-xl px-1 py-1.5 text-center transition-all ${active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "text-purple-300 hover:bg-purple-50"}`}
+                >
+                  <p className={`text-sm font-bold ${active ? "text-white" : filterItem.color}`}>{filterItem.value}</p>
+                  <p className="mt-0.5 text-[9px]">{filterItem.label}</p>
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="space-y-2">
-          {records.length ? records.map((item, index) => {
+          {filteredRecordRows.length ? filteredRecordRows.map(({ item, index, recordUrl, recordTask, recordCanSave, recordRunning }) => {
             // 播放记录支持直接续操作，减少用户回到详情页反复查找。
-            const recordUrl = absoluteUrl(item.playLink || item.backupLink || "");
-            const recordTask = downloadTaskForMovie(state, item.movieId);
             const recordTaskProgress = recordTask ? downloadProgress(recordTask) : 0;
             const recordTaskState = taskTone(recordTask);
-            const recordCanSave = recordTask ? canSaveDownload(recordTask) : false;
-            const recordPrimaryAction = recordTask?.stage === "error" ? "重试" : recordCanSave ? "保存" : "下载";
+            const recordPrimaryAction = recordTask?.stage === "error" ? "重试" : recordCanSave ? "保存" : recordRunning ? "查看" : "下载";
             const recordReport = playbackRecordReport(item, recordTask);
             return (
               <div key={`${item.movieId}-${index}`} className="rounded-2xl border border-pink-100 bg-white p-3 shadow-sm">
@@ -521,18 +606,23 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                       // 播放记录里的主按钮按当前下载状态智能切换，减少用户再跳回下载页找任务。
                       if (recordTask?.stage === "error") onAction("download-full-video", { movieId: recordTask.movieId || item.movieId || "" });
                       else if (recordCanSave) onAction("save-download-device", { taskId: recordTask?.taskId || "" });
+                      else if (recordRunning) onPage?.("downloads");
                       else onAction("download-full-video", { movieId: item.movieId || "" });
                     }}
                     disabled={recordCanSave ? !recordTask?.taskId : !item.movieId}
                     className="flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 px-2 py-1.5 text-[11px] font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-45"
-                    title={recordCanSave ? "保存该视频到设备" : recordTask?.stage === "error" ? "重新创建下载任务" : "下载该视频"}
+                    title={recordCanSave ? "保存该视频到设备" : recordTask?.stage === "error" ? "重新创建下载任务" : recordRunning ? "查看下载任务" : "下载该视频"}
                   >
-                    {recordCanSave ? <Save size={11} /> : recordTask?.stage === "error" ? <RefreshCw size={11} /> : <Download size={11} />} {recordPrimaryAction}
+                    {recordCanSave ? <Save size={11} /> : recordTask?.stage === "error" ? <RefreshCw size={11} /> : recordRunning ? <Layers size={11} /> : <Download size={11} />} {recordPrimaryAction}
                   </button>
                 </div>
               </div>
             );
-          }) : (
+          }) : records.length ? (
+            <div className="rounded-2xl border border-pink-100 bg-white p-4 text-xs text-purple-400 shadow-sm">
+              当前搜索或筛选没有匹配的播放记录，可切换到「全部」或清除搜索词后再看。
+            </div>
+          ) : (
             <div className="rounded-2xl border border-pink-100 bg-white p-4 text-xs text-purple-400 shadow-sm">还没有播放详情记录。打开视频详情页后即会自动记录。</div>
           )}
         </div>
