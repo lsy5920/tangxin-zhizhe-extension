@@ -275,6 +275,54 @@
     }
   }
 
+  function formatDownloadBytes(bytes) {
+    const value = Number(bytes || 0);
+    if (!value) return "未记录";
+    const units = ["B", "KB", "MB", "GB"];
+    let size = value;
+    let index = 0;
+    while (size >= 1024 && index < units.length - 1) {
+      size /= 1024;
+      index += 1;
+    }
+    return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+  }
+
+  function downloadStageLabel(stage) {
+    if (stage === "queued") return "已排队";
+    if (stage === "playlist") return "读取播放列表";
+    if (stage === "segments") return "准备分片";
+    if (stage === "segment") return "下载分片中";
+    if (stage === "ready") return "合并完成，待保存";
+    if (stage === "save-dialog") return "选择保存位置";
+    if (stage === "complete") return "已保存到设备";
+    if (stage === "error") return "失败";
+    return stage || "等待任务";
+  }
+
+  function downloadProgressPercent(task = {}) {
+    const total = Number(task.total || 0);
+    const current = Number(task.current || 0);
+    if (task.stage === "complete" || task.stage === "ready") return 100;
+    if (!total) return task.stage === "queued" ? 2 : task.stage === "playlist" ? 6 : 0;
+    return Math.max(0, Math.min(99, Math.round((current / total) * 100)));
+  }
+
+  function downloadFormatLabel(task = {}) {
+    if (task.format === "mp4" || /\.mp4(?:[?#]|$)/i.test(task.filename || "")) return "MP4";
+    if (task.format === "ts" || /\.ts(?:[?#]|$)/i.test(task.filename || "")) return "TS";
+    return task.mode === "direct" ? "原始格式" : "M3U8";
+  }
+
+  function downloadTaskTitle(task = {}) {
+    return task.titleSnippet || task.movieTitle || task.filename || (task.movieId ? `视频 ${task.movieId}` : "视频任务");
+  }
+
+  function downloadTaskMatchesIdSet(task = {}, idSet = new Set()) {
+    if (!idSet.size) return true;
+    return [task.taskId, task.movieId, task.url].some((value) => value && idSet.has(String(value)));
+  }
+
   function currentMovieId() {
     const match = String(location.pathname || "").match(/\/movie\/detail\/(\d+)/);
     return match ? match[1] : "";
@@ -1568,7 +1616,7 @@
   async function copyFilteredDownloadUrls(taskIds = []) {
     const ids = Array.isArray(taskIds) ? taskIds.map((item) => String(item || "")) : [];
     const idSet = new Set(ids.filter(Boolean));
-    const tasks = downloadTasksArray().filter((task) => !idSet.size || idSet.has(String(task.taskId || "")));
+    const tasks = downloadTasksArray().filter((task) => downloadTaskMatchesIdSet(task, idSet));
     // 批量复制仍统一补全域名，保证每一行都是可直接使用的完整下载地址。
     const urls = [];
     for (const task of tasks) {
@@ -1576,6 +1624,44 @@
       if (url && !urls.includes(url)) urls.push(url);
     }
     await copyText(urls.join("\n"), "筛选下载完整链接");
+  }
+
+  async function copyFilteredDownloadReport(taskIds = [], filterLabel = "当前筛选") {
+    const ids = Array.isArray(taskIds) ? taskIds.map((item) => String(item || "")) : [];
+    const idSet = new Set(ids.filter(Boolean));
+    const tasks = downloadTasksArray().filter((task) => downloadTaskMatchesIdSet(task, idSet));
+    if (!tasks.length) {
+      emitFlow("下载管理", "当前筛选没有可复制的下载任务", "error");
+      return;
+    }
+    // 报告用于排查失败、保存进度和链接可用性，复制时保留完整源链接。
+    const lines = [
+      "糖心志者下载任务报告",
+      `筛选范围：${filterLabel || "当前筛选"}`,
+      `任务数量：${tasks.length}`,
+      `生成时间：${new Date().toLocaleString("zh-CN", { hour12: false })}`,
+      ""
+    ];
+    tasks.forEach((task, index) => {
+      const current = Number(task.current || 0);
+      const total = Number(task.total || 0);
+      const progress = total ? `${current}/${total}，${downloadProgressPercent(task)}%` : `${downloadProgressPercent(task)}%`;
+      const sourceUrl = normalizeUrl(task.url || "");
+      lines.push(
+        `${index + 1}. ${downloadTaskTitle(task)}`,
+        `视频编号：${task.movieId || "未记录"}`,
+        `任务编号：${task.taskId || "未记录"}`,
+        `任务状态：${downloadStageLabel(task.stage)}`,
+        `输出格式：${downloadFormatLabel(task)}`,
+        `下载进度：${progress}`,
+        `文件大小：${formatDownloadBytes(task.bytes)}`,
+        `更新时间：${task.updatedAt || "未记录"}`,
+        `完整源链接：${sourceUrl || "未记录"}`
+      );
+      if (task.error || task.transmuxError) lines.push(`失败原因：${task.error || task.transmuxError}`);
+      lines.push("");
+    });
+    await copyText(lines.join("\n"), "下载任务报告");
   }
 
   async function copyDownloadSnapshot(snapshotId = "") {
@@ -1846,6 +1932,7 @@
       if (action === "copy-downloads") await copyDownloadRecords();
       if (action === "copy-download-url") await copyDownloadUrl(payload.taskId || "");
       if (action === "copy-filtered-download-urls") await copyFilteredDownloadUrls(payload.taskIds || []);
+      if (action === "copy-filtered-download-report") await copyFilteredDownloadReport(payload.taskIds || [], payload.filterLabel || "当前筛选");
       if (action === "copy-download-snapshot") await copyDownloadSnapshot(payload.snapshotId || "");
       if (action === "save-download-device") await saveDownloadDevice(payload.taskId || "");
       if (action === "save-ready-downloads") await saveReadyDownloads(payload.taskIds || []);

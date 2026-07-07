@@ -35,9 +35,10 @@ export function DownloadsPage({ state, onAction }: Props) {
     { key: "ready", label: "可保存", value: readyCount, color: "text-emerald-600" },
     { key: "failed", label: "失败", value: stats.failed, color: "text-rose-600" }
   ];
-  const filteredTaskIds = filteredTasks.map((task) => task.taskId || "").filter(Boolean);
+  const filteredTaskIds = filteredTasks.map((task) => task.taskId || task.movieId || task.url || "").filter(Boolean);
   const filteredLinkCount = filteredTasks.filter((task) => Boolean(task.url)).length;
   const readyTaskIds = filteredTasks.filter(canSaveDownload).map((task) => task.taskId || "").filter(Boolean);
+  const filterLabel = filterItems.find((item) => item.key === filter)?.label || "当前筛选";
   const retryMovieIds = Array.from(new Set(filteredTasks
     .filter((task) => task.stage === "error" && task.movieId)
     .map((task) => String(task.movieId))));
@@ -104,6 +105,14 @@ export function DownloadsPage({ state, onAction }: Props) {
           title="复制当前筛选里的完整下载链接"
         >
           <Copy size={13} /> 复制筛选链接
+        </button>
+        <button
+          onClick={() => onAction("copy-filtered-download-report", { taskIds: filteredTaskIds, filterLabel })}
+          disabled={!filteredTasks.length}
+          className="flex items-center gap-1 rounded-xl border border-sky-200 px-3 py-2 text-xs text-sky-500 transition-transform active:scale-95 disabled:opacity-45"
+          title="复制当前筛选里的任务状态、进度和完整源链接"
+        >
+          <Copy size={13} /> 复制报告
         </button>
         {filter === "failed" && (
           <button
