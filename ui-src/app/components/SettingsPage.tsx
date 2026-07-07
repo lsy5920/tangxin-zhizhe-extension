@@ -200,8 +200,13 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
       `远程版本：${remoteVersionText}`,
       `远程构建：${remoteBuildText}`,
       `发布时间：${remoteUpdate?.releasedAt || "未检测"}`,
+      `检测模式：${updateCheckMode}`,
+      `清单地址：${updateManifestUrl || "未检测"}`,
       `检测时间：${updateCheckedText}`,
       `下载地址：${updateDownloadUrl || "未检测"}`,
+      `候选地址：${updateCandidates.length ? updateCandidates.join(" | ") : "未检测"}`,
+      `下载状态：${state.repositoryUpdate?.downloadStatus || "未开始"}`,
+      `下载错误：${state.repositoryUpdate?.downloadError || state.repositoryUpdate?.error || "无"}`,
       `更新状态：${updateAvailable ? "发现新版本" : "当前版本可用"}`,
       `更新说明：${updateSummary}`
     ];
@@ -238,10 +243,21 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
   const remoteBuildText = remoteUpdate?.build || "未检测";
   const updateCheckedText = state.repositoryUpdate?.checkedAt ? formatRelativeTime(state.repositoryUpdate.checkedAt) : "未检测";
   const updateSourceText = state.repositoryUpdate?.source === "update.json" ? "远程版本清单" : state.repositoryUpdate?.source || "未检测";
-  const updateDownloadUrl = state.repositoryUpdate?.downloadUrl || remoteUpdate?.archiveUrl || "";
+  const updateManifestUrl = state.repositoryUpdate?.manifestUrl || "";
+  const updateCheckMode = state.repositoryUpdate?.checkMode || "实时检测";
+  const updateCandidates = Array.from(new Set([
+    ...(state.repositoryUpdate?.downloadCandidates || []),
+    ...(remoteUpdate?.downloadCandidates || []),
+    state.repositoryUpdate?.downloadUrl || "",
+    remoteUpdate?.archiveUrl || ""
+  ].filter(Boolean)));
+  const updateDownloadUrl = state.repositoryUpdate?.downloadUrl || remoteUpdate?.archiveUrl || updateCandidates[0] || "";
   const updateSummary = updateFailed
     ? `更新检测失败：${state.repositoryUpdate?.error || "请稍后重试"}`
     : remoteUpdate?.detail || remoteUpdate?.text || remoteUpdate?.title || (remoteUpdate?.version ? "远程版本与本地一致。" : "请点击检查更新获取远程版本。");
+  const updateSystemTip = state.repositoryUpdate?.updateSystem?.ignoredLegacyCache
+    ? "已忽略旧版更新缓存，本次按新版清单重新检测。"
+    : "新版升级系统会实时读取远程清单，并保留候选下载地址用于兜底。";
   const diagnostics = serviceCheck?.diagnostics;
   const diagnosticTone = levelClasses(diagnostics?.level);
   const accountProblem = hasDiagnosticKey(diagnostics, ["accounts", "usable", "risk", "unverified"]);
@@ -381,9 +397,17 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
           <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-purple-400">{updateSummary}</p>
           <div className="mt-2 grid gap-1 text-[10px] text-purple-300 sm:grid-cols-2">
             <p>检测来源：{updateSourceText}</p>
+            <p>检测模式：{updateCheckMode}</p>
             <p>检测时间：{updateCheckedText}</p>
             {remoteUpdate?.releasedAt && <p>发布时间：{remoteUpdate.releasedAt}</p>}
+            {updateManifestUrl && <p className="truncate">清单地址：{updateManifestUrl}</p>}
             {updateDownloadUrl && <p className="truncate">下载地址：{updateDownloadUrl}</p>}
+          </div>
+          <div className="mt-2 rounded-xl bg-white/70 px-2 py-1.5 text-[10px] leading-relaxed text-purple-400">
+            <p>{updateSystemTip}</p>
+            {updateCandidates.length > 1 && <p className="mt-1 truncate">候选地址：{updateCandidates.join(" ｜ ")}</p>}
+            {state.repositoryUpdate?.downloadStatus && <p className="mt-1">上次下载：{state.repositoryUpdate.downloadStatus}</p>}
+            {state.repositoryUpdate?.downloadError && <p className="mt-1 text-rose-500">下载错误：{state.repositoryUpdate.downloadError}</p>}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -437,14 +461,14 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
           <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className={`flex h-8 w-8 items-center justify-center rounded-full ${updateAvailable ? "bg-gradient-to-br from-amber-400 to-orange-500" : "bg-gradient-to-br from-emerald-400 to-sky-500"}`}>
-                  {updateAvailable ? <Download size={16} className="text-white" /> : <CheckCircle size={16} className="text-white" />}
+                <div className={`flex h-8 w-8 items-center justify-center rounded-full ${updateFailed ? "bg-gradient-to-br from-rose-400 to-red-500" : updateAvailable ? "bg-gradient-to-br from-amber-400 to-orange-500" : "bg-gradient-to-br from-emerald-400 to-sky-500"}`}>
+                  {updateFailed ? <AlertTriangle size={16} className="text-white" /> : updateAvailable ? <Download size={16} className="text-white" /> : <CheckCircle size={16} className="text-white" />}
                 </div>
-                <h3 className="font-bold text-purple-800">{updateAvailable ? "发现新版本" : "已是最新版本"}</h3>
+                <h3 className="font-bold text-purple-800">{updateFailed ? "检测失败" : updateAvailable ? "发现新版本" : "已是最新版本"}</h3>
               </div>
               <button onClick={() => setShowUpdateModal(false)}><X size={18} className="text-purple-400" /></button>
             </div>
-            <p className="mb-4 text-xs text-purple-400">{updateAvailable ? `远程版本 ${remoteVersionText}，构建 ${remoteBuildText}，点击下载最新版。` : `当前版本 ${APP_VERSION_LABEL} 已完成本地校验，可继续使用。`}</p>
+            <p className="mb-4 text-xs text-purple-400">{updateFailed ? updateSummary : updateAvailable ? `远程版本 ${remoteVersionText}，构建 ${remoteBuildText}，点击下载最新版。` : `当前版本 ${APP_VERSION_LABEL} 已完成本地校验，可继续使用。`}</p>
             <div className="flex gap-2">
               <button onClick={() => setShowUpdateModal(false)} className="flex-1 rounded-xl border border-pink-200 py-2 text-sm font-medium text-purple-500">稍后</button>
               <button

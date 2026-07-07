@@ -128,9 +128,19 @@ export type BridgeState = {
     ok?: boolean;
     source?: string;
     checkedAt?: string;
+    checkMode?: string;
     error?: string;
+    manifestUrl?: string;
     downloadUrl?: string;
+    downloadCandidates?: string[];
+    downloadStatus?: string;
+    downloadError?: string;
     updateAvailable?: boolean;
+    updateSystem?: {
+      schemaVersion?: string;
+      cacheTtlMs?: number;
+      ignoredLegacyCache?: boolean;
+    };
     local?: {
       version?: string;
       build?: string;
@@ -146,6 +156,7 @@ export type BridgeState = {
       line?: string;
       text?: string;
       archiveUrl?: string;
+      downloadCandidates?: string[];
     };
   } | null;
   publishedAt?: string;

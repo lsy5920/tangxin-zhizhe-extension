@@ -1244,7 +1244,9 @@
           return;
         }
         if (response?.ok === false) {
-          reject(new Error(response.error || "runtime error"));
+          const error = new Error(response.error || "runtime error");
+          error.response = response;
+          reject(error);
           return;
         }
         resolve(response || {});
@@ -1333,9 +1335,10 @@
         }
         return response;
       } catch (err) {
-        rememberRepositoryUpdate({ ok: false, checkedAt: new Date().toISOString(), error: err?.message || String(err), local: { version: "", build: "" }, remote: null });
+        const response = err?.response || { ok: false, checkedAt: new Date().toISOString(), error: err?.message || String(err), local: { version: "", build: "" }, remote: null };
+        rememberRepositoryUpdate(response);
         if (!silent) emitFlow("更新检查失败", err?.message || String(err), "error");
-        return { ok: false, error: err?.message || String(err) };
+        return response;
       } finally {
         repositoryUpdateCheckTask = null;
       }
@@ -1969,12 +1972,32 @@
       if (action === "check-update") await checkRepositoryUpdate(true, { realtime: true });
       if (action === "download-latest") {
         const latest = await checkRepositoryUpdate(true, { realtime: true, silent: true });
-        const response = await sendRuntime("downloadRepositoryArchive", {
-          version: latest?.remote?.version || uiState.repositoryUpdate?.remote?.version || "",
-          build: latest?.remote?.build || uiState.repositoryUpdate?.remote?.build || "",
-          url: latest?.downloadUrl || uiState.repositoryUpdate?.downloadUrl || ""
-        });
-        emitFlow("版本更新", response.downloadId ? `已开始下载最新版压缩包：${response.filename}` : "已提交最新版下载任务", "ok");
+        let response = null;
+        try {
+          response = await sendRuntime("downloadRepositoryArchive", {});
+        } catch (err) {
+          const failed = err?.response || {};
+          rememberRepositoryUpdate({
+            ...(latest || uiState.repositoryUpdate || {}),
+            ok: false,
+            checkedAt: latest?.checkedAt || uiState.repositoryUpdate?.checkedAt || new Date().toISOString(),
+            error: failed.error || err?.message || String(err),
+            downloadUrl: latest?.downloadUrl || uiState.repositoryUpdate?.downloadUrl || "",
+            downloadCandidates: failed.candidates || latest?.downloadCandidates || uiState.repositoryUpdate?.downloadCandidates || [],
+            downloadStatus: "下载失败",
+            downloadError: failed.error || err?.message || String(err)
+          });
+          throw err;
+        }
+        const mergedUpdate = {
+          ...(latest || uiState.repositoryUpdate || {}),
+          downloadUrl: response.url || latest?.downloadUrl || uiState.repositoryUpdate?.downloadUrl || "",
+          downloadCandidates: response.candidates || latest?.downloadCandidates || uiState.repositoryUpdate?.downloadCandidates || [],
+          downloadStatus: response.downloadId ? "已提交下载" : "已发送下载请求",
+          downloadError: ""
+        };
+        rememberRepositoryUpdate(mergedUpdate);
+        emitFlow("版本更新", response.downloadId ? `已开始下载最新版压缩包：${response.filename}，地址 ${response.url}` : "已提交最新版下载任务", "ok");
       }
       if (action === "show-update-dialog") {
         if (uiState.repositoryUpdate?.updateAvailable) showRepositoryUpdateDialog(uiState.repositoryUpdate);
