@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.6.0",
-  "build": "2026-07-08-0226",
-  "releasedAt": "2026-07-08 02:26",
+  "version": "2.6.1",
+  "build": "2026-07-08-0232",
+  "releasedAt": "2026-07-08 02:32",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -12,10 +12,10 @@
   ],
   "changelog": [
     {
-      "id": "2026-07-08-0226",
+      "id": "2026-07-08-0232",
       "type": "优化",
-      "title": "优化播放记录批量排查体验",
-      "detail": "播放页新增「批量报告」入口，可按当前搜索和筛选结果一次性复制播放记录批量报告，包含可播放数量、异常数量、备用线路数量、主备完整链接、分片、时长、关联下载任务、失败原因和完整下载源链接。"
+      "title": "优化播放记录排序体验",
+      "detail": "播放页新增播放记录排序切换，可按最近、异常、可保存和备用线路重排当前搜索与筛选结果；播放记录列表和批量报告都会沿用当前可见顺序，方便优先处理异常记录、可保存任务或带备用线路的视频。"
     }
   ]
 }

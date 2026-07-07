@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, Film, Gauge, Layers, Link, RefreshCw, Route, Save, Search, ShieldCheck, Signal, Timer, Wifi } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, Film, Gauge, Layers, Link, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SortDesc, Timer, Wifi } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 
@@ -18,6 +18,7 @@ type PlaybackLine = {
 };
 
 type PlaybackRecordFilter = "all" | "downloadable" | "saveable" | "failed" | "backup";
+type PlaybackRecordSort = "recent" | "failed" | "saveable" | "backup";
 
 function lineState(line: PlaybackLine) {
   if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false };
@@ -237,6 +238,7 @@ function taskTone(task?: DownloadTask | null) {
 export function PlaybackPage({ state, onAction, onPage }: Props) {
   const [recordFilter, setRecordFilter] = useState<PlaybackRecordFilter>("all");
   const [recordSearch, setRecordSearch] = useState("");
+  const [recordSort, setRecordSort] = useState<PlaybackRecordSort>("recent");
   const latest = latestFullDetail(state);
   const records = (state.fullDetails || []).slice(-24).reverse();
   const lines: PlaybackLine[] = [
@@ -299,13 +301,36 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     { key: "failed", label: "失败", value: recordStats.failed, color: "text-rose-600" },
     { key: "backup", label: "有备用", value: recordStats.backup, color: "text-sky-600" }
   ];
+  const recordSortItems: { key: PlaybackRecordSort; label: string; tip: string }[] = [
+    { key: "recent", label: "最近", tip: "按获取时间倒序" },
+    { key: "failed", label: "异常", tip: "异常或下载失败记录优先" },
+    { key: "saveable", label: "可保存", tip: "可保存到设备的记录优先" },
+    { key: "backup", label: "备用", tip: "含备用线路的记录优先" }
+  ];
   const recordKeyword = recordSearch.trim().toLowerCase();
-  const filteredRecordRows = recordRows.filter((row) => {
+  const searchedRecordRows = recordRows.filter((row) => {
     if (recordFilter === "downloadable" && !row.recordCanDownload) return false;
     if (recordFilter === "saveable" && !row.recordCanSave) return false;
     if (recordFilter === "failed" && !row.recordFailed) return false;
     if (recordFilter === "backup" && !row.item.backupLink) return false;
     return !recordKeyword || row.searchText.includes(recordKeyword);
+  });
+  const recordTime = (item: FullDetail) => Date.parse(String((item as { ts?: string }).ts || item.fetchedAt || "")) || 0;
+  const filteredRecordRows = [...searchedRecordRows].sort((a, b) => {
+    // 排序只改变播放记录展示和批量报告顺序，不改变当前搜索、筛选集合。
+    if (recordSort === "failed") {
+      const diff = Number(b.recordFailed) - Number(a.recordFailed);
+      if (diff) return diff;
+    }
+    if (recordSort === "saveable") {
+      const diff = Number(b.recordCanSave) - Number(a.recordCanSave);
+      if (diff) return diff;
+    }
+    if (recordSort === "backup") {
+      const diff = Number(Boolean(b.item.backupLink)) - Number(Boolean(a.item.backupLink));
+      if (diff) return diff;
+    }
+    return recordTime(b.item) - recordTime(a.item);
   });
   const recordFilterLabel = recordFilterItems.find((item) => item.key === recordFilter)?.label || "当前筛选";
   const batchRecordReport = playbackRecordsReport(filteredRecordRows, recordFilterLabel);
@@ -591,6 +616,21 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                 >
                   <p className={`text-sm font-bold ${active ? "text-white" : filterItem.color}`}>{filterItem.value}</p>
                   <p className="mt-0.5 text-[9px]">{filterItem.label}</p>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-2 grid grid-cols-4 gap-1.5">
+            {recordSortItems.map((item) => {
+              const active = recordSort === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => setRecordSort(item.key)}
+                  title={item.tip}
+                  className={`flex min-h-8 items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium transition-all ${active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "bg-white text-purple-400 hover:bg-purple-100"}`}
+                >
+                  <SortDesc size={11} /> {item.label}
                 </button>
               );
             })}

@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-0226";
+const LOCAL_UPDATE_BUILD = "2026-07-08-0232";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 02:26 【优化】升级版本到 v2.6.0，播放记录新增批量报告。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 02:32 【优化】升级版本到 v2.6.1，播放记录新增排序切换。";
 
 const DEFAULT_STATE = {
   role: "guest",
