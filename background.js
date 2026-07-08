@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-2139";
+const LOCAL_UPDATE_BUILD = "2026-07-08-2150";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 21:39 【修复】升级版本到 v2.9.4，修复横屏全屏控件竖排和画面偏移问题；全屏方向改为请求系统横屏，播放器控件保持正常横向布局，视频默认按原比例居中完整显示。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 21:50 【修复】升级版本到 v2.9.5，修复手机横屏全屏画面偏移和控制层过大遮挡问题；新增开屏倒计时广告、进入按钮和连环弹窗清理规则。";
 
 const DEFAULT_STATE = {
   role: "guest",

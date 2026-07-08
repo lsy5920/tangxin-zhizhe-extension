@@ -168,22 +168,37 @@
     "操作失败"
   ];
   // 广告清理规则集中维护，后续新增站点样式时只扩展这里，避免清理逻辑散落到播放器或面板中。
-  const AD_CLEANER_VERSION = "2026-07-08-ad-clean-v1";
+  const AD_CLEANER_VERSION = "2026-07-08-ad-clean-v2";
   const AD_CONTAINER_SELECTORS = [
     ".ad-splash",
     ".ad-apps",
     ".ad-item",
+    ".splash-ad",
+    ".launch-ad",
+    ".open-ad",
+    ".popup-ad",
     ".van-overlay:has(+ .ad-splash)",
     "[class*='ad-splash']",
     "[class*='ad-app']",
     "[class*='ad-item']",
     "[class*='ad_banner']",
     "[class*='ad-banner']",
+    "[class*='advert']",
+    "[class*='splash-ad']",
+    "[class*='launch-ad']",
+    "[class*='open-ad']",
+    "[class*='popup-ad']",
     "[id*='ad-splash']",
     "[id*='ad_banner']",
-    "[id*='ad-banner']"
+    "[id*='ad-banner']",
+    "[id*='advert']",
+    "[id*='splash-ad']",
+    "[id*='launch-ad']",
+    "[id*='open-ad']",
+    "[id*='popup-ad']"
   ];
   const AD_TEXT_PATTERN = /(广告|推广|赞助|app下载|立即下载|立即打开|同城约|博彩|棋牌|皇冠|葡京|bet365|telegram|免费看片|免费海角|免费抖阴)/i;
+  const AD_LAUNCH_TEXT_PATTERN = /(广告|推广|跳过|进入|倒计时|\d+\s*秒|立即下载|立即打开|app下载)/i;
   const AD_HOST_PATTERN = /(aff-|hjsq|douyin|haijiao|bet365|casino|promo|ads?|telegram|t\.me)/i;
 
   function isCompactViewport() {
@@ -1002,6 +1017,38 @@
     return "";
   }
 
+  function isLaunchAdOverlay(el) {
+    if (!el || el === document.documentElement || el === document.body || el.closest?.("#txzz-candy-ui-root")) return false;
+    const rect = el.getBoundingClientRect?.();
+    if (!rect) return false;
+    const viewportArea = Math.max(1, (window.innerWidth || document.documentElement.clientWidth || 1) * (window.innerHeight || document.documentElement.clientHeight || 1));
+    const area = rect.width * rect.height;
+    if (rect.width < 120 || rect.height < 120 || area < viewportArea * 0.18) return false;
+    const style = getComputedStyle(el);
+    const zIndex = Number.parseInt(style.zIndex || "0", 10) || 0;
+    const elevated = ["fixed", "sticky", "absolute"].includes(style.position) || zIndex >= 50 || area > viewportArea * 0.55;
+    if (!elevated) return false;
+    const text = elementTextForAd(el);
+    const className = String(el.className || "");
+    const id = String(el.id || "");
+    const href = String(el.href || el.getAttribute?.("href") || "");
+    const html = String(el.innerHTML || "").slice(0, 1600);
+    const hasMedia = Boolean(el.querySelector?.("img, picture, video, iframe, canvas, [style*='background-image']"));
+    const hasAdLink = Boolean(el.querySelector?.("a[href]")) || AD_HOST_PATTERN.test(href + " " + html);
+    const hasLaunchText = AD_LAUNCH_TEXT_PATTERN.test(`${text} ${className} ${id}`);
+    const hasEnterButton = Boolean(Array.from(el.querySelectorAll?.("button,a,[role='button'],div,span") || []).some((node) => /^(进入|跳过|关闭|立即打开|立即下载|\d+\s*秒)$/.test(elementTextForAd(node))));
+    return hasLaunchText && (hasMedia || hasAdLink || hasEnterButton || area > viewportArea * 0.72);
+  }
+
+  function unlockAdScrollState() {
+    try {
+      document.body?.classList?.remove("van-overflow-hidden");
+      document.documentElement?.classList?.remove("van-overflow-hidden");
+      document.body?.style?.removeProperty("overflow");
+      document.documentElement?.style?.removeProperty("overflow");
+    } catch (_) {}
+  }
+
   function hideAdElement(el, reason = "广告规则") {
     if (!el || el.dataset?.txzzAdCleaned === "1") return false;
     el.dataset.txzzAdCleaned = "1";
@@ -1025,6 +1072,7 @@
       hideAdElement(el, reason);
     }
     markAdCleanerChanged(reason, matched);
+    unlockAdScrollState();
     return true;
   }
 
@@ -1035,23 +1083,24 @@
       safeQueryAdContainers().forEach((el) => {
         if (removeAdElement(el, reason)) changed += 1;
       });
-      document.querySelectorAll("a[href], iframe, [style*='fixed'], [style*='sticky'], .van-popup, .van-dialog").forEach((el) => {
+      document.querySelectorAll("a[href], iframe, [style*='fixed'], [style*='sticky'], .van-popup, .van-dialog, [class*='popup'], [class*='modal'], [class*='splash'], [class*='launch'], [class*='mask'], [class*='overlay']").forEach((el) => {
         const hit = adElementReason(el);
-        if (!hit) return;
+        const launchHit = isLaunchAdOverlay(el) ? "开屏广告命中" : "";
+        if (!hit && !launchHit) return;
         const rect = el.getBoundingClientRect?.();
         if (!rect || rect.width <= 8 || rect.height <= 8) return;
         const style = getComputedStyle(el);
-        const isLargeOverlay = ["fixed", "sticky"].includes(style.position) && rect.width * rect.height > window.innerWidth * window.innerHeight * 0.08;
+        const isLargeOverlay = ["fixed", "sticky", "absolute"].includes(style.position) && rect.width * rect.height > window.innerWidth * window.innerHeight * 0.08;
         const text = elementTextForAd(el);
         const href = String(el.href || el.getAttribute?.("href") || "");
-        if (el.tagName === "IFRAME" || isLargeOverlay || /广告/.test(text) || AD_HOST_PATTERN.test(href)) {
-          if (removeAdElement(el, hit)) changed += 1;
+        if (el.tagName === "IFRAME" || launchHit || isLargeOverlay || /广告/.test(text) || AD_HOST_PATTERN.test(href)) {
+          if (removeAdElement(el, launchHit || hit)) changed += 1;
         }
       });
       document.querySelectorAll(".van-overlay").forEach((el) => {
         const next = el.nextElementSibling;
         const prev = el.previousElementSibling;
-        if (adElementReason(next) || adElementReason(prev)) {
+        if (adElementReason(next) || adElementReason(prev) || isLaunchAdOverlay(next) || isLaunchAdOverlay(prev)) {
           if (hideAdElement(el, "广告遮罩")) changed += 1;
         }
       });
@@ -1064,12 +1113,14 @@
   }
 
   function blockAdClick(event) {
-    const target = event.target?.closest?.("a[href], [onclick], [role='button'], .ad-item");
-    const reason = adElementReason(target);
+    const target = event.target?.closest?.("a[href], [onclick], button, [role='button'], .ad-item");
+    const overlay = target?.closest?.("[class*='splash'], [class*='launch'], [class*='popup'], [class*='modal'], [class*='overlay'], .van-popup, .van-dialog");
+    const reason = adElementReason(target) || (isLaunchAdOverlay(overlay) ? "拦截开屏广告入口" : "");
     if (!reason) return;
     event.preventDefault();
     event.stopPropagation();
     if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+    if (overlay && isLaunchAdOverlay(overlay)) removeAdElement(overlay, "点击前清理开屏广告");
     state.adCleaner.blockedClicks += 1;
     markAdCleanerChanged("拦截广告点击", reason);
     showToast("已拦截广告跳转", "ok");
@@ -1084,7 +1135,7 @@
     try {
       new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
     } catch (_) {}
-    [0, 300, 1200, 3000, 6000].forEach((delay) => window.setTimeout(() => cleanAdElements(delay ? "延迟清理" : "首屏清理"), delay));
+    [0, 120, 300, 700, 1200, 2000, 3000, 4500, 6000, 9000, 12000].forEach((delay) => window.setTimeout(() => cleanAdElements(delay ? "开屏广告延迟清理" : "首屏清理"), delay));
     window.setInterval(() => cleanAdElements("巡检清理"), 2500);
   }
 

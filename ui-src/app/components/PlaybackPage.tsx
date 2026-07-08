@@ -1807,7 +1807,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
               </div>
             </div>
           )}
-          <div className={`pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent p-2 text-white transition-opacity duration-200 ${playerControlsVisible ? "opacity-100" : "opacity-0"}`}>
+          <div className={`txzz-player-top-bar pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent p-2 text-white transition-opacity duration-200 ${playerControlsVisible ? "opacity-100" : "opacity-0"}`}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 rounded-full bg-black/45 px-2.5 py-1 text-[10px] font-medium backdrop-blur">
                 <span className="block max-w-[14rem] truncate sm:max-w-[26rem]">{previewTitle}</span>
@@ -1832,7 +1832,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
               </div>
             )}
           </div>
-          <div className={`absolute ${playerControlsTone} z-20 rounded-2xl bg-black/65 p-2 text-white shadow-lg backdrop-blur transition-all duration-200 ${playerControlsVisible ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"}`}>
+          <div className={`txzz-player-control-panel absolute ${playerControlsTone} z-20 rounded-2xl bg-black/65 p-2 text-white shadow-lg backdrop-blur transition-all duration-200 ${playerControlsVisible ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"}`}>
             <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] text-white/75">
               <span>{formatDuration(playerStats.currentTime)}</span>
               <span>{playerStats.duration ? formatDuration(playerStats.duration) : "时长未知"} · 缓冲 {previewBuffered}%</span>
@@ -1880,19 +1880,19 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                 setIsDraggingProgress(false);
               }}
               onClick={(event) => event.stopPropagation()}
-              className={`relative mb-2 cursor-pointer overflow-hidden rounded-full bg-white/20 transition-all duration-100 ${isDraggingProgress ? "h-3 scale-x-[1.01]" : "h-2 hover:h-3"}`}
+              className={`txzz-player-progress relative mb-2 cursor-pointer overflow-hidden rounded-full bg-white/20 transition-all duration-100 ${isDraggingProgress ? "h-3 scale-x-[1.01]" : "h-2 hover:h-3"}`}
             >
               <div className="absolute inset-y-0 left-0 rounded-full bg-white/25" style={{ width: `${previewBuffered}%` }} />
               <div className="absolute inset-y-0 left-0 rounded-full bg-sky-400" style={{ width: `${previewProgress}%` }} />
             </div>
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="txzz-player-control-grid grid grid-cols-5 gap-1.5">
               <button
                 onClick={() => {
                   togglePlayerPlay();
                   revealPlayerControls();
                 }}
                 disabled={!previewUrl}
-                className="flex min-h-9 items-center justify-center gap-1 rounded-xl bg-white/15 px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
+                className="txzz-player-control-button flex min-h-9 items-center justify-center gap-1 rounded-xl bg-white/15 px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
                 title={playerStats.paused ? "播放" : "暂停"}
               >
                 {playerStats.paused ? <Play size={12} /> : <Pause size={12} />} <span className="hidden sm:inline">{playerStats.paused ? "播放" : "暂停"}</span>
@@ -1903,7 +1903,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   revealPlayerControls();
                 }}
                 disabled={!previewUrl}
-                className="flex min-h-9 items-center justify-center gap-1 rounded-xl bg-white/15 px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
+                className="txzz-player-control-button flex min-h-9 items-center justify-center gap-1 rounded-xl bg-white/15 px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
                 title={`后退 ${playerSeekStep} 秒`}
               >
                 <SkipBack size={12} /> -{playerSeekStep}
@@ -1914,7 +1914,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   revealPlayerControls();
                 }}
                 disabled={!previewUrl}
-                className="flex min-h-9 items-center justify-center gap-1 rounded-xl bg-white/15 px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
+                className="txzz-player-control-button flex min-h-9 items-center justify-center gap-1 rounded-xl bg-white/15 px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
                 title={`前进 ${playerSeekStep} 秒`}
               >
                 <SkipForward size={12} /> +{playerSeekStep}
@@ -1925,7 +1925,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   revealPlayerControls(true);
                 }}
                 disabled={!previewUrl}
-                className={`flex min-h-9 items-center justify-center gap-1 rounded-xl px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40 ${playerMoreOpen ? "bg-amber-400/85" : "bg-white/15"}`}
+                className={`txzz-player-control-button flex min-h-9 items-center justify-center gap-1 rounded-xl px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40 ${playerMoreOpen ? "bg-amber-400/85" : "bg-white/15"}`}
                 title="展开更多播放功能"
               >
                 <MoreHorizontal size={12} /> 菜单
@@ -1933,7 +1933,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
               <button
                 onClick={() => togglePlayerFullscreen().catch((err) => setPlayerError(err instanceof Error ? err.message : String(err)))}
                 disabled={!previewUrl}
-                className="flex min-h-9 items-center justify-center gap-1 rounded-xl bg-sky-500 px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
+                className="txzz-player-control-button flex min-h-9 items-center justify-center gap-1 rounded-xl bg-sky-500 px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
                 title={playerFullscreenActive ? "退出全屏" : "进入全屏观看"}
               >
                 {playerFullscreenActive ? <Minimize2 size={12} /> : <Maximize2 size={12} />} <span className="hidden sm:inline">{playerFullscreenActive ? "退出" : "全屏"}</span>

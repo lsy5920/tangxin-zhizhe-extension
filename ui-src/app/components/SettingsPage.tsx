@@ -459,7 +459,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
 
       <div className="space-y-3 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
         <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><Ban size={14} className="text-emerald-500" /> 广告清理</h3>
-        <p className="text-xs leading-relaxed text-purple-400">自动处理首屏广告浮层、页面广告宫格、可疑广告外链和遮挡层，减少进入视频详情前的干扰。</p>
+        <p className="text-xs leading-relaxed text-purple-400">自动处理开屏倒计时广告、进入按钮、连环弹窗、页面广告宫格、可疑广告外链和遮挡层，减少进入视频详情前的干扰。</p>
         <div className="grid grid-cols-3 gap-2 text-center">
           {[
             { label: "总处理", value: adCleanerTotal },

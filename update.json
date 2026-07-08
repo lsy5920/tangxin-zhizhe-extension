@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.9.4",
-  "build": "2026-07-08-2139",
-  "releasedAt": "2026-07-08 21:39",
+  "version": "2.9.5",
+  "build": "2026-07-08-2150",
+  "releasedAt": "2026-07-08 21:50",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-08-2150",
+      "type": "修复",
+      "title": "修复手机横屏全屏显示 · 开屏广告连环弹窗清理",
+      "detail": "根据手机 Kiwi Browser 横屏截图继续优化播放器：全屏视频层不再使用 100vw 加居中位移，改为贴合播放器容器自身的 100% 宽高，避免移动浏览器横屏时真实全屏区域与视口单位不一致造成左右黑边不均或画面偏移；横屏小高度设备新增紧凑控制层，压低进度条、按钮高度、字号和底部面板占用，减少遮挡视频主体。同时广告清理系统升级到 v2，新增开屏倒计时广告、进入按钮、跳过按钮、全屏广告图片和点击后连环弹窗的组合识别，首屏阶段加密清理频率，并在清理后自动解除页面滚动锁。"
+    },
     {
       "id": "2026-07-08-2139",
       "type": "修复",
