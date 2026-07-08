@@ -407,6 +407,57 @@
   border-radius: 0 !important;
 }
 
+/* 横屏视频在手机竖屏全屏时旋转整个播放器舞台，避免横屏内容被塞进竖屏框里。 */
+.txzz-player-stage {
+  transform-origin: center center;
+  transition: transform 0.18s ease;
+}
+
+.txzz-player-stage--rotate-landscape {
+  left: 50% !important;
+  top: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: var(--txzz-player-viewport-height, 100vh) !important;
+  height: var(--txzz-player-viewport-width, 100vw) !important;
+  transform: translate(-50%, -50%) rotate(90deg) !important;
+}
+
+.txzz-player-stage--rotate-landscape .art-video-player,
+.txzz-player-stage--rotate-landscape .xgplayer,
+.txzz-player-stage--rotate-landscape video {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* 播放页真实运行的全屏舞台：横屏视频在竖屏手机全屏时横向展示，不再竖排塞满。 */
+.txzz-player-orientation-stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  transform-origin: center center;
+}
+
+.txzz-player-fullscreen-shell .txzz-player-orientation-stage--landscape {
+  left: 50% !important;
+  top: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: var(--txzz-player-viewport-height, 100vh) !important;
+  height: var(--txzz-player-viewport-width, 100vw) !important;
+  transform: translate(-50%, -50%) rotate(90deg) !important;
+}
+
+.txzz-player-orientation-stage--landscape .txzz-player-fullscreen-clean,
+.txzz-player-orientation-stage--landscape .art-video-player,
+.txzz-player-orientation-stage--landscape .xgplayer,
+.txzz-player-orientation-stage--landscape video {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 /* 移动端：全屏时隐藏浏览器 UI */
 @media (max-width: 768px) {
   .txzz-player-shell--fullscreen,

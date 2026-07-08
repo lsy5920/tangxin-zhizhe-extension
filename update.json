@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.9.1",
-  "build": "2026-07-08-2038",
-  "releasedAt": "2026-07-08 20:38",
+  "version": "2.9.3",
+  "build": "2026-07-08-2124",
+  "releasedAt": "2026-07-08 21:24",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,18 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-08-2124",
+      "type": "修复",
+      "title": "修复横屏视频竖排全屏 · 手机竖屏下自动旋转横向观看",
+      "detail": "针对真实测试中发现的横屏视频在手机竖屏全屏时仍按竖排显示的问题，本次新增播放器方向舞台：全屏时自动读取视频真实宽高和当前视口方向，如果横屏视频进入竖屏全屏，会把播放器画面、顶部状态、进度条、控制按钮和多级菜单作为一个整体旋转为横向观看。显示菜单新增方向切换，可在自动、横屏、竖屏之间循环切换，遇到特殊视频也能手动纠正。诊断报告同步写入横竖屏方向和视频原始尺寸，便于继续排查全屏展示问题。"
+    },
+    {
+      "id": "2026-07-08-2106",
+      "type": "新增",
+      "title": "新增广告清理系统 · 自动处理首屏浮层和页面广告宫格",
+      "detail": "基于真实页面巡检新增广告治理能力：自动移除首屏 ad-splash 全屏广告、ad-apps/ad-item 页面广告宫格、可疑广告外链和广告遮罩层；新增点击拦截，防止误点广告跳转。设置页新增「广告清理」卡片，展示总处理数、移除数、拦截数、规则数量、最近清理原因，并提供「立即清理广告」按钮。升级系统同步更新到 v2.9.2，远程更新弹窗可展示本次去广告更新内容。"
+    },
     {
       "id": "2026-07-08-2038",
       "type": "修复",

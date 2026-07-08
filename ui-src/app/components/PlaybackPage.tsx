@@ -30,6 +30,7 @@ type PlayerFitMode = "auto" | "wide" | "vertical";
 type PlayerFillMode = "contain" | "cover" | "fill";
 type PlayerMorePanel = "line" | "display" | "sound" | "tools" | "engine";
 type PlayerEngine = "artplayer" | "xgplayer";
+type PlayerOrientationMode = "auto" | "landscape" | "portrait";
 type PlaybackPreviewRecord = {
   url: string;
   title: string;
@@ -80,6 +81,7 @@ const playerVolumeStorageKey = "txzz-player-volume";
 const playerMutedStorageKey = "txzz-player-muted";
 const playerFillStorageKey = "txzz-player-fill";
 const playerBrightnessStorageKey = "txzz-player-brightness";
+const playerOrientationStorageKey = "txzz-player-orientation";
 const playerFullscreenHostClass = "txzz-player-fullscreen-mode";
 
 const emptyFullscreenDiagnostic: PlayerFullscreenDiagnostic = {
@@ -514,6 +516,17 @@ function initialPlayerBrightness() {
   return Number.isFinite(saved) ? Math.max(60, Math.min(140, saved)) : 100;
 }
 
+function initialPlayerOrientationMode(): PlayerOrientationMode {
+  const saved = window.localStorage.getItem(playerOrientationStorageKey);
+  return saved === "landscape" || saved === "portrait" ? saved : "auto";
+}
+
+function orientationModeLabel(mode: PlayerOrientationMode, rotated: boolean) {
+  if (mode === "landscape") return "横屏";
+  if (mode === "portrait") return "竖屏";
+  return rotated ? "自动横屏" : "自动方向";
+}
+
 export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0 }: Props) {
   const [recordFilter, setRecordFilter] = useState<PlaybackRecordFilter>("all");
   const [recordSearch, setRecordSearch] = useState("");
@@ -541,6 +554,9 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const [playerSeekStep, setPlayerSeekStep] = useState(10);
   const [playerFillMode, setPlayerFillMode] = useState<PlayerFillMode>(initialPlayerFillMode);
   const [playerBrightness, setPlayerBrightness] = useState(initialPlayerBrightness);
+  const [playerOrientationMode, setPlayerOrientationMode] = useState<PlayerOrientationMode>(initialPlayerOrientationMode);
+  const [playerVideoSize, setPlayerVideoSize] = useState({ width: 0, height: 0 });
+  const [playerViewportSize, setPlayerViewportSize] = useState({ width: window.innerWidth || 0, height: window.innerHeight || 0 });
   const [playerCursorHidden, setPlayerCursorHidden] = useState(false);
   const [playerFullscreenDiagnostic, setPlayerFullscreenDiagnostic] = useState<PlayerFullscreenDiagnostic>(emptyFullscreenDiagnostic);
   const [playerEngine, setPlayerEngine] = useState<PlayerEngine>("artplayer");
@@ -589,6 +605,10 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const previewProgress = percent(playerStats.currentTime, playerStats.duration);
   const previewBuffered = percent(playerStats.bufferedEnd, playerStats.duration);
   const playerFullscreenActive = playerImmersive || browserFullscreenActive;
+  const playerVideoLandscape = playerVideoSize.width > 0 && playerVideoSize.height > 0 && playerVideoSize.width >= playerVideoSize.height * 1.08;
+  const playerViewportPortrait = playerViewportSize.height > playerViewportSize.width;
+  const playerLandscapeStageActive = playerFullscreenActive && playerViewportPortrait && (playerOrientationMode === "landscape" || (playerOrientationMode === "auto" && playerVideoLandscape));
+  const playerOrientationLabel = orientationModeLabel(playerOrientationMode, playerLandscapeStageActive);
   const playerFitLabel = fitModeLabel(playerFitMode, detectedFitMode);
   const playerShellAspect = playerFullscreenActive ? undefined : fitModeAspect(playerFitMode, detectedFitMode);
   const fullscreenDiagnosticLabel = playerFullscreenDiagnostic.ok
@@ -599,6 +619,10 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     : playerQualities.find((item) => item.level === playerQualityLevel)?.label || `档位 ${playerQualityLevel + 1}`;
   const controlsShouldStayVisible = !previewUrl || playerStats.paused || playerMoreOpen || Boolean(playerError) || Boolean(holdSeekHint);
   const playerControlsTone = playerFullscreenActive ? "inset-x-3 bottom-3 sm:inset-x-8 sm:bottom-6" : "inset-x-2 bottom-2";
+  const playerStageStyle = {
+    "--txzz-player-viewport-width": `${playerViewportSize.width || 0}px`,
+    "--txzz-player-viewport-height": `${playerViewportSize.height || 0}px`
+  } as CSSProperties;
   const health = playbackHealth(latest, lines, preferredLine);
   const healthReport = playbackHealthReport(latest, lines, health, currentTask);
   const playerDiagnosticReport = [
@@ -616,6 +640,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     `播放音量：${playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`}`,
     `快进步长：${playerSeekStep}秒`,
     `画面填充：${fillModeLabel(playerFillMode)}`,
+    `横竖屏方向：${playerOrientationLabel}`,
+    `视频原始尺寸：${playerVideoSize.width || "?"}x${playerVideoSize.height || "?"}`,
     `画面亮度：${playerBrightness}%`,
     `当前清晰度：${currentQualityLabel}`,
     `全屏来源：${playerFullscreenDiagnostic.source}`,
@@ -737,6 +763,43 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       window.clearTimeout(timer);
     };
   }, [browserFullscreenActive, playerFullscreenActive, playerImmersive]);
+
+  useEffect(() => {
+    const syncViewport = () => {
+      const visual = window.visualViewport;
+      setPlayerViewportSize({
+        width: Math.round(visual?.width || window.innerWidth || document.documentElement.clientWidth || 0),
+        height: Math.round(visual?.height || window.innerHeight || document.documentElement.clientHeight || 0)
+      });
+    };
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    window.addEventListener("orientationchange", syncViewport);
+    window.visualViewport?.addEventListener("resize", syncViewport);
+    return () => {
+      window.removeEventListener("resize", syncViewport);
+      window.removeEventListener("orientationchange", syncViewport);
+      window.visualViewport?.removeEventListener("resize", syncViewport);
+    };
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return undefined;
+    const syncVideoSize = () => {
+      setPlayerVideoSize({
+        width: Number(video.videoWidth || 0),
+        height: Number(video.videoHeight || 0)
+      });
+    };
+    syncVideoSize();
+    video.addEventListener("loadedmetadata", syncVideoSize);
+    video.addEventListener("resize", syncVideoSize);
+    return () => {
+      video.removeEventListener("loadedmetadata", syncVideoSize);
+      video.removeEventListener("resize", syncVideoSize);
+    };
+  }, [previewUrl, playerReloadKey, playerEngine, videoRef.current]);
 
   useEffect(() => {
     clearControlsTimer();
@@ -1470,6 +1533,17 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     revealPlayerControls(true);
   };
 
+  const cyclePlayerOrientation = () => {
+    const order: PlayerOrientationMode[] = ["auto", "landscape", "portrait"];
+    const next = order[(order.indexOf(playerOrientationMode) + 1) % order.length];
+    setPlayerOrientationMode(next);
+    window.localStorage.setItem(playerOrientationStorageKey, next);
+    const label = orientationModeLabel(next, next === "landscape" || (next === "auto" && playerVideoLandscape && playerViewportPortrait));
+    const art = artRef.current;
+    if (art) art.notice.show = `方向：${label}`;
+    revealPlayerControls(true);
+  };
+
   const togglePlayerPip = () => {
     const art = artRef.current;
     if (!art) return;
@@ -1667,6 +1741,12 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
           onTouchStart={() => revealPlayerControls()}
           onClick={handlePlayerClick}
         >
+          <div
+            className={`txzz-player-orientation-stage ${playerLandscapeStageActive ? "txzz-player-orientation-stage--landscape" : ""}`}
+            data-orientation-mode={playerOrientationMode}
+            data-video-orientation={playerVideoLandscape ? "landscape" : playerVideoSize.height > playerVideoSize.width ? "portrait" : "unknown"}
+            style={playerStageStyle}
+          >
           <div
             key={`${activePreviewKey}-${playerReloadKey}`}
             ref={playerContainerRef}
@@ -1901,6 +1981,14 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                       <Layers size={11} /> {fillModeLabel(playerFillMode)}
                     </button>
                     <button
+                      onClick={cyclePlayerOrientation}
+                      disabled={!previewUrl}
+                      className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-white/15 px-2 text-[10px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
+                      title="切换自动、横屏或竖屏观看方向"
+                    >
+                      {playerLandscapeStageActive || playerOrientationMode === "landscape" ? <RectangleHorizontal size={11} /> : <RectangleVertical size={11} />} {playerOrientationLabel}
+                    </button>
+                    <button
                       onClick={switchPlayerBackup}
                       disabled={!absoluteUrl(lines[1]?.url || "") || activePreviewKey === "backup"}
                       className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-emerald-400/85 px-2 text-[10px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
@@ -2073,10 +2161,11 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   </div>
                 )}
                 <p className="mt-1.5 truncate text-[9px] text-white/55">
-                  当前：{previewLineLabel(activePreviewKey)} · {playerStats.rate}x · {playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`} · 步长{playerSeekStep}秒 · {playerFitLabel} · {fillModeLabel(playerFillMode)} · 亮度{playerBrightness}% · {currentQualityLabel} · {playerEngine === "xgplayer" ? "西瓜播放器" : "Artplayer"}{playerFullscreenActive ? ` · ${fullscreenDiagnosticLabel}` : ""}
+                  当前：{previewLineLabel(activePreviewKey)} · {playerStats.rate}x · {playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`} · 步长{playerSeekStep}秒 · {playerFitLabel} · {fillModeLabel(playerFillMode)} · {playerOrientationLabel} · 亮度{playerBrightness}% · {currentQualityLabel} · {playerEngine === "xgplayer" ? "西瓜播放器" : "Artplayer"}{playerFullscreenActive ? ` · ${fullscreenDiagnosticLabel}` : ""}
                 </p>
               </div>
             )}
+          </div>
           </div>
         </div>
         <div className="txzz-player-card-actions grid grid-cols-2 gap-1.5 sm:grid-cols-3">

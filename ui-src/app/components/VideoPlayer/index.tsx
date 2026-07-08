@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { PlayerSnapshot, PlayerQualityOption, PlayerFullscreenDiagnostic } from "./types";
+import type { PlayerSnapshot, PlayerQualityOption, PlayerFullscreenDiagnostic, PlayerOrientationMode } from "./types";
 import type { PlayerEngine } from "./engines/types";
 import { PlayerControls } from "./PlayerControls";
 import { PlayerGestures } from "./PlayerGestures";
@@ -46,6 +46,9 @@ export function VideoPlayer({
 
   // 当前选中的引擎（用户可在设置中切换）
   const [selectedEngine, setSelectedEngine] = useState<PlayerEngine>(preferredEngine || "artplayer");
+  const [orientationMode, setOrientationMode] = useState<PlayerOrientationMode>("auto");
+  const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
+  const [viewportSize, setViewportSize] = useState({ width: window.innerWidth || 0, height: window.innerHeight || 0 });
 
   const {
     playerState,
@@ -96,6 +99,43 @@ export function VideoPlayer({
     }
   }, [autoFullscreenSignal, url, requestFullscreen]);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const syncVideoSize = () => {
+      setVideoSize({
+        width: Number(video.videoWidth || 0),
+        height: Number(video.videoHeight || 0)
+      });
+    };
+    syncVideoSize();
+    video.addEventListener("loadedmetadata", syncVideoSize);
+    video.addEventListener("resize", syncVideoSize);
+    return () => {
+      video.removeEventListener("loadedmetadata", syncVideoSize);
+      video.removeEventListener("resize", syncVideoSize);
+    };
+  }, [videoRef.current, url, selectedEngine]);
+
+  useEffect(() => {
+    const syncViewport = () => {
+      const visual = window.visualViewport;
+      setViewportSize({
+        width: Math.round(visual?.width || window.innerWidth || document.documentElement.clientWidth || 0),
+        height: Math.round(visual?.height || window.innerHeight || document.documentElement.clientHeight || 0)
+      });
+    };
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    window.addEventListener("orientationchange", syncViewport);
+    window.visualViewport?.addEventListener("resize", syncViewport);
+    return () => {
+      window.removeEventListener("resize", syncViewport);
+      window.removeEventListener("orientationchange", syncViewport);
+      window.visualViewport?.removeEventListener("resize", syncViewport);
+    };
+  }, []);
+
   // ——— 播放控制 ———
   const handleSeek = (time: number) => {
     playerInstance?.seek(time);
@@ -130,6 +170,10 @@ export function VideoPlayer({
     // 引擎切换会触发 url 依赖项变化，自动重建播放器
   };
 
+  const handleOrientationModeChange = (mode: PlayerOrientationMode) => {
+    setOrientationMode(mode);
+  };
+
   // ——— 全屏控制 ———
   const handleFullscreenToggle = () => {
     if (fullscreenActive) {
@@ -156,6 +200,12 @@ export function VideoPlayer({
 
   const getCurrentTime = () => playerInstance?.getCurrentTime() ?? 0;
   const getVolume = () => playerInstance?.getVolume() ?? playerState.volume;
+  const videoLandscape = videoSize.width > 0 && videoSize.height > 0 && videoSize.width >= videoSize.height * 1.08;
+  const viewportPortrait = viewportSize.height > viewportSize.width;
+  const shouldRotateLandscape =
+    (fullscreenActive || immersive) &&
+    viewportPortrait &&
+    (orientationMode === "landscape" || (orientationMode === "auto" && videoLandscape));
 
   return (
     <div
@@ -170,6 +220,8 @@ export function VideoPlayer({
       style={{
         aspectRatio: (fullscreenActive || immersive) ? undefined : "16 / 9",
         background: "#000",
+        ["--txzz-player-viewport-width" as string]: `${viewportSize.width || 0}px`,
+        ["--txzz-player-viewport-height" as string]: `${viewportSize.height || 0}px`,
         ...(immersive ? {
           position: "fixed",
           inset: 0,
@@ -179,72 +231,85 @@ export function VideoPlayer({
         } : {})
       }}
     >
-      {/* 播放器渲染容器 */}
       <div
-        ref={containerRef}
-        className="w-full h-full"
-      />
+        className={[
+          "txzz-player-stage absolute inset-0",
+          shouldRotateLandscape ? "txzz-player-stage--rotate-landscape" : "",
+          orientationMode === "landscape" ? "txzz-player-stage--manual-landscape" : "",
+          orientationMode === "portrait" ? "txzz-player-stage--manual-portrait" : ""
+        ].filter(Boolean).join(" ")}
+        data-orientation-mode={orientationMode}
+        data-video-orientation={videoLandscape ? "landscape" : videoSize.height > videoSize.width ? "portrait" : "unknown"}
+      >
+        {/* 播放器渲染容器。横屏视频在竖屏全屏时会随舞台整体旋转，保持真正横向观看。 */}
+        <div
+          ref={containerRef}
+          className="w-full h-full"
+        />
 
-      {/* 加载状态层 */}
-      {!isReady && url && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 border-3 border-white/20 border-t-pink-400 rounded-full animate-spin" />
-            <span className="text-white/70 text-sm">{playerState.status}</span>
+        {/* 加载状态层 */}
+        {!isReady && url && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-10 h-10 border-3 border-white/20 border-t-pink-400 rounded-full animate-spin" />
+              <span className="text-white/70 text-sm">{playerState.status}</span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* 错误提示层 */}
-      {playerState.error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/60 pointer-events-none z-10">
-          <div className="px-6 py-4 bg-red-900/80 backdrop-blur-sm rounded-2xl text-center max-w-xs">
-            <div className="text-red-400 text-2xl mb-2">⚠</div>
-            <p className="text-white text-sm">{playerState.error}</p>
+        {/* 错误提示层 */}
+        {playerState.error && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60 pointer-events-none z-10">
+            <div className="px-6 py-4 bg-red-900/80 backdrop-blur-sm rounded-2xl text-center max-w-xs">
+              <div className="text-red-400 text-2xl mb-2">⚠</div>
+              <p className="text-white text-sm">{playerState.error}</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {url && (
-        <>
-          {/* 手势控制层（在控制栏之下） */}
-          <PlayerGestures
-            containerRef={containerRef}
-            onSeek={handleGestureSeek}
-            onRateChange={handleGestureRate}
-            onVolumeChange={handleGestureVolume}
-            getCurrentTime={getCurrentTime}
-            getVolume={getVolume}
-            seekStep={10}
-          />
+        {url && (
+          <>
+            {/* 手势控制层（在控制栏之下） */}
+            <PlayerGestures
+              containerRef={containerRef}
+              onSeek={handleGestureSeek}
+              onRateChange={handleGestureRate}
+              onVolumeChange={handleGestureVolume}
+              getCurrentTime={getCurrentTime}
+              getVolume={getVolume}
+              seekStep={10}
+            />
 
-          {/* 控制栏 */}
-          <PlayerControls
-            playerState={{
-              ...playerState,
-              seekStep: 10,
-              fillMode: "contain",
-              brightness: 100
-            }}
-            fullscreenActive={fullscreenActive}
-            immersive={immersive}
-            pipActive={pipActive}
-            diagnostic={diagnostic}
-            currentEngine={selectedEngine}
-            onPlayPause={handlePlayPause}
-            onSeek={handleSeek}
-            onVolumeChange={handleVolumeChange}
-            onRateChange={handleRateChange}
-            onQualityChange={handleQualityChange}
-            onEngineChange={handleEngineChange}
-            onRequestFullscreen={requestFullscreen}
-            onExitFullscreen={exitFullscreen}
-            onToggleImmersive={toggleImmersive}
-            onRequestPip={requestPictureInPicture}
-            onExitPip={exitPictureInPicture}
-          />
-        </>
-      )}
+            {/* 控制栏 */}
+            <PlayerControls
+              playerState={{
+                ...playerState,
+                seekStep: 10,
+                fillMode: "contain",
+                orientationMode,
+                brightness: 100
+              }}
+              fullscreenActive={fullscreenActive}
+              immersive={immersive}
+              pipActive={pipActive}
+              diagnostic={diagnostic}
+              currentEngine={selectedEngine}
+              onPlayPause={handlePlayPause}
+              onSeek={handleSeek}
+              onVolumeChange={handleVolumeChange}
+              onRateChange={handleRateChange}
+              onQualityChange={handleQualityChange}
+              onEngineChange={handleEngineChange}
+              onRequestFullscreen={requestFullscreen}
+              onExitFullscreen={exitFullscreen}
+              onToggleImmersive={toggleImmersive}
+              onRequestPip={requestPictureInPicture}
+              onExitPip={exitPictureInPicture}
+              onOrientationModeChange={handleOrientationModeChange}
+            />
+          </>
+        )}
+      </div>
     </div>
   );
 }

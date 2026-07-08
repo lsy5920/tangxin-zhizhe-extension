@@ -14,6 +14,7 @@ import {
   LayoutTemplate
 } from "lucide-react";
 import type { PlayerControlsState, PlayerFullscreenDiagnostic } from "./types";
+import type { PlayerOrientationMode } from "./types";
 import type { PlayerEngine } from "./engines/types";
 import { PlayerProgressBar } from "./PlayerProgressBar";
 import { PlayerSettingsMenu } from "./PlayerSettingsMenu";
@@ -37,6 +38,7 @@ type Props = {
   onToggleImmersive: () => void;
   onRequestPip: () => void;
   onExitPip: () => void;
+  onOrientationModeChange?: (mode: PlayerOrientationMode) => void;
 };
 
 const ENGINE_LABELS: Record<PlayerEngine, string> = {
@@ -71,7 +73,8 @@ export function PlayerControls({
   onExitFullscreen,
   onToggleImmersive,
   onRequestPip,
-  onExitPip
+  onExitPip,
+  onOrientationModeChange
 }: Props) {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -319,6 +322,7 @@ export function PlayerControls({
                   onRateChange={onRateChange}
                   onQualityChange={onQualityChange}
                   onEngineChange={onEngineChange}
+                  onOrientationModeChange={onOrientationModeChange}
                   onClose={() => setSettingsOpen(false)}
                 />
               )}

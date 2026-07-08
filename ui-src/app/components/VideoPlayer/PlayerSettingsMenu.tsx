@@ -3,12 +3,14 @@ import {
   Gauge,
   Layers,
   Ratio,
+  RotateCcwSquare,
   Sun,
   SkipForward,
   Check,
   Cpu
 } from "lucide-react";
 import type { PlayerControlsState } from "./types";
+import type { PlayerOrientationMode } from "./types";
 import type { PlayerEngine } from "./engines/types";
 
 type Props = {
@@ -18,6 +20,7 @@ type Props = {
   onQualityChange: (level: number) => void;
   onEngineChange: (engine: PlayerEngine) => void;
   onFillModeChange?: (mode: "contain" | "cover" | "fill") => void;
+  onOrientationModeChange?: (mode: PlayerOrientationMode) => void;
   onBrightnessChange?: (brightness: number) => void;
   onSeekStepChange?: (step: number) => void;
   onClose: () => void;
@@ -29,6 +32,11 @@ const fillModeOptions = [
   { value: "contain" as const, label: "原比例", desc: "完整显示，保留黑边" },
   { value: "cover" as const, label: "裁满屏", desc: "填满屏幕，四周可能裁剪" },
   { value: "fill" as const, label: "铺满屏", desc: "拉伸填满，可能变形" }
+];
+const orientationModeOptions: { value: PlayerOrientationMode; label: string; desc: string }[] = [
+  { value: "auto", label: "自动", desc: "按视频方向和屏幕方向智能适配" },
+  { value: "landscape", label: "横屏", desc: "横屏视频在竖屏全屏时旋转观看" },
+  { value: "portrait", label: "竖屏", desc: "保持竖向舞台，不自动旋转" }
 ];
 const engineOptions: { value: PlayerEngine; label: string; desc: string }[] = [
   { value: "artplayer", label: "Artplayer", desc: "功能全面，PC端首选" },
@@ -50,12 +58,13 @@ export function PlayerSettingsMenu({
   onQualityChange,
   onEngineChange,
   onFillModeChange,
+  onOrientationModeChange,
   onBrightnessChange,
   onSeekStepChange,
   onClose
 }: Props) {
   const [activeTab, setActiveTab] = useState<"speed" | "quality" | "display" | "engine">("speed");
-  const { rate, qualities, currentQuality, fillMode, brightness, seekStep } = playerState;
+  const { rate, qualities, currentQuality, fillMode, orientationMode, brightness, seekStep } = playerState;
 
   const tabs = [
     { id: "speed" as const, label: "倍速" },
@@ -190,6 +199,34 @@ export function PlayerSettingsMenu({
                       <div className="text-xs opacity-60 mt-0.5">{option.desc}</div>
                     </div>
                     {fillMode === option.value && <Check className="w-4 h-4 flex-shrink-0" />}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* 亮度调节 */}
+            <div>
+              <div className="flex items-center gap-2 px-1 mb-2 text-white/40 text-xs">
+                <RotateCcwSquare className="w-3.5 h-3.5" />
+                <span>横竖屏方向</span>
+              </div>
+              {orientationModeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => onOrientationModeChange?.(option.value)}
+                  className={[
+                    "w-full px-4 py-2.5 rounded-lg text-left transition-colors mb-1.5",
+                    orientationMode === option.value
+                      ? "bg-gradient-to-r from-pink-600 to-purple-600 text-white"
+                      : "text-white/80 hover:bg-white/8 hover:text-white"
+                  ].join(" ")}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium">{option.label}</div>
+                      <div className="text-xs opacity-60 mt-0.5">{option.desc}</div>
+                    </div>
+                    {orientationMode === option.value && <Check className="w-4 h-4 flex-shrink-0" />}
                   </div>
                 </button>
               ))}

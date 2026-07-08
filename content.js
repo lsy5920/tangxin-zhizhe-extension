@@ -167,6 +167,24 @@
     "下载失败",
     "操作失败"
   ];
+  // 广告清理规则集中维护，后续新增站点样式时只扩展这里，避免清理逻辑散落到播放器或面板中。
+  const AD_CLEANER_VERSION = "2026-07-08-ad-clean-v1";
+  const AD_CONTAINER_SELECTORS = [
+    ".ad-splash",
+    ".ad-apps",
+    ".ad-item",
+    ".van-overlay:has(+ .ad-splash)",
+    "[class*='ad-splash']",
+    "[class*='ad-app']",
+    "[class*='ad-item']",
+    "[class*='ad_banner']",
+    "[class*='ad-banner']",
+    "[id*='ad-splash']",
+    "[id*='ad_banner']",
+    "[id*='ad-banner']"
+  ];
+  const AD_TEXT_PATTERN = /(广告|推广|赞助|app下载|立即下载|立即打开|同城约|博彩|棋牌|皇冠|葡京|bet365|telegram|免费看片|免费海角|免费抖阴)/i;
+  const AD_HOST_PATTERN = /(aff-|hjsq|douyin|haijiao|bet365|casino|promo|ads?|telegram|t\.me)/i;
 
   function isCompactViewport() {
     return window.matchMedia?.("(max-width: 720px)")?.matches || window.innerWidth <= 720;
@@ -908,6 +926,168 @@
     [250, 1200, 3000].forEach((delay) => window.setTimeout(() => schedule(delay === 250), delay));
   }
 
+  function createAdCleanerState() {
+    return {
+      enabled: true,
+      version: AD_CLEANER_VERSION,
+      removed: 0,
+      hidden: 0,
+      blockedClicks: 0,
+      lastRunAt: "",
+      lastReason: "",
+      lastMatched: "",
+      selectors: AD_CONTAINER_SELECTORS.length
+    };
+  }
+
+  state.adCleaner = createAdCleanerState();
+
+  // 输出给 React 面板的脱敏统计，只记录数量和命中摘要，不保存广告链接的完整跳转上下文。
+  function adCleanerStats() {
+    return {
+      ...state.adCleaner,
+      total: Number(state.adCleaner.removed || 0) + Number(state.adCleaner.hidden || 0) + Number(state.adCleaner.blockedClicks || 0)
+    };
+  }
+
+  function markAdCleanerChanged(reason = "自动清理", matched = "") {
+    state.adCleaner.lastRunAt = new Date().toISOString();
+    state.adCleaner.lastReason = reason;
+    state.adCleaner.lastMatched = clipText(matched, 80);
+  }
+
+  function elementTextForAd(el) {
+    if (!el) return "";
+    return String(el.innerText || el.textContent || el.getAttribute?.("aria-label") || el.title || "").replace(/\s+/g, " ").trim();
+  }
+
+  function safeMatchesAdSelector(el) {
+    try {
+      return Boolean(el?.matches?.(AD_CONTAINER_SELECTORS.join(",")));
+    } catch (_) {
+      return AD_CONTAINER_SELECTORS
+        .filter((selector) => !selector.includes(":has"))
+        .some((selector) => {
+          try { return Boolean(el?.matches?.(selector)); } catch (_) { return false; }
+        });
+    }
+  }
+
+  function safeQueryAdContainers() {
+    try {
+      return Array.from(document.querySelectorAll(AD_CONTAINER_SELECTORS.join(",")));
+    } catch (_) {
+      return AD_CONTAINER_SELECTORS
+        .filter((selector) => !selector.includes(":has"))
+        .flatMap((selector) => {
+          try { return Array.from(document.querySelectorAll(selector)); } catch (_) { return []; }
+        });
+    }
+  }
+
+  function adElementReason(el) {
+    if (!el || el === document.documentElement || el === document.body || el.closest?.("#txzz-candy-ui-root")) return "";
+    const className = String(el.className || "");
+    const id = String(el.id || "");
+    const text = elementTextForAd(el);
+    const href = String(el.href || el.getAttribute?.("href") || "");
+    const signature = `${id} ${className} ${text} ${href}`;
+    if (safeMatchesAdSelector(el)) return `规则命中：${className || id || el.tagName}`;
+    if (href && AD_HOST_PATTERN.test(href)) return `外链命中：${href}`;
+    if (AD_TEXT_PATTERN.test(signature)) {
+      const rect = el.getBoundingClientRect?.();
+      const area = rect ? rect.width * rect.height : 0;
+      if (area > 2400 || /广告/.test(text)) return `文案命中：${text || className || el.tagName}`;
+    }
+    return "";
+  }
+
+  function hideAdElement(el, reason = "广告规则") {
+    if (!el || el.dataset?.txzzAdCleaned === "1") return false;
+    el.dataset.txzzAdCleaned = "1";
+    el.setAttribute("aria-hidden", "true");
+    el.style.setProperty("display", "none", "important");
+    el.style.setProperty("visibility", "hidden", "important");
+    el.style.setProperty("pointer-events", "none", "important");
+    state.adCleaner.hidden += 1;
+    markAdCleanerChanged(reason, elementTextForAd(el) || String(el.className || el.tagName));
+    return true;
+  }
+
+  function removeAdElement(el, reason = "广告规则") {
+    if (!el || el.dataset?.txzzAdCleaned === "1") return false;
+    const matched = elementTextForAd(el) || String(el.className || el.tagName);
+    el.dataset.txzzAdCleaned = "1";
+    try {
+      el.remove();
+      state.adCleaner.removed += 1;
+    } catch (_) {
+      hideAdElement(el, reason);
+    }
+    markAdCleanerChanged(reason, matched);
+    return true;
+  }
+
+  function cleanAdElements(reason = "自动清理") {
+    if (!state.adCleaner.enabled) return 0;
+    let changed = 0;
+    try {
+      safeQueryAdContainers().forEach((el) => {
+        if (removeAdElement(el, reason)) changed += 1;
+      });
+      document.querySelectorAll("a[href], iframe, [style*='fixed'], [style*='sticky'], .van-popup, .van-dialog").forEach((el) => {
+        const hit = adElementReason(el);
+        if (!hit) return;
+        const rect = el.getBoundingClientRect?.();
+        if (!rect || rect.width <= 8 || rect.height <= 8) return;
+        const style = getComputedStyle(el);
+        const isLargeOverlay = ["fixed", "sticky"].includes(style.position) && rect.width * rect.height > window.innerWidth * window.innerHeight * 0.08;
+        const text = elementTextForAd(el);
+        const href = String(el.href || el.getAttribute?.("href") || "");
+        if (el.tagName === "IFRAME" || isLargeOverlay || /广告/.test(text) || AD_HOST_PATTERN.test(href)) {
+          if (removeAdElement(el, hit)) changed += 1;
+        }
+      });
+      document.querySelectorAll(".van-overlay").forEach((el) => {
+        const next = el.nextElementSibling;
+        const prev = el.previousElementSibling;
+        if (adElementReason(next) || adElementReason(prev)) {
+          if (hideAdElement(el, "广告遮罩")) changed += 1;
+        }
+      });
+    } catch (_) {}
+    if (changed) {
+      document.documentElement.classList.add("txzz-ad-cleaner-active");
+      publishState();
+    }
+    return changed;
+  }
+
+  function blockAdClick(event) {
+    const target = event.target?.closest?.("a[href], [onclick], [role='button'], .ad-item");
+    const reason = adElementReason(target);
+    if (!reason) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+    state.adCleaner.blockedClicks += 1;
+    markAdCleanerChanged("拦截广告点击", reason);
+    showToast("已拦截广告跳转", "ok");
+    publishState();
+  }
+
+  function installAdCleaner() {
+    if (window.__txzzAdCleanerInstalled) return;
+    window.__txzzAdCleanerInstalled = true;
+    document.addEventListener("click", blockAdClick, true);
+    const schedule = () => window.setTimeout(() => cleanAdElements("页面变化清理"), 60);
+    try {
+      new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+    } catch (_) {}
+    [0, 300, 1200, 3000, 6000].forEach((delay) => window.setTimeout(() => cleanAdElements(delay ? "延迟清理" : "首屏清理"), delay));
+    window.setInterval(() => cleanAdElements("巡检清理"), 2500);
+  }
+
   function publicSession(session = {}) {
     const patched = applySessionDisplayPatch(session);
     return {
@@ -941,6 +1121,7 @@
         fullDetails: state.fullDetails.slice(-40),
         downloadTasks: state.downloadTasks || {},
         downloadSnapshots: state.downloadSnapshots || [],
+        adCleaner: adCleanerStats(),
         repositoryUpdate: uiState.repositoryUpdate,
         publishedAt: new Date().toISOString()
       };
@@ -2041,6 +2222,10 @@
         emitFlow("清空", "已清空当前会话捕获记录", "ok");
       }
       if (action === "clear-cache") await clearDataCache();
+      if (action === "clean-ads") {
+        const cleaned = cleanAdElements("手动清理");
+        emitFlow("广告清理", cleaned ? `本次清理 ${cleaned} 个广告元素` : "当前页面没有新的广告元素", cleaned ? "ok" : "info");
+      }
       if (action === "check-update") await checkRepositoryUpdate(true, { realtime: true });
       if (action === "download-latest") {
         const latest = await checkRepositoryUpdate(true, { realtime: true, silent: true });
@@ -2304,6 +2489,7 @@
   });
 
   installHook();
+  installAdCleaner();
   installDownloadInterceptor();
   syncViewportVars();
   collectSession().catch(() => {});

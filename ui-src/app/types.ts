@@ -177,6 +177,18 @@ export type BridgeState = {
       detectionSource?: string;
     };
   } | null;
+  adCleaner?: {
+    enabled?: boolean;
+    version?: string;
+    removed?: number;
+    hidden?: number;
+    blockedClicks?: number;
+    total?: number;
+    lastRunAt?: string;
+    lastReason?: string;
+    lastMatched?: string;
+    selectors?: number;
+  };
   publishedAt?: string;
 };
 

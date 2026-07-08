@@ -16,6 +16,7 @@ export type PlayerQualityOption = {
 };
 
 export type PlayerFillMode = "contain" | "cover" | "fill";
+export type PlayerOrientationMode = "auto" | "landscape" | "portrait";
 
 export type PlayerFullscreenDiagnostic = {
   source: "未全屏" | "播放器壳层" | "插件宿主" | "沉浸兜底" | "未知";
@@ -37,6 +38,7 @@ export type PlayerControlsState = {
   rate: number;
   seekStep: number;
   fillMode: PlayerFillMode;
+  orientationMode: PlayerOrientationMode;
   brightness: number;
   qualities: PlayerQualityOption[];
   currentQuality: number;

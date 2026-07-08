@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, AlertTriangle, CheckCircle, Copy, Download, ExternalLink, Info, Lightbulb, Package, Radio, RefreshCw, Sparkles, Trash2, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, Ban, CheckCircle, Copy, Download, ExternalLink, Info, Lightbulb, Package, Radio, RefreshCw, Sparkles, Trash2, Users, X } from "lucide-react";
 import type { BridgeState, Page, WorkerDiagnostics } from "../types";
 import { formatRelativeTime } from "../helpers";
 import { APP_BUILD, APP_VERSION, APP_VERSION_LABEL, ART_PLAYER_VERSION, HLS_CORE_VERSION } from "../constants";
@@ -10,7 +10,7 @@ type Props = {
   onPage?: (page: Page, intent?: Record<string, unknown>) => void;
 };
 
-const cacheItems = ["插件本地账号池缓存","远程账号池摘要缓存","播放状态缓存","下载任务缓存","页面监听运行缓存","旧版本默认配置"];
+const cacheItems = ["插件本地账号池缓存","远程账号池摘要缓存","播放状态缓存","下载任务缓存","页面监听运行缓存","广告清理运行状态","旧版本默认配置"];
 const DIAGNOSTICS_CACHE_KEY = "txzzLastWorkerDiagnostics";
 
 type CloudServiceCheck = { ok: boolean; text: string; diagnostics?: WorkerDiagnostics; cached?: boolean; baseUrl?: string };
@@ -306,6 +306,9 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
   const accountProblem = hasDiagnosticKey(diagnostics, ["accounts", "usable", "risk", "unverified"]);
   const shouldShowInvalid = hasDiagnosticKey(diagnostics, ["risk"]);
   const shouldOpenAdd = hasDiagnosticKey(diagnostics, ["accounts"]);
+  const adCleaner = state.adCleaner || {};
+  const adCleanerTotal = Number(adCleaner.total || 0);
+  const adCleanerLastRun = adCleaner.lastRunAt ? formatRelativeTime(adCleaner.lastRunAt) : "等待清理";
 
   return (
     <div className="space-y-4 p-4">
@@ -451,6 +454,31 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
         <p className="mb-3 text-xs text-purple-400">{state.displayPatchApplied ? "展示覆盖已应用，VIP 永久有效、余额 999、永久尤物圈已生效。" : "尚未应用展示覆盖，点击下方按钮立即应用。"}</p>
         <button onClick={() => onAction("apply")} className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 ${state.displayPatchApplied ? "bg-gradient-to-r from-emerald-400 to-teal-500" : "bg-gradient-to-r from-pink-400 to-rose-500"}`}>
           <Sparkles size={13} />{state.displayPatchApplied ? "重新应用展示覆盖" : "立即应用展示覆盖"}
+        </button>
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+        <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><Ban size={14} className="text-emerald-500" /> 广告清理</h3>
+        <p className="text-xs leading-relaxed text-purple-400">自动处理首屏广告浮层、页面广告宫格、可疑广告外链和遮挡层，减少进入视频详情前的干扰。</p>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {[
+            { label: "总处理", value: adCleanerTotal },
+            { label: "移除", value: Number(adCleaner.removed || 0) },
+            { label: "拦截", value: Number(adCleaner.blockedClicks || 0) }
+          ].map((item) => (
+            <div key={item.label} className="rounded-xl bg-emerald-50 px-2 py-2">
+              <p className="text-[10px] text-emerald-500">{item.label}</p>
+              <p className="text-base font-bold text-purple-800">{item.value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-xl bg-purple-50 px-3 py-2 text-[10px] leading-relaxed text-purple-400">
+          <p>规则数量：{Number(adCleaner.selectors || 0)} 条</p>
+          <p>最近清理：{adCleanerLastRun}</p>
+          <p className="line-clamp-2">命中原因：{adCleaner.lastReason || "暂无"}{adCleaner.lastMatched ? ` / ${adCleaner.lastMatched}` : ""}</p>
+        </div>
+        <button onClick={() => onAction("clean-ads")} className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-500 py-2 text-xs font-medium text-white shadow-sm transition-transform active:scale-95">
+          <Ban size={13} /> 立即清理广告
         </button>
       </div>
 
