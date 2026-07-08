@@ -46,6 +46,15 @@ type PlayerQualityOption = {
   label: string;
 };
 
+type PlayerFullscreenDiagnostic = {
+  source: "未全屏" | "播放器壳层" | "插件宿主" | "沉浸兜底" | "未知";
+  shellSize: string;
+  viewportSize: string;
+  coverage: number;
+  ok: boolean;
+  issue: string;
+};
+
 type FullscreenTarget = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
   msRequestFullscreen?: () => Promise<void> | void;
@@ -65,6 +74,15 @@ const playerMutedStorageKey = "txzz-player-muted";
 const playerFillStorageKey = "txzz-player-fill";
 const playerBrightnessStorageKey = "txzz-player-brightness";
 const playerFullscreenHostClass = "txzz-player-fullscreen-mode";
+
+const emptyFullscreenDiagnostic: PlayerFullscreenDiagnostic = {
+  source: "未全屏",
+  shellSize: "未测量",
+  viewportSize: "未测量",
+  coverage: 0,
+  ok: true,
+  issue: "普通播放模式"
+};
 
 function lineState(line: PlaybackLine) {
   if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false };
@@ -133,6 +151,41 @@ function fillModeLabel(mode: PlayerFillMode) {
   if (mode === "cover") return "裁满";
   if (mode === "fill") return "铺满";
   return "原比例";
+}
+
+function fullscreenSourceLabel(node: Element | null, shell: HTMLElement | null, host: HTMLElement | null, immersive: boolean): PlayerFullscreenDiagnostic["source"] {
+  if (shell && node && (node === shell || shell.contains(node))) return "播放器壳层";
+  if (host && node === host) return "插件宿主";
+  if (immersive) return "沉浸兜底";
+  if (!node) return "未全屏";
+  return "未知";
+}
+
+function measureFullscreenDiagnostic(shell: HTMLElement | null, host: HTMLElement | null, immersive: boolean): PlayerFullscreenDiagnostic {
+  const fullscreenNode = fullscreenElement();
+  const source = fullscreenSourceLabel(fullscreenNode, shell, host, immersive);
+  if (!shell || source === "未全屏") return emptyFullscreenDiagnostic;
+  const rect = shell.getBoundingClientRect();
+  const viewportWidth = Math.max(window.innerWidth || 0, document.documentElement.clientWidth || 0);
+  const viewportHeight = Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0);
+  const widthRatio = viewportWidth ? rect.width / viewportWidth : 0;
+  const heightRatio = viewportHeight ? rect.height / viewportHeight : 0;
+  const coverage = Math.round(Math.max(0, Math.min(1, Math.min(widthRatio, heightRatio))) * 100);
+  const rounded = Math.abs(rect.left) > 2 || Math.abs(rect.top) > 2 || Math.abs(rect.width - viewportWidth) > 4 || Math.abs(rect.height - viewportHeight) > 4;
+  const hostModeMissing = source === "插件宿主" && !host?.classList.contains(playerFullscreenHostClass);
+  const issue = hostModeMissing
+    ? "宿主全屏模式未生效"
+    : rounded
+      ? "播放器容器未完全贴合视口"
+      : "容器已贴合视口";
+  return {
+    source,
+    shellSize: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+    viewportSize: `${viewportWidth}x${viewportHeight}`,
+    coverage,
+    ok: !hostModeMissing && !rounded && coverage >= 99,
+    issue
+  };
 }
 
 function hlsQualityLabel(level: { name?: string; height?: number; bitrate?: number } | undefined, index: number) {
@@ -427,6 +480,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const [playerFillMode, setPlayerFillMode] = useState<PlayerFillMode>(initialPlayerFillMode);
   const [playerBrightness, setPlayerBrightness] = useState(initialPlayerBrightness);
   const [playerCursorHidden, setPlayerCursorHidden] = useState(false);
+  const [playerFullscreenDiagnostic, setPlayerFullscreenDiagnostic] = useState<PlayerFullscreenDiagnostic>(emptyFullscreenDiagnostic);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerShellRef = useRef<HTMLDivElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
@@ -471,6 +525,9 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const playerFullscreenActive = playerImmersive || browserFullscreenActive;
   const playerFitLabel = fitModeLabel(playerFitMode, detectedFitMode);
   const playerShellAspect = playerFullscreenActive ? undefined : fitModeAspect(playerFitMode, detectedFitMode);
+  const fullscreenDiagnosticLabel = playerFullscreenDiagnostic.ok
+    ? `${playerFullscreenDiagnostic.source} · 覆盖 ${playerFullscreenDiagnostic.coverage}%`
+    : `全屏体检：${playerFullscreenDiagnostic.issue}`;
   const currentQualityLabel = playerQualityLevel < 0
     ? (playerQualities.length ? "自动清晰度" : "清晰度自动")
     : playerQualities.find((item) => item.level === playerQualityLevel)?.label || `档位 ${playerQualityLevel + 1}`;
@@ -495,6 +552,11 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     `画面填充：${fillModeLabel(playerFillMode)}`,
     `画面亮度：${playerBrightness}%`,
     `当前清晰度：${currentQualityLabel}`,
+    `全屏来源：${playerFullscreenDiagnostic.source}`,
+    `全屏容器：${playerFullscreenDiagnostic.shellSize}`,
+    `当前视口：${playerFullscreenDiagnostic.viewportSize}`,
+    `视口覆盖：${playerFullscreenDiagnostic.coverage}%`,
+    `全屏体检：${playerFullscreenDiagnostic.ok ? "正常" : playerFullscreenDiagnostic.issue}`,
     `自动切换备用：${playerAutoBackupUsed ? "已触发" : "未触发"}`,
     `推荐线路：${health.recommendedLabel}`,
     `体检分：${health.score}`,
@@ -509,6 +571,19 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       window.clearTimeout(controlsTimerRef.current);
       controlsTimerRef.current = undefined;
     }
+  };
+
+  const refreshFullscreenDiagnostic = () => {
+    setPlayerFullscreenDiagnostic(
+      measureFullscreenDiagnostic(playerShellRef.current, fullscreenHostElement(), playerImmersive || browserFullscreenActive)
+    );
+  };
+
+  const scheduleFullscreenDiagnosticRefresh = () => {
+    // 浏览器进入全屏和 CSS 接管尺寸都有短暂延迟，延后一拍测量能拿到更接近真实显示的容器数据。
+    window.setTimeout(() => {
+      setPlayerFullscreenDiagnostic(measureFullscreenDiagnostic(playerShellRef.current, fullscreenHostElement(), true));
+    }, 120);
   };
 
   const applyPlayerVolume = (nextVolume: number, nextMuted = false) => {
@@ -564,6 +639,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       const host = fullscreenHostElement();
       const active = isPlayerFullscreenElement(fullscreenNode, shell, host);
       setBrowserFullscreenActive(active);
+      setPlayerFullscreenDiagnostic(measureFullscreenDiagnostic(shell, host, playerImmersive || active));
       if (!active && fullscreenNode !== shell) {
         setPlayerImmersive(false);
         host?.classList.remove(playerFullscreenHostClass);
@@ -577,6 +653,20 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       document.removeEventListener("webkitfullscreenchange", syncFullscreen);
     };
   }, []);
+
+  useEffect(() => {
+    refreshFullscreenDiagnostic();
+    if (!playerFullscreenActive) return undefined;
+    const update = () => refreshFullscreenDiagnostic();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    const timer = window.setTimeout(update, 180);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      window.clearTimeout(timer);
+    };
+  }, [browserFullscreenActive, playerFullscreenActive, playerImmersive]);
 
   useEffect(() => {
     clearControlsTimer();
@@ -943,6 +1033,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     if (isPlayerFullscreenElement(fullscreenNode, shell, host)) await exitFullscreen();
     host?.classList.remove(playerFullscreenHostClass);
     setBrowserFullscreenActive(false);
+    setPlayerFullscreenDiagnostic(emptyFullscreenDiagnostic);
     revealPlayerControls(true);
     setPlayerStatus("已退出全屏");
   };
@@ -962,6 +1053,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       revealPlayerControls(true);
       setPlayerStatus(browserFullscreenActive ? "已进入浏览器全屏" : "已进入沉浸全屏");
       art.notice.show = browserFullscreenActive ? "已进入浏览器全屏" : "已进入沉浸全屏";
+      scheduleFullscreenDiagnosticRefresh();
       return;
     }
 
@@ -972,6 +1064,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       revealPlayerControls(true);
       setPlayerStatus("已进入浏览器全屏");
       art.notice.show = "已进入浏览器全屏";
+      scheduleFullscreenDiagnosticRefresh();
     } catch (err) {
       try {
         // 少数浏览器不允许 Shadow DOM 内部节点全屏，退回宿主全屏并用全屏模式样式只保留播放器。
@@ -982,6 +1075,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         revealPlayerControls(true);
         setPlayerStatus("已进入浏览器全屏");
         art.notice.show = "已进入浏览器全屏";
+        scheduleFullscreenDiagnosticRefresh();
       } catch (fallbackErr) {
         // 部分网页或浏览器环境会拒绝真实全屏，插件内沉浸全屏用于保证观看体验不中断。
         setPlayerImmersive(true);
@@ -989,6 +1083,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         setPlayerStatus("浏览器全屏受限，已切换沉浸全屏");
         setPlayerError(`浏览器全屏未被允许，已使用沉浸全屏兜底：${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`);
         art.notice.show = "已进入沉浸全屏";
+        scheduleFullscreenDiagnosticRefresh();
       }
     }
   };
@@ -1369,6 +1464,14 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
               <div className="flex shrink-0 flex-wrap justify-end gap-1">
                 <span className={`rounded-full px-2 py-1 text-[10px] backdrop-blur ${previewUrl ? "bg-emerald-500/75" : "bg-rose-500/75"}`}>{playerStatus}</span>
                 {playerFullscreenActive && <span className="rounded-full bg-sky-500/75 px-2 py-1 text-[10px] backdrop-blur">全屏 · {fillModeLabel(playerFillMode)}</span>}
+                {playerFullscreenActive && (
+                  <span
+                    className={`rounded-full px-2 py-1 text-[10px] backdrop-blur ${playerFullscreenDiagnostic.ok ? "bg-black/45" : "bg-amber-500/85"}`}
+                    title={`容器 ${playerFullscreenDiagnostic.shellSize} / 视口 ${playerFullscreenDiagnostic.viewportSize}`}
+                  >
+                    {fullscreenDiagnosticLabel}
+                  </span>
+                )}
               </div>
             </div>
             {(playerResumeTip || playerError) && (
@@ -1672,7 +1775,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   </div>
                 )}
                 <p className="mt-1.5 truncate text-[9px] text-white/55">
-                  当前：{previewLineLabel(activePreviewKey)} · {playerStats.rate}x · {playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`} · 步长{playerSeekStep}秒 · {playerFitLabel} · {fillModeLabel(playerFillMode)} · 亮度{playerBrightness}% · {currentQualityLabel}
+                  当前：{previewLineLabel(activePreviewKey)} · {playerStats.rate}x · {playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`} · 步长{playerSeekStep}秒 · {playerFitLabel} · {fillModeLabel(playerFillMode)} · 亮度{playerBrightness}% · {currentQualityLabel}{playerFullscreenActive ? ` · ${fullscreenDiagnosticLabel}` : ""}
                 </p>
               </div>
             )}

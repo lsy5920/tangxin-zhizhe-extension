@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "糖心志者",
-  "version": "2.7.6",
+  "version": "2.7.7",
   "description": "账号池管理、播放状态展示、视频下载和版本更新管理工具。",
   "permissions": [
     "storage",

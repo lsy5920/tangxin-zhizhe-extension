@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-1518";
+const LOCAL_UPDATE_BUILD = "2026-07-08-1529";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 15:18 【修复】升级版本到 v2.7.6，修复播放器真实全屏层级问题，浏览器全屏优先请求播放器壳层，宿主全屏兜底时强制隐藏插件面板外壳、侧栏、标题栏和其它播放页卡片，避免全屏后仍出现圆角、内层视频框、面板宽度限制或画面被容器裁剪。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 15:29 【优化】升级版本到 v2.7.7，新增播放器全屏体检能力，全屏时会显示全屏来源、视口覆盖率和容器贴合状态，播放器诊断报告同步写入全屏容器尺寸、当前视口、覆盖率和异常原因，方便继续排查黑边、圆角、裁剪或宿主全屏模式失效问题。";
 
 const DEFAULT_STATE = {
   role: "guest",
