@@ -64,6 +64,7 @@ const playerVolumeStorageKey = "txzz-player-volume";
 const playerMutedStorageKey = "txzz-player-muted";
 const playerFillStorageKey = "txzz-player-fill";
 const playerBrightnessStorageKey = "txzz-player-brightness";
+const playerFullscreenHostClass = "txzz-player-fullscreen-mode";
 
 function lineState(line: PlaybackLine) {
   if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false };
@@ -143,7 +144,8 @@ function hlsQualityLabel(level: { name?: string; height?: number; bitrate?: numb
 
 function fullscreenElement() {
   const doc = document as FullscreenDocument;
-  return document.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement || null;
+  const shadowFullscreen = fullscreenHostElement()?.shadowRoot?.fullscreenElement || null;
+  return shadowFullscreen || document.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement || null;
 }
 
 function fullscreenHostElement() {
@@ -152,11 +154,9 @@ function fullscreenHostElement() {
 
 function isPlayerFullscreenElement(node: Element | null, shell: HTMLElement | null, host: HTMLElement | null) {
   return Boolean(
-    node && shell && (
-      node === shell
-      || shell.contains(node)
-      || node === host
-      || Boolean(host?.contains(node))
+    node && (
+      (shell && (node === shell || shell.contains(node)))
+      || Boolean(host && node === host && host.classList.contains(playerFullscreenHostClass))
     )
   );
 }
@@ -547,13 +547,27 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   };
 
   useEffect(() => {
+    const host = fullscreenHostElement();
+    if (!host) return;
+    if (playerFullscreenActive) {
+      host.classList.add(playerFullscreenHostClass);
+      return () => host.classList.remove(playerFullscreenHostClass);
+    }
+    if (fullscreenElement() !== host) host.classList.remove(playerFullscreenHostClass);
+    return undefined;
+  }, [playerFullscreenActive]);
+
+  useEffect(() => {
     const syncFullscreen = () => {
       const fullscreenNode = fullscreenElement();
       const shell = playerShellRef.current;
       const host = fullscreenHostElement();
       const active = isPlayerFullscreenElement(fullscreenNode, shell, host);
       setBrowserFullscreenActive(active);
-      if (!active && fullscreenNode !== shell) setPlayerImmersive(false);
+      if (!active && fullscreenNode !== shell) {
+        setPlayerImmersive(false);
+        host?.classList.remove(playerFullscreenHostClass);
+      }
     };
     document.addEventListener("fullscreenchange", syncFullscreen);
     document.addEventListener("webkitfullscreenchange", syncFullscreen);
@@ -927,6 +941,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     const shell = playerShellRef.current;
     const host = fullscreenHostElement();
     if (isPlayerFullscreenElement(fullscreenNode, shell, host)) await exitFullscreen();
+    host?.classList.remove(playerFullscreenHostClass);
     setBrowserFullscreenActive(false);
     revealPlayerControls(true);
     setPlayerStatus("已退出全屏");
@@ -937,10 +952,12 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     const shell = playerShellRef.current;
     if (!art || !shell) return;
     setPlayerMoreOpen(false);
-    const fullscreenTarget = fullscreenHostElement() || shell;
+    const host = fullscreenHostElement();
+    const fullscreenTarget = shell;
+    host?.classList.add(playerFullscreenHostClass);
 
     setPlayerError("");
-    if (playerFullscreenActive || isPlayerFullscreenElement(fullscreenElement(), shell, fullscreenHostElement())) {
+    if (playerFullscreenActive || isPlayerFullscreenElement(fullscreenElement(), shell, host)) {
       setPlayerImmersive(true);
       revealPlayerControls(true);
       setPlayerStatus(browserFullscreenActive ? "已进入浏览器全屏" : "已进入沉浸全屏");
@@ -956,12 +973,23 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       setPlayerStatus("已进入浏览器全屏");
       art.notice.show = "已进入浏览器全屏";
     } catch (err) {
-      // 部分网页或浏览器环境会拒绝真实全屏，插件内沉浸全屏用于保证观看体验不中断。
-      setPlayerImmersive(true);
-      revealPlayerControls(true);
-      setPlayerStatus("浏览器全屏受限，已切换沉浸全屏");
-      setPlayerError(`浏览器全屏未被允许，已使用沉浸全屏兜底：${err instanceof Error ? err.message : String(err)}`);
-      art.notice.show = "已进入沉浸全屏";
+      try {
+        // 少数浏览器不允许 Shadow DOM 内部节点全屏，退回宿主全屏并用全屏模式样式只保留播放器。
+        if (!host) throw err;
+        await requestFullscreen(host);
+        setBrowserFullscreenActive(true);
+        setPlayerImmersive(true);
+        revealPlayerControls(true);
+        setPlayerStatus("已进入浏览器全屏");
+        art.notice.show = "已进入浏览器全屏";
+      } catch (fallbackErr) {
+        // 部分网页或浏览器环境会拒绝真实全屏，插件内沉浸全屏用于保证观看体验不中断。
+        setPlayerImmersive(true);
+        revealPlayerControls(true);
+        setPlayerStatus("浏览器全屏受限，已切换沉浸全屏");
+        setPlayerError(`浏览器全屏未被允许，已使用沉浸全屏兜底：${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`);
+        art.notice.show = "已进入沉浸全屏";
+      }
     }
   };
 
@@ -1236,8 +1264,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const batchRecordReport = playbackRecordsReport(filteredRecordRows, recordFilterLabel);
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-400 to-violet-500 p-4 text-white shadow-lg">
+    <div className="txzz-playback-root space-y-4 p-4">
+      <div className="txzz-playback-hidden-during-fullscreen relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-400 to-violet-500 p-4 text-white shadow-lg">
         <div className="absolute right-3 top-2 select-none text-5xl opacity-15 pointer-events-none">🎬</div>
         <p className="mb-0.5 text-[10px] opacity-70 uppercase tracking-wider">最近视频</p>
         <h3 className="mb-2 pr-10 text-sm font-bold leading-snug">
@@ -1297,8 +1325,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         </div>
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
+      <div className="txzz-player-card space-y-3 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
+        <div className="txzz-player-card-title flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
               <Film size={14} className="text-sky-400" /> 完整播放器
@@ -1308,7 +1336,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         </div>
         <div
           ref={playerShellRef}
-          className={`txzz-candy-interactive select-none ${playerCursorHidden ? "cursor-none" : ""} ${playerFullscreenActive ? "txzz-player-fullscreen-shell fixed inset-0 z-[2147483647] overflow-hidden rounded-none bg-black" : "relative overflow-hidden rounded-2xl bg-black shadow-inner"}`}
+          className={`txzz-player-shell txzz-candy-interactive select-none ${playerCursorHidden ? "cursor-none" : ""} ${playerFullscreenActive ? "txzz-player-fullscreen-shell fixed inset-0 z-[2147483647] overflow-hidden rounded-none bg-black" : "relative overflow-hidden rounded-2xl bg-black shadow-inner"}`}
           style={playerShellAspect ? { aspectRatio: playerShellAspect } : undefined}
           onPointerDown={startHoldSeek}
           onPointerMove={() => revealPlayerControls()}
@@ -1323,7 +1351,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
           <div
             key={`${activePreviewKey}-${playerReloadKey}`}
             ref={playerContainerRef}
-            className={`txzz-player-clean txzz-player-fill-${playerFillMode} ${playerFullscreenActive ? "txzz-player-fullscreen-clean h-screen min-h-screen" : "h-full"} w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full`}
+            className={`txzz-player-clean txzz-player-fill-${playerFillMode} ${playerFullscreenActive ? "txzz-player-fullscreen-clean h-screen min-h-screen" : "h-full"} txzz-player-card-body w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full`}
             style={{ "--txzz-player-brightness": `${playerBrightness}%` } as CSSProperties}
           />
           {holdSeekHint && (
@@ -1650,7 +1678,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             )}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+        <div className="txzz-player-card-actions grid grid-cols-2 gap-1.5 sm:grid-cols-3">
           <button
             onClick={() => onAction("copy-playback-health-report", { report: playerDiagnosticReportRef.current })}
             disabled={!previewUrl}
@@ -1678,7 +1706,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         </div>
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+      <div className="txzz-playback-hidden-during-fullscreen space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
@@ -1769,7 +1797,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         </div>
       </div>
 
-      <div className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+      <div className="txzz-playback-hidden-during-fullscreen rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
         <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-purple-700">
           <Layers size={14} className="text-purple-400" /> 分片统计
         </h3>
@@ -1796,7 +1824,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         </div>
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+      <div className="txzz-playback-hidden-during-fullscreen space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
@@ -1872,7 +1900,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="txzz-playback-hidden-during-fullscreen space-y-2">
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
             <Film size={14} className="text-pink-400" /> 播放记录

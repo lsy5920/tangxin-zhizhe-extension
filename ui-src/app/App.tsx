@@ -32,6 +32,7 @@ const flowLevelColors: Record<string, string> = {
   info: "from-pink-500 to-purple-600",
   running: "from-amber-400 to-orange-500"
 };
+const playerFullscreenHostClass = "txzz-player-fullscreen-mode";
 
 function action(actionName: string, payload: Record<string, unknown> = {}) {
   sendUiAction(actionName, payload);
@@ -46,11 +47,16 @@ function requestHostFullscreen() {
   const host = document.getElementById("txzz-candy-ui-root") as FullscreenTarget | null;
   const request = host?.requestFullscreen || host?.webkitRequestFullscreen || host?.msRequestFullscreen;
   if (!host || !request) return;
+  host.classList.add(playerFullscreenHostClass);
   try {
     Promise.resolve(request.call(host)).catch(() => {});
   } catch {
     // 浏览器全屏只能在用户点击时尝试，失败后播放页会继续使用沉浸全屏兜底。
   }
+}
+
+function disableHostPlaybackFullscreenMode() {
+  document.getElementById("txzz-candy-ui-root")?.classList.remove(playerFullscreenHostClass);
 }
 
 function flowMessage(state: BridgeState, index: number): { text: string; level: string } {
@@ -115,7 +121,11 @@ export default function App() {
   }, [bridgeState.repositoryUpdate?.updateAvailable, bridgeState.repositoryUpdate?.remote?.id, bridgeState.repositoryUpdate?.remote?.version, bridgeState.repositoryUpdate?.remote?.build, dismissedUpdateId]);
 
   const openPanel = () => { setOpen(true); action("toggle", { force: true }); };
-  const closePanel = () => { setOpen(false); action("close"); };
+  const closePanel = () => {
+    disableHostPlaybackFullscreenMode();
+    setOpen(false);
+    action("close");
+  };
   const openFloatingPlayback = () => {
     // 网页原生视频先暂停，避免插件播放器全屏后出现双声道或后台继续播放。
     action("pause-page-video");
@@ -226,11 +236,11 @@ export default function App() {
       )}
 
       {open && (
-        <div className="txzz-candy-interactive fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-          <div className="absolute inset-0 bg-black/25 backdrop-blur-sm" onClick={closePanel} />
-          <div className="relative w-full h-full sm:h-auto sm:max-h-[90vh] sm:w-[720px] sm:max-w-full bg-white/95 backdrop-blur-xl rounded-none sm:rounded-3xl shadow-2xl flex flex-col sm:flex-row overflow-hidden border border-pink-100">
+        <div className="txzz-app-panel-overlay txzz-candy-interactive fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+          <div className="txzz-app-panel-backdrop absolute inset-0 bg-black/25 backdrop-blur-sm" onClick={closePanel} />
+          <div className="txzz-app-panel-frame relative w-full h-full sm:h-auto sm:max-h-[90vh] sm:w-[720px] sm:max-w-full bg-white/95 backdrop-blur-xl rounded-none sm:rounded-3xl shadow-2xl flex flex-col sm:flex-row overflow-hidden border border-pink-100">
 
-            <aside className="hidden sm:flex flex-col w-20 bg-gradient-to-b from-pink-400 via-rose-400 to-purple-600 py-5 items-center gap-1 shrink-0">
+            <aside className="txzz-app-sidebar hidden sm:flex flex-col w-20 bg-gradient-to-b from-pink-400 via-rose-400 to-purple-600 py-5 items-center gap-1 shrink-0">
               <div className="w-12 h-12 rounded-2xl bg-white/25 backdrop-blur flex items-center justify-center mb-2 shadow-inner">
                 <span className="text-white text-xl font-bold">志</span>
               </div>
@@ -266,7 +276,7 @@ export default function App() {
             </aside>
 
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <header className="flex items-center justify-between px-4 py-3 border-b border-pink-100 shrink-0 bg-white/80">
+              <header className="txzz-app-header flex items-center justify-between px-4 py-3 border-b border-pink-100 shrink-0 bg-white/80">
                 <div className="flex items-center gap-2">
                   <div className="sm:hidden w-8 h-8 rounded-xl bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center">
                     <span className="text-white text-sm font-bold">志</span>
@@ -303,11 +313,11 @@ export default function App() {
                 </div>
               )}
 
-              <main className="flex-1 overflow-y-auto overscroll-contain">
+              <main className="txzz-app-main flex-1 overflow-y-auto overscroll-contain">
                 {renderPage()}
               </main>
 
-              <nav className="flex shrink-0 items-center border-t border-pink-100 bg-white/90 sm:hidden">
+              <nav className="txzz-app-mobile-nav flex shrink-0 items-center border-t border-pink-100 bg-white/90 sm:hidden">
                 {navItems.map((item) => {
                   const active = page === item.id;
                   const hasBadge = item.id === "downloads" && activeDownloads > 0;

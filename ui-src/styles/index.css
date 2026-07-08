@@ -48,6 +48,69 @@
   pointer-events: auto;
 }
 
+/* 播放器全屏模式必须把插件面板退化成纯播放容器，避免侧栏、圆角、最大宽度继续限制画面。 */
+:host(.txzz-player-fullscreen-mode),
+:host(.txzz-player-fullscreen-mode) #txzz-candy-ui,
+:host(.txzz-player-fullscreen-mode) .txzz-candy-app,
+:host(.txzz-player-fullscreen-mode) .txzz-app-panel-overlay,
+:host(.txzz-player-fullscreen-mode) .txzz-app-panel-frame,
+:host(.txzz-player-fullscreen-mode) .txzz-app-main {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  pointer-events: auto !important;
+}
+
+:host(.txzz-player-fullscreen-mode) .txzz-app-panel-backdrop,
+:host(.txzz-player-fullscreen-mode) .txzz-app-sidebar,
+:host(.txzz-player-fullscreen-mode) .txzz-app-header,
+:host(.txzz-player-fullscreen-mode) .txzz-app-mobile-nav,
+:host(.txzz-player-fullscreen-mode) .txzz-playback-hidden-during-fullscreen {
+  display: none !important;
+}
+
+:host(.txzz-player-fullscreen-mode) .txzz-playback-root,
+:host(.txzz-player-fullscreen-mode) .txzz-player-card,
+:host(.txzz-player-fullscreen-mode) .txzz-player-shell,
+:host(.txzz-player-fullscreen-mode) .txzz-player-card-body {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  max-height: 100dvh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+:host(.txzz-player-fullscreen-mode) .txzz-player-card-title,
+:host(.txzz-player-fullscreen-mode) .txzz-player-card-actions {
+  display: none !important;
+}
+
 .txzz-player-clean .art-bottom,
 .txzz-player-clean .art-settings,
 .txzz-player-clean .art-info {
@@ -94,10 +157,13 @@
 .txzz-player-fullscreen-clean .art-loading {
   width: 100vw !important;
   height: 100vh !important;
+  height: 100dvh !important;
   min-width: 100vw !important;
   min-height: 100vh !important;
+  min-height: 100dvh !important;
   max-width: 100vw !important;
   max-height: 100vh !important;
+  max-height: 100dvh !important;
   inset: 0 !important;
   margin: 0 !important;
   padding: 0 !important;
