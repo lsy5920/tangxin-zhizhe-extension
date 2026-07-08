@@ -407,7 +407,7 @@
   border-radius: 0 !important;
 }
 
-/* 横屏视频在手机竖屏全屏时旋转整个播放器舞台，避免横屏内容被塞进竖屏框里。 */
+/* 播放器舞台只负责动效和承载，不再负责旋转控件，方向交给系统横竖屏能力。 */
 .txzz-player-stage {
   transform-origin: center center;
   transition: transform 0.18s ease;
