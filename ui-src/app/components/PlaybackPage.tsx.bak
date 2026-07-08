@@ -2270,3 +2270,85 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     </div>
   );
 }
+                  <span className="rounded-full bg-pink-50 px-2 py-0.5 text-[10px] text-pink-500">{item.accountLabel || item.accountUser || "自动账号"}</span>
+                  <span className="flex items-center gap-0.5 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] text-gray-400"><Clock size={9} /> {shortTime(String((item as { ts?: string }).ts || item.fetchedAt || ""))}</span>
+                </div>
+                {recordTask && recordTask.stage !== "complete" && (
+                  <div className="mt-2">
+                    <div className="mb-1 flex justify-between text-[10px] text-purple-400">
+                      <span>{downloadStageLabel(recordTask.stage)}</span>
+                      <span>{recordTask.total ? `${recordTask.current || 0}/${recordTask.total}` : `${recordTaskProgress}%`}</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-pink-100">
+                      <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${recordTaskProgress}%` }} />
+                    </div>
+                  </div>
+                )}
+                <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-5">
+                  <button
+                    onClick={() => {
+                      setPreviewRecord({
+                        url: recordUrl,
+                        title: item.movieTitle || item.title || item.movieId || "播放记录",
+                        movieId: item.movieId
+                      });
+                      setPreviewKey("record");
+                      setPlayerReloadKey((value) => value + 1);
+                    }}
+                    disabled={!recordUrl}
+                    className="flex items-center justify-center gap-1 rounded-xl border border-emerald-200 px-2 py-1.5 text-[11px] text-emerald-600 transition-transform active:scale-95 disabled:opacity-45"
+                    title="在网页播放控制台预览该记录"
+                  >
+                    <Film size={11} /> 预览
+                  </button>
+                  <button
+                    onClick={() => onAction("open-playback-url", { url: recordUrl, label: "播放记录完整链接" })}
+                    disabled={!recordUrl}
+                    className="flex items-center justify-center gap-1 rounded-xl border border-sky-200 px-2 py-1.5 text-[11px] text-sky-500 transition-transform active:scale-95 disabled:opacity-45"
+                    title="用完整链接打开该播放记录"
+                  >
+                    <ExternalLink size={11} /> 打开
+                  </button>
+                  <button
+                    onClick={() => onAction("copy-playback-health-report", { report: recordReport })}
+                    className="flex items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 py-1.5 text-[11px] text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
+                    title="复制该播放记录报告"
+                  >
+                    <Copy size={11} /> 报告
+                  </button>
+                  <button
+                    onClick={() => onAction("refresh-full-detail", { movieId: item.movieId || "" })}
+                    disabled={!item.movieId}
+                    className="flex items-center justify-center gap-1 rounded-xl border border-sky-200 px-2 py-1.5 text-[11px] text-sky-500 transition-transform active:scale-95 disabled:opacity-45"
+                    title="刷新该视频资源"
+                  >
+                    <RefreshCw size={11} /> 刷新
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (recordTask?.stage === "error") onAction("download-full-video", { movieId: recordTask.movieId || item.movieId || "" });
+                      else if (recordCanSave) onAction("save-download-device", { taskId: recordTask?.taskId || "" });
+                      else if (recordRunning) onPage?.("downloads");
+                      else onAction("download-full-video", { movieId: item.movieId || "" });
+                    }}
+                    disabled={recordCanSave ? !recordTask?.taskId : !item.movieId}
+                    className="flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 px-2 py-1.5 text-[11px] font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-45"
+                    title={recordCanSave ? "保存该视频到设备" : recordTask?.stage === "error" ? "重新创建下载任务" : recordRunning ? "查看下载任务" : "下载该视频"}
+                  >
+                    {recordCanSave ? <Save size={11} /> : recordTask?.stage === "error" ? <RefreshCw size={11} /> : recordRunning ? <Layers size={11} /> : <Download size={11} />} {recordPrimaryAction}
+                  </button>
+                </div>
+              </div>
+            );
+          }) : records.length ? (
+            <div className="rounded-2xl border border-pink-100 bg-white p-4 text-xs text-purple-400 shadow-sm">
+              当前搜索或筛选没有匹配的播放记录，可切换到「全部」或清除搜索词后再看。
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-pink-100 bg-white p-4 text-xs text-purple-400 shadow-sm">还没有播放详情记录。打开视频详情页后即会自动记录。</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

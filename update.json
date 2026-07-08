@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.7.7",
-  "build": "2026-07-08-1529",
-  "releasedAt": "2026-07-08 15:29",
+  "version": "2.8.0",
+  "build": "2026-07-08-1645",
+  "releasedAt": "2026-07-08 16:45",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-08-1645",
+      "type": "优化",
+      "title": "视频播放内核全面升级 · 进度条拖动 · 双击三区域手势",
+      "detail": "本次重点升级视频播放体验：HLS 内核启用 worker 模式提升解码性能（不支持时自动降级），主缓冲区从 45s 提升至 60s、最大允许 600s 缓冲区、向后保留 30s，ABR 自适应码率更保守避免频繁降级，分片和清单加载最大重试次数提升至 6 次；HLS 错误处理改为精细分类：网络错误、媒体解码错误分别恢复，连续 3 次致命错误才触发备用线路切换；进度条支持拖动（全程更新播放位置），松手后自动跳转并提示时间点；双击手势改为三区域模式：左侧 1/3 双击快退、中间 1/3 双击切换播放暂停、右侧 1/3 双击快进；控制栏倍速按钮实时显示当前倍速（如 1.5x），清晰度按钮显示当前档位（如 720P 或自动）。"
+    },
     {
       "id": "2026-07-08-1529",
       "type": "优化",

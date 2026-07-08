@@ -2269,4 +2269,3 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       </div>
     </div>
   );
-}
