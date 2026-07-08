@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-1938";
+const LOCAL_UPDATE_BUILD = "2026-07-08-2038";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 19:38 【新增】升级版本到 v2.9.0，全面重构视频播放内核，新增 XGPlayer 3.0.23（西瓜播放器）作为备用引擎，Artplayer 保留为默认，支持在播放器设置中一键切换引擎。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 20:38 【修复】升级版本到 v2.9.1，修复全屏播放画面偏右、左右黑边不均和圆角残留问题；全屏时强制播放器壳层贴合视口，视频层按屏幕中心居中，诊断报告新增容器偏移、视频层偏移和左右黑边差值。";
 
 const DEFAULT_STATE = {
   role: "guest",

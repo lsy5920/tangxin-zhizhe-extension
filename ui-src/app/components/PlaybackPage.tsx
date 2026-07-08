@@ -53,6 +53,10 @@ type PlayerFullscreenDiagnostic = {
   source: "未全屏" | "播放器壳层" | "插件宿主" | "沉浸兜底" | "未知";
   shellSize: string;
   viewportSize: string;
+  shellOffset: string;
+  videoSize: string;
+  videoOffset: string;
+  sideBars: string;
   coverage: number;
   ok: boolean;
   issue: string;
@@ -82,6 +86,10 @@ const emptyFullscreenDiagnostic: PlayerFullscreenDiagnostic = {
   source: "未全屏",
   shellSize: "未测量",
   viewportSize: "未测量",
+  shellOffset: "未测量",
+  videoSize: "未测量",
+  videoOffset: "未测量",
+  sideBars: "未测量",
   coverage: 0,
   ok: true,
   issue: "普通播放模式"
@@ -164,13 +172,58 @@ function fullscreenSourceLabel(node: Element | null, shell: HTMLElement | null, 
   return "未知";
 }
 
-function measureFullscreenDiagnostic(shell: HTMLElement | null, host: HTMLElement | null, immersive: boolean): PlayerFullscreenDiagnostic {
+function measureVideoCenterDiagnostic(video: HTMLVideoElement | null, viewportWidth: number, viewportHeight: number) {
+  if (!video) {
+    return {
+      videoSize: "未检测到视频层",
+      videoOffset: "未测量",
+      sideBars: "未测量",
+      ok: false,
+      issue: "未检测到视频层"
+    };
+  }
+  const rect = video.getBoundingClientRect();
+  const intrinsicWidth = Number(video.videoWidth || 0);
+  const intrinsicHeight = Number(video.videoHeight || 0);
+  const objectFit = window.getComputedStyle(video).objectFit || "contain";
+  let displayWidth = rect.width;
+  let displayHeight = rect.height;
+  if (intrinsicWidth > 0 && intrinsicHeight > 0 && rect.width > 0 && rect.height > 0 && objectFit !== "fill") {
+    const widthRatio = rect.width / intrinsicWidth;
+    const heightRatio = rect.height / intrinsicHeight;
+    const scale = objectFit === "cover" ? Math.max(widthRatio, heightRatio) : Math.min(widthRatio, heightRatio);
+    displayWidth = intrinsicWidth * scale;
+    displayHeight = intrinsicHeight * scale;
+  }
+  const videoCenterX = rect.left + rect.width / 2;
+  const videoCenterY = rect.top + rect.height / 2;
+  const viewportCenterX = viewportWidth / 2;
+  const viewportCenterY = viewportHeight / 2;
+  const centerOffsetX = Math.round(videoCenterX - viewportCenterX);
+  const centerOffsetY = Math.round(videoCenterY - viewportCenterY);
+  const contentLeft = rect.left + (rect.width - displayWidth) / 2;
+  const contentRight = contentLeft + displayWidth;
+  const leftBar = Math.max(0, Math.round(contentLeft));
+  const rightBar = Math.max(0, Math.round(viewportWidth - contentRight));
+  const sideBarDiff = Math.abs(leftBar - rightBar);
+  const videoSize = `${Math.round(rect.width)}x${Math.round(rect.height)} · 原片${intrinsicWidth || "?"}x${intrinsicHeight || "?"}`;
+  return {
+    videoSize,
+    videoOffset: `X${centerOffsetX}px Y${centerOffsetY}px`,
+    sideBars: `左${leftBar}px / 右${rightBar}px / 差${sideBarDiff}px`,
+    ok: Math.abs(centerOffsetX) <= 2 && Math.abs(centerOffsetY) <= 2 && sideBarDiff <= 4,
+    issue: sideBarDiff > 4 ? "左右黑边不均衡" : Math.abs(centerOffsetX) > 2 || Math.abs(centerOffsetY) > 2 ? "视频层未居中" : "视频层已居中"
+  };
+}
+
+function measureFullscreenDiagnostic(shell: HTMLElement | null, host: HTMLElement | null, immersive: boolean, video: HTMLVideoElement | null = null): PlayerFullscreenDiagnostic {
   const fullscreenNode = fullscreenElement();
   const source = fullscreenSourceLabel(fullscreenNode, shell, host, immersive);
   if (!shell || source === "未全屏") return emptyFullscreenDiagnostic;
   const rect = shell.getBoundingClientRect();
   const viewportWidth = Math.max(window.innerWidth || 0, document.documentElement.clientWidth || 0);
   const viewportHeight = Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0);
+  const videoCenter = measureVideoCenterDiagnostic(video, viewportWidth, viewportHeight);
   const widthRatio = viewportWidth ? rect.width / viewportWidth : 0;
   const heightRatio = viewportHeight ? rect.height / viewportHeight : 0;
   const coverage = Math.round(Math.max(0, Math.min(1, Math.min(widthRatio, heightRatio))) * 100);
@@ -180,13 +233,19 @@ function measureFullscreenDiagnostic(shell: HTMLElement | null, host: HTMLElemen
     ? "宿主全屏模式未生效"
     : rounded
       ? "播放器容器未完全贴合视口"
-      : "容器已贴合视口";
+      : videoCenter.ok
+        ? "容器与视频层已居中"
+        : videoCenter.issue;
   return {
     source,
     shellSize: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
     viewportSize: `${viewportWidth}x${viewportHeight}`,
+    shellOffset: `X${Math.round(rect.left)}px Y${Math.round(rect.top)}px`,
+    videoSize: videoCenter.videoSize,
+    videoOffset: videoCenter.videoOffset,
+    sideBars: videoCenter.sideBars,
     coverage,
-    ok: !hostModeMissing && !rounded && coverage >= 99,
+    ok: !hostModeMissing && !rounded && coverage >= 99 && videoCenter.ok,
     issue
   };
 }
@@ -562,6 +621,10 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     `全屏来源：${playerFullscreenDiagnostic.source}`,
     `全屏容器：${playerFullscreenDiagnostic.shellSize}`,
     `当前视口：${playerFullscreenDiagnostic.viewportSize}`,
+    `容器偏移：${playerFullscreenDiagnostic.shellOffset}`,
+    `视频层尺寸：${playerFullscreenDiagnostic.videoSize}`,
+    `视频层偏移：${playerFullscreenDiagnostic.videoOffset}`,
+    `左右黑边：${playerFullscreenDiagnostic.sideBars}`,
     `视口覆盖：${playerFullscreenDiagnostic.coverage}%`,
     `全屏体检：${playerFullscreenDiagnostic.ok ? "正常" : playerFullscreenDiagnostic.issue}`,
     `自动切换备用：${playerAutoBackupUsed ? "已触发" : "未触发"}`,
@@ -582,14 +645,14 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
 
   const refreshFullscreenDiagnostic = () => {
     setPlayerFullscreenDiagnostic(
-      measureFullscreenDiagnostic(playerShellRef.current, fullscreenHostElement(), playerImmersive || browserFullscreenActive)
+      measureFullscreenDiagnostic(playerShellRef.current, fullscreenHostElement(), playerImmersive || browserFullscreenActive, videoRef.current)
     );
   };
 
   const scheduleFullscreenDiagnosticRefresh = () => {
     // 浏览器进入全屏和 CSS 接管尺寸都有短暂延迟，延后一拍测量能拿到更接近真实显示的容器数据。
     window.setTimeout(() => {
-      setPlayerFullscreenDiagnostic(measureFullscreenDiagnostic(playerShellRef.current, fullscreenHostElement(), true));
+      setPlayerFullscreenDiagnostic(measureFullscreenDiagnostic(playerShellRef.current, fullscreenHostElement(), true, videoRef.current));
     }, 120);
   };
 
@@ -646,7 +709,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       const host = fullscreenHostElement();
       const active = isPlayerFullscreenElement(fullscreenNode, shell, host);
       setBrowserFullscreenActive(active);
-      setPlayerFullscreenDiagnostic(measureFullscreenDiagnostic(shell, host, playerImmersive || active));
+      setPlayerFullscreenDiagnostic(measureFullscreenDiagnostic(shell, host, playerImmersive || active, videoRef.current));
       if (!active && fullscreenNode !== shell) {
         setPlayerImmersive(false);
         host?.classList.remove(playerFullscreenHostClass);
@@ -1215,6 +1278,38 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       return;
     }
     await enterPlayerFullscreen();
+  };
+
+  const recenterFullscreenPlayer = async () => {
+    const host = fullscreenHostElement();
+    const shell = playerShellRef.current;
+    if (!shell) return;
+    host?.classList.add(playerFullscreenHostClass);
+    shell.style.left = "0";
+    shell.style.top = "0";
+    shell.style.right = "0";
+    shell.style.bottom = "0";
+    shell.style.margin = "0";
+    shell.style.transform = "none";
+    const video = videoRef.current;
+    if (video) {
+      // 手动重接管视频层定位，处理部分内核在全屏后追加内联样式造成的偏移。
+      video.style.position = "absolute";
+      video.style.left = "50%";
+      video.style.top = "50%";
+      video.style.width = "100vw";
+      video.style.height = "100dvh";
+      video.style.margin = "0";
+      video.style.transform = "translate(-50%, -50%)";
+      video.style.objectPosition = "50% 50%";
+    }
+    if (!playerFullscreenActive) {
+      await enterPlayerFullscreen();
+    } else {
+      revealPlayerControls(true);
+      artRef.current?.notice && (artRef.current.notice.show = "已重新居中全屏画面");
+      scheduleFullscreenDiagnosticRefresh();
+    }
   };
 
   useEffect(() => {
@@ -1884,7 +1979,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   </div>
                 )}
                 {playerMorePanel === "tools" && (
-                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-7">
                     <button
                       onClick={() => {
                         setPlayerReloadKey((value) => value + 1);
@@ -1904,6 +1999,14 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                       title="开启或退出画中画"
                     >
                       <Maximize2 size={11} /> 画中画
+                    </button>
+                    <button
+                      onClick={() => recenterFullscreenPlayer().catch((err) => setPlayerError(err instanceof Error ? err.message : String(err)))}
+                      disabled={!previewUrl}
+                      className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-sky-500/85 px-2 text-[10px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
+                      title="重新接管全屏并居中视频画面"
+                    >
+                      <Ratio size={11} /> 居中
                     </button>
                     <button
                       onClick={() => onAction("copy-play-link", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}

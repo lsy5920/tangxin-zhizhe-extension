@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.8.0",
-  "build": "2026-07-08-1938",
-  "releasedAt": "2026-07-08 19:38",
+  "version": "2.9.1",
+  "build": "2026-07-08-2038",
+  "releasedAt": "2026-07-08 20:38",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-08-2038",
+      "type": "修复",
+      "title": "修复全屏播放画面偏移 · 左右黑边重新居中",
+      "detail": "全屏播放时统一清理插件面板父层的位移、模糊和圆角残留，强制播放器壳层、ArtPlayer 容器和 video 标签贴合真实视口；默认原比例模式下视频画面以屏幕中心显示，避免左侧黑边明显大于右侧。播放器诊断报告新增容器偏移、视频层尺寸、视频层偏移和左右黑边差值，工具菜单新增「居中」按钮，可一键重新接管全屏并校正画面。同步对齐 manifest、package、前端常量、后台构建号和 update.json 到 v2.9.1，避免升级检测读取到旧版本。"
+    },
     {
       "id": "2026-07-08-1938",
       "type": "新增",
