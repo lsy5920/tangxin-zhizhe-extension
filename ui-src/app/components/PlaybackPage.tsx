@@ -63,6 +63,14 @@ type PlayerFullscreenDiagnostic = {
   issue: string;
 };
 
+type PlayerFullscreenTune = {
+  objectPositionX: number;
+  shiftX: number;
+  safeLeft: number;
+  safeRight: number;
+  label: string;
+};
+
 type FullscreenTarget = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
   msRequestFullscreen?: () => Promise<void> | void;
@@ -100,6 +108,14 @@ const emptyFullscreenDiagnostic: PlayerFullscreenDiagnostic = {
   coverage: 0,
   ok: true,
   issue: "普通播放模式"
+};
+
+const emptyFullscreenTune: PlayerFullscreenTune = {
+  objectPositionX: 50,
+  shiftX: 0,
+  safeLeft: 0,
+  safeRight: 0,
+  label: "默认居中"
 };
 
 function lineState(line: PlaybackLine) {
@@ -257,6 +273,76 @@ function measureFullscreenDiagnostic(shell: HTMLElement | null, host: HTMLElemen
   };
 }
 
+function measureViewportSize() {
+  const visual = window.visualViewport;
+  const width = Math.round(visual?.width || window.innerWidth || document.documentElement.clientWidth || 0);
+  const height = Math.round(visual?.height || window.innerHeight || document.documentElement.clientHeight || 0);
+  return { width, height };
+}
+
+function readSafeAreaInsets() {
+  const probe = document.createElement("div");
+  probe.style.cssText = [
+    "position:fixed",
+    "left:0",
+    "top:0",
+    "width:0",
+    "height:0",
+    "padding-left:env(safe-area-inset-left)",
+    "padding-right:env(safe-area-inset-right)",
+    "visibility:hidden",
+    "pointer-events:none"
+  ].join(";");
+  document.documentElement.appendChild(probe);
+  const style = window.getComputedStyle(probe);
+  const left = Number.parseFloat(style.paddingLeft || "0") || 0;
+  const right = Number.parseFloat(style.paddingRight || "0") || 0;
+  probe.remove();
+  return { left, right };
+}
+
+function calculateFullscreenTune(video: HTMLVideoElement | null, fullscreenActive: boolean, fillMode: PlayerFillMode): PlayerFullscreenTune {
+  if (!fullscreenActive || fillMode !== "contain" || !video) return emptyFullscreenTune;
+  const viewport = measureViewportSize();
+  const visual = window.visualViewport;
+  const rect = video.getBoundingClientRect();
+  const intrinsicWidth = Number(video.videoWidth || 0);
+  const intrinsicHeight = Number(video.videoHeight || 0);
+  const landscapePhone = viewport.width > viewport.height && viewport.height <= 520;
+  if (!landscapePhone || intrinsicWidth <= 0 || intrinsicHeight <= 0 || rect.width <= 0 || rect.height <= 0) return emptyFullscreenTune;
+
+  const widthRatio = rect.width / intrinsicWidth;
+  const heightRatio = rect.height / intrinsicHeight;
+  const displayWidth = intrinsicWidth * Math.min(widthRatio, heightRatio);
+  const availableSideSpace = Math.max(0, rect.width - displayWidth);
+  const safeArea = readSafeAreaInsets();
+  const screenLongSide = Math.max(window.screen?.width || 0, window.screen?.height || 0);
+  const missingViewportSpace = Math.max(0, screenLongSide - viewport.width);
+  const viewportOffsetLeft = Math.max(0, Math.round(visual?.offsetLeft || 0));
+  const viewportOffsetRight = Math.max(0, Math.round(missingViewportSpace - viewportOffsetLeft));
+  const safeLeft = Math.max(0, Math.round(rect.left + safeArea.left + viewportOffsetLeft));
+  const safeRight = Math.max(0, Math.round(viewport.width - rect.right + safeArea.right + viewportOffsetRight));
+  const safeDiff = safeLeft - safeRight;
+  if (availableSideSpace < 2 || Math.abs(safeDiff) <= 2) {
+    return {
+      ...emptyFullscreenTune,
+      safeLeft,
+      safeRight,
+      label: `安全区 左${safeLeft}px 右${safeRight}px`
+    };
+  }
+
+  const shiftX = Math.max(-availableSideSpace / 2, Math.min(availableSideSpace / 2, safeDiff / 2));
+  const objectPositionX = Math.max(0, Math.min(100, 50 - (shiftX / availableSideSpace) * 100));
+  return {
+    objectPositionX,
+    shiftX: Math.round(shiftX),
+    safeLeft,
+    safeRight,
+    label: `视觉居中 ${Math.round(objectPositionX)}% · 安全区左${safeLeft}px右${safeRight}px`
+  };
+}
+
 function hlsQualityLabel(level: { name?: string; height?: number; bitrate?: number } | undefined, index: number) {
   if (level?.name) return String(level.name);
   if (level?.height) return `${level.height}P`;
@@ -278,7 +364,7 @@ function isPlayerFullscreenElement(node: Element | null, shell: HTMLElement | nu
   return Boolean(
     node && (
       (shell && (node === shell || shell.contains(node)))
-      || Boolean(host && node === host && host.classList.contains(playerFullscreenHostClass))
+      || Boolean(host && node === host)
     )
   );
 }
@@ -594,6 +680,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const [playerViewportSize, setPlayerViewportSize] = useState({ width: window.innerWidth || 0, height: window.innerHeight || 0 });
   const [playerCursorHidden, setPlayerCursorHidden] = useState(false);
   const [playerFullscreenDiagnostic, setPlayerFullscreenDiagnostic] = useState<PlayerFullscreenDiagnostic>(emptyFullscreenDiagnostic);
+  const [playerFullscreenTune, setPlayerFullscreenTune] = useState<PlayerFullscreenTune>(emptyFullscreenTune);
   const [playerEngine, setPlayerEngine] = useState<PlayerEngine>("artplayer");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerShellRef = useRef<HTMLDivElement | null>(null);
@@ -655,7 +742,9 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const playerControlsTone = playerFullscreenActive ? "inset-x-3 bottom-3 sm:inset-x-8 sm:bottom-6" : "inset-x-2 bottom-2";
   const playerStageStyle = {
     "--txzz-player-viewport-width": `${playerViewportSize.width || 0}px`,
-    "--txzz-player-viewport-height": `${playerViewportSize.height || 0}px`
+    "--txzz-player-viewport-height": `${playerViewportSize.height || 0}px`,
+    "--txzz-player-video-position-x": `${playerFullscreenTune.objectPositionX}%`,
+    "--txzz-player-safe-shift-x": `${playerFullscreenTune.shiftX}px`
   } as CSSProperties;
   const health = playbackHealth(latest, lines, preferredLine);
   const healthReport = playbackHealthReport(latest, lines, health, currentTask);
@@ -685,6 +774,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     `视频层尺寸：${playerFullscreenDiagnostic.videoSize}`,
     `视频层偏移：${playerFullscreenDiagnostic.videoOffset}`,
     `左右黑边：${playerFullscreenDiagnostic.sideBars}`,
+    `手机视觉居中：${playerFullscreenTune.label}`,
     `视口覆盖：${playerFullscreenDiagnostic.coverage}%`,
     `全屏体检：${playerFullscreenDiagnostic.ok ? "正常" : playerFullscreenDiagnostic.issue}`,
     `自动切换备用：${playerAutoBackupUsed ? "已触发" : "未触发"}`,
@@ -709,10 +799,15 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     );
   };
 
+  const refreshFullscreenTune = () => {
+    setPlayerFullscreenTune(calculateFullscreenTune(videoRef.current, playerFullscreenActive, playerFillMode));
+  };
+
   const scheduleFullscreenDiagnosticRefresh = () => {
     // 浏览器进入全屏和 CSS 接管尺寸都有短暂延迟，延后一拍测量能拿到更接近真实显示的容器数据。
     window.setTimeout(() => {
       setPlayerFullscreenDiagnostic(measureFullscreenDiagnostic(playerShellRef.current, fullscreenHostElement(), true, videoRef.current));
+      setPlayerFullscreenTune(calculateFullscreenTune(videoRef.current, true, playerFillMode));
     }, 120);
   };
 
@@ -768,6 +863,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       const shell = playerShellRef.current;
       const host = fullscreenHostElement();
       const active = isPlayerFullscreenElement(fullscreenNode, shell, host);
+      if (active && fullscreenNode === host) host?.classList.add(playerFullscreenHostClass);
       setBrowserFullscreenActive(active);
       setPlayerFullscreenDiagnostic(measureFullscreenDiagnostic(shell, host, playerImmersive || active, videoRef.current));
       if (!active && fullscreenNode !== shell) {
@@ -786,25 +882,33 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
 
   useEffect(() => {
     refreshFullscreenDiagnostic();
+    refreshFullscreenTune();
     if (!playerFullscreenActive) return undefined;
-    const update = () => refreshFullscreenDiagnostic();
+    const update = () => {
+      refreshFullscreenDiagnostic();
+      refreshFullscreenTune();
+    };
     window.addEventListener("resize", update);
     window.addEventListener("orientationchange", update);
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
     const timer = window.setTimeout(update, 180);
     return () => {
       window.removeEventListener("resize", update);
       window.removeEventListener("orientationchange", update);
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
       window.clearTimeout(timer);
     };
-  }, [browserFullscreenActive, playerFullscreenActive, playerImmersive]);
+  }, [browserFullscreenActive, playerFullscreenActive, playerImmersive, playerFillMode, playerVideoSize.width, playerVideoSize.height]);
 
   useEffect(() => {
     const syncViewport = () => {
-      const visual = window.visualViewport;
-      setPlayerViewportSize({
-        width: Math.round(visual?.width || window.innerWidth || document.documentElement.clientWidth || 0),
-        height: Math.round(visual?.height || window.innerHeight || document.documentElement.clientHeight || 0)
-      });
+      const viewport = measureViewportSize();
+      const host = fullscreenHostElement();
+      host?.style.setProperty("--txzz-player-viewport-width", `${viewport.width || 0}px`);
+      host?.style.setProperty("--txzz-player-viewport-height", `${viewport.height || 0}px`);
+      setPlayerViewportSize(viewport);
     };
     syncViewport();
     window.addEventListener("resize", syncViewport);
@@ -1316,6 +1420,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     host?.classList.remove(playerFullscreenHostClass);
     setBrowserFullscreenActive(false);
     setPlayerFullscreenDiagnostic(emptyFullscreenDiagnostic);
+    setPlayerFullscreenTune(emptyFullscreenTune);
     revealPlayerControls(true);
     setPlayerStatus("已退出全屏");
   };
@@ -1399,19 +1504,21 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     if (video) {
       // 手动重接管视频层定位，处理部分内核在全屏后追加内联样式造成的偏移。
       video.style.position = "absolute";
-      video.style.left = "50%";
-      video.style.top = "50%";
-      video.style.width = "100vw";
-      video.style.height = "100dvh";
+      video.style.left = "0";
+      video.style.top = "0";
+      video.style.width = "100%";
+      video.style.height = "100%";
       video.style.margin = "0";
-      video.style.transform = "translate(-50%, -50%)";
-      video.style.objectPosition = "50% 50%";
+      video.style.transform = "none";
+      video.style.objectPosition = "var(--txzz-player-video-position-x, 50%) 50%";
     }
     if (!playerFullscreenActive) {
       await enterPlayerFullscreen();
     } else {
+      const nextTune = calculateFullscreenTune(videoRef.current, true, playerFillMode);
+      setPlayerFullscreenTune(nextTune);
       revealPlayerControls(true);
-      artRef.current?.notice && (artRef.current.notice.show = "已重新居中全屏画面");
+      artRef.current?.notice && (artRef.current.notice.show = `已重新测量全屏居中 · ${nextTune.label}`);
       scheduleFullscreenDiagnosticRefresh();
     }
   };
@@ -1704,7 +1811,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const batchRecordReport = playbackRecordsReport(filteredRecordRows, recordFilterLabel);
 
   return (
-    <div className="txzz-playback-root space-y-4 p-4">
+    <div className="txzz-playback-root space-y-4 p-4" style={playerStageStyle}>
       <div className="txzz-playback-hidden-during-fullscreen relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-400 to-violet-500 p-4 text-white shadow-lg">
         <div className="absolute right-3 top-2 select-none text-5xl opacity-15 pointer-events-none">🎬</div>
         <p className="mb-0.5 text-[10px] opacity-70 uppercase tracking-wider">最近视频</p>
@@ -1777,7 +1884,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         <div
           ref={playerShellRef}
           className={`txzz-player-shell txzz-candy-interactive select-none ${playerCursorHidden ? "cursor-none" : ""} ${playerFullscreenActive ? "txzz-player-fullscreen-shell fixed inset-0 z-[2147483647] overflow-hidden rounded-none bg-black" : "relative overflow-hidden rounded-2xl bg-black shadow-inner"}`}
-          style={playerShellAspect ? { aspectRatio: playerShellAspect } : undefined}
+          style={playerShellAspect ? { ...playerStageStyle, aspectRatio: playerShellAspect } : playerStageStyle}
           onPointerDown={startHoldSeek}
           onPointerMove={() => revealPlayerControls()}
           onPointerUp={finishHoldSeek}

@@ -47,14 +47,14 @@ function createHost() {
     style.id = ARTPLAYER_STYLE_ID;
     style.textContent = `${Artplayer.STYLE}
 :host(:fullscreen), :host(:-webkit-full-screen) {
-  width: 100vw !important;
-  height: 100vh !important;
+  width: var(--txzz-player-viewport-width, 100vw) !important;
+  height: var(--txzz-player-viewport-height, 100dvh) !important;
   background: #000 !important;
   pointer-events: auto !important;
 }
 :host(:fullscreen) #${ROOT_ID}, :host(:-webkit-full-screen) #${ROOT_ID} {
-  width: 100vw !important;
-  height: 100vh !important;
+  width: var(--txzz-player-viewport-width, 100vw) !important;
+  height: var(--txzz-player-viewport-height, 100dvh) !important;
   background: #000 !important;
   pointer-events: auto !important;
 }`;

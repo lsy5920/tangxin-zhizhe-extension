@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.9.5",
-  "build": "2026-07-08-2150",
-  "releasedAt": "2026-07-08 21:50",
+  "version": "2.9.6",
+  "build": "2026-07-08-2212",
+  "releasedAt": "2026-07-08 22:12",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-08-2212",
+      "type": "修复",
+      "title": "修复手机横屏全屏视觉不居中 · 自动按系统保留区校准",
+      "detail": "根据手机 Kiwi Browser 横屏截图继续深入修复全屏播放：全屏宿主、播放器壳层、方向舞台和内核视频层统一优先使用实时 visualViewport 尺寸变量，减少 Android 横屏时 100vw 与真实可见区域不一致造成的偏移；修复悬浮视频按钮先让插件宿主进入浏览器全屏后，播放器页因为宿主全屏模式类被时序清掉而仍按普通面板尺寸显示的问题；原比例完整显示模式新增手机横屏视觉居中校准，会结合 visualViewport 偏移、屏幕长边差值和安全区估算左右系统保留区，自动微调 video 的 object-position，让左侧黑边明显大于右侧时回到视觉居中；工具菜单的「居中」改为重新测量全屏安全区，不再写死 100vw，诊断报告新增手机视觉居中状态，方便继续排查真实设备差异。"
+    },
     {
       "id": "2026-07-08-2150",
       "type": "修复",

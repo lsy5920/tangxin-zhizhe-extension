@@ -48,6 +48,8 @@ function requestHostFullscreen() {
   const request = host?.requestFullscreen || host?.webkitRequestFullscreen || host?.msRequestFullscreen;
   if (!host || !request) return;
   host.classList.add(playerFullscreenHostClass);
+  window.setTimeout(() => host.classList.add(playerFullscreenHostClass), 80);
+  window.setTimeout(() => host.classList.add(playerFullscreenHostClass), 240);
   try {
     Promise.resolve(request.call(host)).catch(() => {});
   } catch {
