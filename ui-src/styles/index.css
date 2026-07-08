@@ -523,17 +523,6 @@
   height: 10px !important;
 }
 
-/* XGPlayer 内核样式覆写，保持与整体 UI 一致 */
-.txzz-player-shell .xgplayer {
-  width: 100% !important;
-  height: 100% !important;
-  background: #000 !important;
-}
-
-.txzz-player-shell .xgplayer-controls {
-  display: none !important; /* 使用自定义控制栏 */
-}
-
 /* Artplayer 内核样式覆写 */
 .txzz-player-shell .art-video-player {
   width: 100% !important;

@@ -16,10 +16,11 @@
 - 本地检查工具：Node.js `22.16.0` 及以上
 - 本机验证版本：Node.js `25.8.0`，npm `11.11.0`
 - 前端界面：React `18.3.1`，React DOM `18.3.1`，lucide-react `0.487.0`
-- 主播放器内核：ArtPlayer `5.4.0`（默认，PC 端首选）
-- 备用播放器内核：XGPlayer `3.0.23` + xgplayer-hls `3.0.22`（字节出品，移动端优化）
-- HLS 播放内核：hls.js `1.6.16`
+- 播放器内核：ArtPlayer `5.4.0`（当前唯一主链路，负责完整播放器界面和交互）
+- HLS 播放内核：hls.js `1.6.16`（负责 HLS/m3u8 解析和播放）
+- 旧实验播放器：v3.0.0 起已清理 XGPlayer / xgplayer-hls 实验链路，当前构建只保留 ArtPlayer + hls.js，减少依赖冲突和构建风险
 - 构建工具：Vite `8.0.16`，@vitejs/plugin-react `6.0.2`，Tailwind CSS `4.1.12`，@tailwindcss/vite `4.3.1`
+- 依赖自检：`scripts/check-deps.mjs` 会在构建前检查 Vite、hls.js、ArtPlayer 的关键入口文件
 - 远程服务：Cloudflare Worker
 - 云端数据库：Supabase
 - 部署工具：Wrangler `4.98.0`
@@ -63,6 +64,8 @@ tangxin-zhizhe-extension/
 ├── package-lock.json          # npm 锁定文件，保证依赖安装结果一致
 ├── vite.config.ts             # Vite 打包配置，输出扩展可加载的 dist-ui 资源
 ├── tsconfig.json              # React TypeScript 源码检查配置
+├── scripts/
+│   └── check-deps.mjs         # 构建前依赖完整性自检和 node_modules 损坏自动修复脚本
 ├── ui-src/                    # 直接接入的 Figma Make 糖果风 React 页面源码
 │   ├── main.tsx               # 新界面挂载入口，使用 Shadow DOM 隔离网页样式
 │   ├── app/                   # App、五个页面组件、状态桥和类型定义
@@ -296,8 +299,16 @@ tangxin-zhizhe-extension/
 
 ```powershell
 npm install
+npm run deps:check
 npm run build
 npm audit --json
+```
+
+如果依赖自检提示 `vite.cmd`、`hls.mjs` 或 `artplayer.js` 缺失，说明 `node_modules` 半损坏，先执行：
+
+```powershell
+npm run deps:repair
+npm run build
 ```
 
 ```powershell
@@ -342,6 +353,20 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 2. 确认加载目录中存在 `dist-ui/txzz-ui.js` 和 `dist-ui/txzz-ui.css`。
 3. 重新打开或刷新目标页面，不要只刷新扩展管理页。
 4. 当前版本已经删除旧 DOM 面板、旧流程浮层和旧更新弹窗；如果仍看到旧面板，通常是浏览器还在运行旧扩展实例，关闭重复安装的旧版本后再刷新页面。
+
+### 构建提示 vite 不是内部或外部命令
+
+1. 在插件目录执行 `npm run deps:check`。
+2. 如果提示缺少 `node_modules/.bin/vite.cmd`，说明 `node_modules` 的命令入口损坏。
+3. 执行 `npm run deps:repair` 自动修复依赖。
+4. 修复完成后重新执行 `npm run build`。
+
+### 构建提示无法解析 hls.js
+
+1. 在插件目录执行 `npm run deps:check`。
+2. 如果提示缺少 `node_modules/hls.js/dist/hls.mjs`，说明 hls.js 包安装不完整。
+3. 执行 `npm run deps:repair`，脚本会移除损坏的 `hls.js` 目录并重新执行 `npm install`。
+4. 修复完成后重新执行 `npm run build`。
 
 ### 远程账号池同步失败
 
@@ -429,10 +454,8 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 | --- | --- |
 | 糖心志者 | `2.9.1` |
 | Manifest | `3` |
-| ArtPlayer 主播放器 | `5.4.0` |
-| XGPlayer 备用播放器 | `3.0.23` |
-| xgplayer-hls HLS支持 | `3.0.22` |
-| hls.js HLS 内核 | `1.6.16` |
+| ArtPlayer 播放器内核 | `5.4.0` |
+| hls.js HLS 播放内核 | `1.6.16` |
 | mux.js | `7.0.0` |
 | Worker 推荐版本 | `1.2.0` |
 | Wrangler 推荐版本 | `4.98.0` |
@@ -538,3 +561,4 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 2026-07-08 21:39 【修复】升级版本到 v2.9.4，基于测试版 Chromium 真实播放详情页复测，修复横屏视频全屏后暂停、快退、快进、菜单和退出按钮被整体旋转成左侧竖排的问题；全屏方向改为请求浏览器系统横屏，浏览器限制方向锁定时仍保持控件正常横向排布，视频默认按原比例居中完整显示；同步强化全屏舞台贴合视口和圆角清零，避免全屏后仍像套着视频框。
 2026-07-08 21:50 【修复】升级版本到 v2.9.5，根据手机 Kiwi Browser 横屏截图继续修复全屏播放体验：视频层改为贴合播放器容器自身 100% 宽高，避免移动浏览器横屏时 `100vw` 与真实全屏区域不一致造成左右黑边不均；横屏小高度设备新增紧凑控制层，压低进度条、按钮和底部面板占用，减少遮挡视频主体；广告清理系统升级到 v2，新增开屏倒计时广告、进入按钮、跳过按钮、全屏广告图片和点击后连环弹窗清理。
 2026-07-08 22:12 【修复】升级版本到 v2.9.6，根据手机 Kiwi Browser 全屏截图继续修复横屏视觉不居中问题：全屏宿主、播放器壳层、方向舞台和视频内核统一优先使用实时可见视口变量，减少 Android 横屏下 `100vw` 与真实全屏区域不一致造成的偏移；修复悬浮视频按钮先让插件宿主进入浏览器全屏后，播放器页因全屏模式类时序丢失仍按普通面板尺寸显示的问题；原比例完整显示模式新增手机横屏视觉居中校准，会结合 visualViewport 偏移、屏幕长边差值和安全区估算系统保留区，自动微调视频内容位置；工具菜单「居中」改为重新测量全屏安全区，诊断报告新增手机视觉居中状态。
+2026-07-08 23:53 【修复】升级版本到 v3.0.1，修复 node_modules 半损坏导致构建失败的问题：恢复缺失的 `node_modules/.bin/vite.cmd` 和 `node_modules/hls.js/dist/hls.mjs` 后构建恢复正常；新增 `scripts/check-deps.mjs` 依赖完整性自检，`npm run build` 和 `npm run check` 前会先检查 Vite、hls.js、ArtPlayer 关键入口文件；新增 `npm run deps:repair` 自动修复命令，可移除损坏依赖目录并重新执行 `npm install`，同步更新 README 和远程更新清单。

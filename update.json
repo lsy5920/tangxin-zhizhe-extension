@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.9.6",
-  "build": "2026-07-08-2212",
-  "releasedAt": "2026-07-08 22:12",
+  "version": "3.0.1",
+  "build": "2026-07-08-2353",
+  "releasedAt": "2026-07-08 23:53",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-08-2353",
+      "type": "修复",
+      "title": "修复 node_modules 半损坏构建失败 · 新增依赖自检与自动修复",
+      "detail": "修复本地 node_modules 半损坏导致构建失败的问题：本次定位到 node_modules/.bin/vite.cmd 缺失会造成 vite 不是内部或外部命令，hls.js/dist/hls.mjs 缺失会造成 Vite 无法解析 import Hls from \"hls.js\"。已通过重新安装损坏的 hls.js@1.6.16 恢复 ESM 入口文件，并新增 scripts/check-deps.mjs 依赖完整性自检，构建和检查前会自动确认 Vite、hls.js、ArtPlayer 关键入口文件是否存在；新增 npm run deps:repair 命令，可自动移除损坏依赖目录并重新执行 npm install，方便后续快速恢复构建环境。"
+    },
     {
       "id": "2026-07-08-2212",
       "type": "修复",

@@ -1,17 +1,19 @@
 {
   "name": "tangxin-zhizhe-extension",
   "private": true,
-  "version": "2.9.6",
+  "version": "3.0.1",
   "type": "module",
   "scripts": {
+    "deps:check": "node scripts/check-deps.mjs",
+    "deps:repair": "node scripts/check-deps.mjs --repair",
+    "prebuild": "node scripts/check-deps.mjs",
     "build": "vite build",
+    "precheck": "node scripts/check-deps.mjs",
     "check": "vite build"
   },
   "dependencies": {
     "artplayer": "5.4.0",
     "hls.js": "1.6.16",
-    "xgplayer": "3.0.23",
-    "xgplayer-hls": "3.0.22",
     "lucide-react": "0.487.0",
     "react": "18.3.1",
     "react-dom": "18.3.1"

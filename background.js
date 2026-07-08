@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-2212";
+const LOCAL_UPDATE_BUILD = "2026-07-08-2353";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 22:12 【修复】升级版本到 v2.9.6，修复手机 Kiwi Browser 横屏全屏视觉不居中的问题；全屏尺寸改为优先使用实时视口变量，原比例模式会按系统保留区自动微调视频内容位置。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 23:53 【修复】升级版本到 v3.0.1，修复 node_modules 半损坏导致 Vite 或 hls.js 入口缺失时构建失败的问题；新增依赖完整性自检和自动修复命令。";
 
 const DEFAULT_STATE = {
   role: "guest",
