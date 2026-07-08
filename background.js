@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-1331";
+const LOCAL_UPDATE_BUILD = "2026-07-08-1357";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 13:31 【优化】升级版本到 v2.7.2，播放器控制改为主控按钮加更多菜单，减少画面遮挡；全屏优先请求插件宿主节点进入浏览器全屏，避免只进入网页沉浸层仍露出网站导航栏。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 13:57 【优化】升级版本到 v2.7.3，播放器控制层支持播放时自动隐藏，菜单按线路、显示、工具分组，进度条支持点击跳转；全屏进入改为浏览器全屏叠加播放器视口覆盖，避免插件导航栏或网页导航栏残留。";
 
 const DEFAULT_STATE = {
   role: "guest",

@@ -48,6 +48,20 @@
   pointer-events: auto;
 }
 
+.txzz-player-clean .art-bottom,
+.txzz-player-clean .art-settings,
+.txzz-player-clean .art-info {
+  display: none !important;
+}
+
+.txzz-player-clean .art-video-player {
+  background: #000 !important;
+}
+
+.txzz-player-clean .art-mask {
+  bottom: 0 !important;
+}
+
 #txzz-candy-ui .rounded-xl {
   border-radius: 0.875rem !important;
 }

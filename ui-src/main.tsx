@@ -50,10 +50,13 @@ function createHost() {
   width: 100vw !important;
   height: 100vh !important;
   background: #000 !important;
+  pointer-events: auto !important;
 }
 :host(:fullscreen) #${ROOT_ID}, :host(:-webkit-full-screen) #${ROOT_ID} {
   width: 100vw !important;
   height: 100vh !important;
+  background: #000 !important;
+  pointer-events: auto !important;
 }`;
     shadow.appendChild(style);
   }
