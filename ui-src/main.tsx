@@ -27,6 +27,7 @@ function createHost() {
     zIndex: "2147483647",
     width: "100vw",
     height: "100vh",
+    background: "transparent",
     pointerEvents: "none"
   });
   if (!existed) document.documentElement.appendChild(host);
@@ -44,7 +45,16 @@ function createHost() {
   if (!shadow.getElementById(ARTPLAYER_STYLE_ID)) {
     const style = document.createElement("style");
     style.id = ARTPLAYER_STYLE_ID;
-    style.textContent = Artplayer.STYLE;
+    style.textContent = `${Artplayer.STYLE}
+:host(:fullscreen), :host(:-webkit-full-screen) {
+  width: 100vw !important;
+  height: 100vh !important;
+  background: #000 !important;
+}
+:host(:fullscreen) #${ROOT_ID}, :host(:-webkit-full-screen) #${ROOT_ID} {
+  width: 100vw !important;
+  height: 100vh !important;
+}`;
     shadow.appendChild(style);
   }
 

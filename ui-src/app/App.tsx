@@ -37,6 +37,22 @@ function action(actionName: string, payload: Record<string, unknown> = {}) {
   sendUiAction(actionName, payload);
 }
 
+type FullscreenTarget = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+  msRequestFullscreen?: () => Promise<void> | void;
+};
+
+function requestHostFullscreen() {
+  const host = document.getElementById("txzz-candy-ui-root") as FullscreenTarget | null;
+  const request = host?.requestFullscreen || host?.webkitRequestFullscreen || host?.msRequestFullscreen;
+  if (!host || !request) return;
+  try {
+    Promise.resolve(request.call(host)).catch(() => {});
+  } catch {
+    // 浏览器全屏只能在用户点击时尝试，失败后播放页会继续使用沉浸全屏兜底。
+  }
+}
+
 function flowMessage(state: BridgeState, index: number): { text: string; level: string } {
   const latest = (state.flow || []).slice(-4);
   if (latest.length) {
@@ -103,6 +119,7 @@ export default function App() {
   const openFloatingPlayback = () => {
     // 网页原生视频先暂停，避免插件播放器全屏后出现双声道或后台继续播放。
     action("pause-page-video");
+    requestHostFullscreen();
     setOpen(true);
     setPage("playback");
     action("toggle", { force: true });

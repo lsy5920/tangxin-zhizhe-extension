@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-1310";
+const LOCAL_UPDATE_BUILD = "2026-07-08-1331";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 13:10 【优化】升级版本到 v2.7.1，新增页面悬浮视频按钮，点击后暂停网页原生视频并调用插件 ArtPlayer 全屏播放；更新弹窗直接展示更新内容和一键下载入口，设置页已检测后按钮改为下载。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 13:31 【优化】升级版本到 v2.7.2，播放器控制改为主控按钮加更多菜单，减少画面遮挡；全屏优先请求插件宿主节点进入浏览器全屏，避免只进入网页沉浸层仍露出网站导航栏。";
 
 const DEFAULT_STATE = {
   role: "guest",
