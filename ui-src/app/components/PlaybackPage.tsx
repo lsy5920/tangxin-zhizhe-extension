@@ -697,6 +697,9 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const suppressClickRef = useRef(false);
   const lastPointerTypeRef = useRef("mouse");
   const clickSeekRef = useRef<{ timer?: number; count: number; clientX: number }>({ count: 0, clientX: 0 });
+  const controlsPinnedByClickRef = useRef(false);
+  const controlsVisibleBeforePointerRef = useRef(true);
+  const controlsRevealSuppressedUntilRef = useRef(0);
   const controlsTimerRef = useRef<number | undefined>();
   const cursorTimerRef = useRef<number | undefined>();
   const playerDiagnosticReportRef = useRef("");
@@ -863,9 +866,38 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     setPlayerCursorHidden(false);
     clearControlsTimer();
     if (cursorTimerRef.current) window.clearTimeout(cursorTimerRef.current);
-    if (keepVisible || controlsShouldStayVisible || !previewUrl) return;
+    if (keepVisible || controlsPinnedByClickRef.current || controlsShouldStayVisible || !previewUrl) return;
     controlsTimerRef.current = window.setTimeout(() => setPlayerControlsVisible(false), playerFullscreenActive ? 2400 : 3200);
     if (playerFullscreenActive) cursorTimerRef.current = window.setTimeout(() => setPlayerCursorHidden(true), 2600);
+  };
+
+  const hidePlayerControlsBySurfaceClick = () => {
+    // 用户主动点画面隐藏时，短时间内忽略鼠标移动唤醒，避免 click 后紧跟的 pointer/mouse 事件把悬浮 UI 又弹回来。
+    controlsPinnedByClickRef.current = false;
+    controlsRevealSuppressedUntilRef.current = Date.now() + 900;
+    clearControlsTimer();
+    if (cursorTimerRef.current) window.clearTimeout(cursorTimerRef.current);
+    setPlayerMoreOpen(false);
+    if (!previewUrl || playerError || holdSeekHint) {
+      setPlayerControlsVisible(true);
+      setPlayerCursorHidden(false);
+      return;
+    }
+    setPlayerControlsVisible(false);
+    setPlayerCursorHidden(playerFullscreenActive);
+  };
+
+  const revealPlayerControlsBySurfaceClick = () => {
+    // 单击唤醒采用固定显示，下一次点击画面再隐藏，避免刚点开菜单就被自动隐藏打断。
+    controlsPinnedByClickRef.current = true;
+    controlsRevealSuppressedUntilRef.current = 0;
+    revealPlayerControls(true);
+  };
+
+  const maybeRevealPlayerControls = () => {
+    if (Date.now() < controlsRevealSuppressedUntilRef.current) return;
+    if (!playerControlsVisible && previewUrl && !playerError && !holdSeekHint) return;
+    revealPlayerControls();
   };
 
   useEffect(() => {
@@ -1126,6 +1158,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     container.innerHTML = "";
     setPlayerMoreOpen(false);
     setPlayerMorePanel("line");
+    controlsPinnedByClickRef.current = false;
+    controlsRevealSuppressedUntilRef.current = 0;
     setPlayerControlsVisible(true);
     setPlayerError("");
     setPlayerResumeTip("");
@@ -1603,7 +1637,6 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     }
     const target = event.target as HTMLElement;
     if (!previewUrl || target.closest("button,[role='slider'],.art-bottom,.art-controls,.art-progress,.art-settings,.art-contextmenus")) return;
-    revealPlayerControls();
     const state = clickSeekRef.current;
     state.count += 1;
     state.clientX = event.clientX;
@@ -1614,6 +1647,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       clickSeekRef.current = { count: 0, clientX: 0 };
       const rect = event.currentTarget.getBoundingClientRect();
       if (count >= 2) {
+        controlsPinnedByClickRef.current = false;
         // 三区域双击手势：左侧1/3快退，右侧1/3快进；中间1/3按设备习惯区分——
         // PC 鼠标双击切换全屏（对齐主流视频网站），触摸双击切换播放/暂停（对齐手机播放器）。
         const zone = (clientX - rect.left) / rect.width;
@@ -1627,6 +1661,12 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
           togglePlayerPlay();
         }
         revealPlayerControls();
+        return;
+      }
+      if (controlsVisibleBeforePointerRef.current || playerControlsVisible) {
+        hidePlayerControlsBySurfaceClick();
+      } else {
+        revealPlayerControlsBySurfaceClick();
       }
     }, 240);
   };
@@ -1634,8 +1674,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const startHoldSeek = (event: ReactPointerEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
     lastPointerTypeRef.current = event.pointerType || "mouse";
+    controlsVisibleBeforePointerRef.current = playerControlsVisible;
     if (!previewUrl || target.closest("button,[role='slider'],.art-bottom,.art-controls,.art-progress,.art-settings,.art-contextmenus")) return;
-    revealPlayerControls();
     const rect = event.currentTarget.getBoundingClientRect();
     const pressLeft = event.clientX < rect.left + rect.width / 2;
     const seconds = pressLeft ? -playerSeekStep : playerSeekStep;
@@ -1679,7 +1719,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   };
 
   const handleShellPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    revealPlayerControls();
+    maybeRevealPlayerControls();
     if (event.pointerType !== "touch" || !previewUrl) return;
     const gesture = swipeGestureRef.current;
     if (!gesture.height) return;
@@ -1707,10 +1747,11 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
 
   const finishHoldSeek = () => {
     // 长按倍速期间松手会派生 click，先标记抑制，再统一清理长按和滑动手势状态。
-    if (holdSeekRef.current.active || swipeGestureRef.current.active) suppressClickRef.current = true;
+    const gestureHandled = holdSeekRef.current.active || swipeGestureRef.current.active;
+    if (gestureHandled) suppressClickRef.current = true;
     stopHoldSeek();
     swipeGestureRef.current = { ...swipeGestureRef.current, active: false, height: 0 };
-    revealPlayerControls();
+    if (gestureHandled || controlsShouldStayVisible || playerControlsVisible) revealPlayerControls();
   };
 
   const cyclePlayerRate = () => {
@@ -1957,8 +1998,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
           onPointerCancel={finishHoldSeek}
           onPointerLeave={finishHoldSeek}
           onLostPointerCapture={finishHoldSeek}
-          onMouseMove={() => revealPlayerControls()}
-          onTouchStart={() => revealPlayerControls()}
+          onMouseMove={maybeRevealPlayerControls}
+          onTouchStart={maybeRevealPlayerControls}
           onClick={handlePlayerClick}
         >
           <div

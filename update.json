@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.0.1",
-  "build": "2026-07-08-2353",
-  "releasedAt": "2026-07-08 23:53",
+  "version": "3.0.2",
+  "build": "2026-07-09-0009",
+  "releasedAt": "2026-07-09 00:09",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-0009",
+      "type": "优化",
+      "title": "优化播放器画面点击交互 · 单击显示或隐藏悬浮 UI",
+      "detail": "播放器画面交互升级为更接近主流视频 App 的点击逻辑：单击视频画面会显示悬浮控制 UI，再次单击同一画面会隐藏顶部状态条和底部控制面板。鼠标移动和触摸不会再强行打断用户主动隐藏状态，避免刚隐藏又自动弹出；双击左右区域快退快进、中间区域全屏或播放暂停、长按左侧快退、长按右侧倍速快进、进度条拖动和菜单按钮都继续按原逻辑工作。"
+    },
     {
       "id": "2026-07-08-2353",
       "type": "修复",

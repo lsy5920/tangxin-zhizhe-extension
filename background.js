@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-2353";
+const LOCAL_UPDATE_BUILD = "2026-07-09-0009";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 23:53 【修复】升级版本到 v3.0.1，修复 node_modules 半损坏导致 Vite 或 hls.js 入口缺失时构建失败的问题；新增依赖完整性自检和自动修复命令。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 00:09 【优化】升级版本到 v3.0.2，优化播放器画面点击交互：单击视频画面显示悬浮 UI，再次单击隐藏，双击快进快退和长按手势保持可用。";
 
 const DEFAULT_STATE = {
   role: "guest",
