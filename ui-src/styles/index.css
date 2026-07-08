@@ -413,24 +413,7 @@
   transition: transform 0.18s ease;
 }
 
-.txzz-player-stage--rotate-landscape {
-  left: 50% !important;
-  top: 50% !important;
-  right: auto !important;
-  bottom: auto !important;
-  width: var(--txzz-player-viewport-height, 100vh) !important;
-  height: var(--txzz-player-viewport-width, 100vw) !important;
-  transform: translate(-50%, -50%) rotate(90deg) !important;
-}
-
-.txzz-player-stage--rotate-landscape .art-video-player,
-.txzz-player-stage--rotate-landscape .xgplayer,
-.txzz-player-stage--rotate-landscape video {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-/* 播放页真实运行的全屏舞台：横屏视频在竖屏手机全屏时横向展示，不再竖排塞满。 */
+/* 播放页真实运行的全屏舞台：不再旋转整套控件，横屏交给系统方向锁定，画面始终居中完整显示。 */
 .txzz-player-orientation-stage {
   position: absolute;
   inset: 0;
@@ -440,22 +423,22 @@
   transform-origin: center center;
 }
 
-.txzz-player-fullscreen-shell .txzz-player-orientation-stage--landscape {
-  left: 50% !important;
-  top: 50% !important;
-  right: auto !important;
-  bottom: auto !important;
-  width: var(--txzz-player-viewport-height, 100vh) !important;
-  height: var(--txzz-player-viewport-width, 100vw) !important;
-  transform: translate(-50%, -50%) rotate(90deg) !important;
+.txzz-player-fullscreen-shell .txzz-player-orientation-stage {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  margin: 0 !important;
+  transform: none !important;
+  overflow: hidden !important;
 }
 
-.txzz-player-orientation-stage--landscape .txzz-player-fullscreen-clean,
-.txzz-player-orientation-stage--landscape .art-video-player,
-.txzz-player-orientation-stage--landscape .xgplayer,
-.txzz-player-orientation-stage--landscape video {
-  width: 100% !important;
-  height: 100% !important;
+:host(.txzz-player-fullscreen-mode) .txzz-player-card.rounded-2xl,
+:host(.txzz-player-fullscreen-mode) .txzz-player-shell.rounded-2xl,
+:host(.txzz-player-fullscreen-mode) .txzz-player-card-body,
+:host(.txzz-player-fullscreen-mode) .txzz-player-fullscreen-clean {
+  border-radius: 0 !important;
 }
 
 /* 移动端：全屏时隐藏浏览器 UI */

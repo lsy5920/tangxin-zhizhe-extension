@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.9.3",
-  "build": "2026-07-08-2124",
-  "releasedAt": "2026-07-08 21:24",
+  "version": "2.9.4",
+  "build": "2026-07-08-2139",
+  "releasedAt": "2026-07-08 21:39",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-08-2139",
+      "type": "修复",
+      "title": "修复横屏全屏控件竖排 · 视频原比例居中完整显示",
+      "detail": "基于测试版 Chromium 真实打开 txh068.com 详情页和插件播放器复测，确认旧版把整个播放器舞台 rotate(90deg)，导致暂停、快退、快进、菜单、退出按钮挤到左侧竖排，视频层也出现偏移。本次移除整套控件旋转策略，改为进入全屏时优先请求浏览器系统横屏；如果浏览器不允许方向锁定，也保持播放器控件正常横向排布，视频默认继续使用原比例 contain 居中完整显示。全屏样式同步强化舞台贴合视口和圆角清零，避免全屏后仍像套着一个视频框。"
+    },
     {
       "id": "2026-07-08-2124",
       "type": "修复",

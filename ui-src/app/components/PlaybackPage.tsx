@@ -75,6 +75,11 @@ type FullscreenDocument = Document & {
   msExitFullscreen?: () => Promise<void> | void;
 };
 
+type ScreenOrientationController = ScreenOrientation & {
+  lock?: (orientation: string) => Promise<void>;
+  unlock?: () => void;
+};
+
 const playerRateOptions = [0.75, 1, 1.25, 1.5, 2];
 const playerSeekStepOptions = [5, 10, 30, 60];
 const playerVolumeStorageKey = "txzz-player-volume";
@@ -289,6 +294,36 @@ async function exitFullscreen() {
   const doc = document as FullscreenDocument;
   const exit = document.exitFullscreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
   if (fullscreenElement() && exit) await exit.call(document);
+}
+
+function wantedScreenOrientation(mode: PlayerOrientationMode, videoLandscape: boolean) {
+  if (mode === "landscape") return "landscape";
+  if (mode === "portrait") return "portrait";
+  return videoLandscape ? "landscape" : "";
+}
+
+async function requestScreenOrientation(mode: PlayerOrientationMode, videoLandscape: boolean) {
+  const wanted = wantedScreenOrientation(mode, videoLandscape);
+  const controller = window.screen?.orientation as ScreenOrientationController | undefined;
+  if (!wanted) {
+    controller?.unlock?.();
+    return "自动方向";
+  }
+  if (!controller?.lock) return "浏览器不支持方向锁定";
+  try {
+    await controller.lock(wanted);
+    return wanted === "landscape" ? "已请求系统横屏" : "已请求系统竖屏";
+  } catch {
+    return wanted === "landscape" ? "横屏锁定被浏览器限制" : "竖屏锁定被浏览器限制";
+  }
+}
+
+function releaseScreenOrientation() {
+  try {
+    (window.screen?.orientation as ScreenOrientationController | undefined)?.unlock?.();
+  } catch {
+    // 不同浏览器对方向解锁权限处理不一致，失败时保持静默，不影响退出全屏。
+  }
 }
 
 function playbackTip(latest?: FullDetail) {
@@ -606,9 +641,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const previewBuffered = percent(playerStats.bufferedEnd, playerStats.duration);
   const playerFullscreenActive = playerImmersive || browserFullscreenActive;
   const playerVideoLandscape = playerVideoSize.width > 0 && playerVideoSize.height > 0 && playerVideoSize.width >= playerVideoSize.height * 1.08;
-  const playerViewportPortrait = playerViewportSize.height > playerViewportSize.width;
-  const playerLandscapeStageActive = playerFullscreenActive && playerViewportPortrait && (playerOrientationMode === "landscape" || (playerOrientationMode === "auto" && playerVideoLandscape));
-  const playerOrientationLabel = orientationModeLabel(playerOrientationMode, playerLandscapeStageActive);
+  const playerOrientationRequested = playerFullscreenActive && Boolean(wantedScreenOrientation(playerOrientationMode, playerVideoLandscape));
+  const playerOrientationLabel = orientationModeLabel(playerOrientationMode, playerOrientationRequested);
   const playerFitLabel = fitModeLabel(playerFitMode, detectedFitMode);
   const playerShellAspect = playerFullscreenActive ? undefined : fitModeAspect(playerFitMode, detectedFitMode);
   const fullscreenDiagnosticLabel = playerFullscreenDiagnostic.ok
@@ -1272,6 +1306,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
 
   const exitPlayerFullscreen = async () => {
     const art = artRef.current;
+    releaseScreenOrientation();
     setPlayerImmersive(false);
     if (art?.fullscreenWeb) art.fullscreenWeb = false;
     const fullscreenNode = fullscreenElement();
@@ -1300,36 +1335,42 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       revealPlayerControls(true);
       setPlayerStatus(browserFullscreenActive ? "已进入浏览器全屏" : "已进入沉浸全屏");
       art.notice.show = browserFullscreenActive ? "已进入浏览器全屏" : "已进入沉浸全屏";
+      requestScreenOrientation(playerOrientationMode, playerVideoLandscape).then((message) => {
+        if (artRef.current && message) artRef.current.notice.show = message;
+      });
       scheduleFullscreenDiagnosticRefresh();
       return;
     }
 
     try {
       await requestFullscreen(fullscreenTarget);
+      const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape);
       setBrowserFullscreenActive(true);
       setPlayerImmersive(true);
       revealPlayerControls(true);
       setPlayerStatus("已进入浏览器全屏");
-      art.notice.show = "已进入浏览器全屏";
+      art.notice.show = orientationMessage ? `已进入浏览器全屏 · ${orientationMessage}` : "已进入浏览器全屏";
       scheduleFullscreenDiagnosticRefresh();
     } catch (err) {
       try {
         // 少数浏览器不允许 Shadow DOM 内部节点全屏，退回宿主全屏并用全屏模式样式只保留播放器。
         if (!host) throw err;
         await requestFullscreen(host);
+        const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape);
         setBrowserFullscreenActive(true);
         setPlayerImmersive(true);
         revealPlayerControls(true);
         setPlayerStatus("已进入浏览器全屏");
-        art.notice.show = "已进入浏览器全屏";
+        art.notice.show = orientationMessage ? `已进入浏览器全屏 · ${orientationMessage}` : "已进入浏览器全屏";
         scheduleFullscreenDiagnosticRefresh();
       } catch (fallbackErr) {
         // 部分网页或浏览器环境会拒绝真实全屏，插件内沉浸全屏用于保证观看体验不中断。
+        const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape);
         setPlayerImmersive(true);
         revealPlayerControls(true);
         setPlayerStatus("浏览器全屏受限，已切换沉浸全屏");
         setPlayerError(`浏览器全屏未被允许，已使用沉浸全屏兜底：${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`);
-        art.notice.show = "已进入沉浸全屏";
+        art.notice.show = orientationMessage ? `已进入沉浸全屏 · ${orientationMessage}` : "已进入沉浸全屏";
         scheduleFullscreenDiagnosticRefresh();
       }
     }
@@ -1538,9 +1579,15 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     const next = order[(order.indexOf(playerOrientationMode) + 1) % order.length];
     setPlayerOrientationMode(next);
     window.localStorage.setItem(playerOrientationStorageKey, next);
-    const label = orientationModeLabel(next, next === "landscape" || (next === "auto" && playerVideoLandscape && playerViewportPortrait));
+    const label = orientationModeLabel(next, Boolean(wantedScreenOrientation(next, playerVideoLandscape)));
     const art = artRef.current;
-    if (art) art.notice.show = `方向：${label}`;
+    if (playerFullscreenActive) {
+      requestScreenOrientation(next, playerVideoLandscape).then((message) => {
+        if (artRef.current) artRef.current.notice.show = `方向：${label} · ${message}`;
+      });
+    } else if (art) {
+      art.notice.show = `方向：${label}`;
+    }
     revealPlayerControls(true);
   };
 
@@ -1742,7 +1789,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
           onClick={handlePlayerClick}
         >
           <div
-            className={`txzz-player-orientation-stage ${playerLandscapeStageActive ? "txzz-player-orientation-stage--landscape" : ""}`}
+            className="txzz-player-orientation-stage"
             data-orientation-mode={playerOrientationMode}
             data-video-orientation={playerVideoLandscape ? "landscape" : playerVideoSize.height > playerVideoSize.width ? "portrait" : "unknown"}
             style={playerStageStyle}

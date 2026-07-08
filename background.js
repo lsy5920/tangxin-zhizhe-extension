@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-2124";
+const LOCAL_UPDATE_BUILD = "2026-07-08-2139";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 21:24 【修复】升级版本到 v2.9.3，修复横屏视频在手机竖屏全屏时仍按竖排显示的问题；全屏时会自动旋转横屏视频舞台，并保留手动横屏、竖屏和自动方向切换。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 21:39 【修复】升级版本到 v2.9.4，修复横屏全屏控件竖排和画面偏移问题；全屏方向改为请求系统横屏，播放器控件保持正常横向布局，视频默认按原比例居中完整显示。";
 
 const DEFAULT_STATE = {
   role: "guest",
