@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import Artplayer from "artplayer";
 import Hls from "hls.js";
-import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, Maximize2, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SortDesc, Timer, Wifi } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, Maximize2, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SkipBack, SkipForward, SortDesc, Timer, Wifi, Zap } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 
@@ -28,6 +29,14 @@ type PlaybackPreviewRecord = {
   movieId?: string;
 };
 
+type PlayerSnapshot = {
+  currentTime: number;
+  duration: number;
+  bufferedEnd: number;
+  paused: boolean;
+  rate: number;
+};
+
 function lineState(line: PlaybackLine) {
   if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false };
   if (line.stat?.error) return { label: "探测异常", color: "text-amber-600", bg: "bg-amber-50", ready: false };
@@ -48,6 +57,31 @@ function previewLineLabel(key: PlaybackPreviewKey) {
   if (key === "backup") return "备用线路";
   if (key === "record") return "播放记录";
   return "推荐线路";
+}
+
+function playerStorageKey(url?: string) {
+  const value = absoluteUrl(url || "");
+  if (!value) return "";
+  return `txzz-player-progress:${value}`;
+}
+
+function playerSnapshot(video?: HTMLVideoElement | null): PlayerSnapshot {
+  if (!video) return { currentTime: 0, duration: 0, bufferedEnd: 0, paused: true, rate: 1 };
+  const duration = Number.isFinite(video.duration) ? video.duration : 0;
+  const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+  const bufferedEnd = video.buffered.length ? video.buffered.end(video.buffered.length - 1) : 0;
+  return {
+    currentTime,
+    duration,
+    bufferedEnd: Number.isFinite(bufferedEnd) ? bufferedEnd : 0,
+    paused: video.paused,
+    rate: video.playbackRate || 1
+  };
+}
+
+function percent(value: number, total: number) {
+  if (!total) return 0;
+  return Math.max(0, Math.min(100, Math.round((value / total) * 100)));
 }
 
 function playbackTip(latest?: FullDetail) {
@@ -263,7 +297,13 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const [playerReloadKey, setPlayerReloadKey] = useState(0);
   const [playerStatus, setPlayerStatus] = useState("等待播放链接");
   const [playerError, setPlayerError] = useState("");
+  const [playerAutoBackupUsed, setPlayerAutoBackupUsed] = useState(false);
+  const [playerResumeTip, setPlayerResumeTip] = useState("");
+  const [playerStats, setPlayerStats] = useState<PlayerSnapshot>({ currentTime: 0, duration: 0, bufferedEnd: 0, paused: true, rate: 1 });
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const playerContainerRef = useRef<HTMLDivElement | null>(null);
+  const artRef = useRef<Artplayer | null>(null);
+  const playerDiagnosticReportRef = useRef("");
   const latest = latestFullDetail(state);
   const records = (state.fullDetails || []).slice(-24).reverse();
   const lines: PlaybackLine[] = [
@@ -280,6 +320,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const currentTaskTone = taskTone(currentTask);
   const currentTaskUrl = absoluteUrl(currentTask?.url || "");
   const preferredLineUrl = absoluteUrl(preferredLine?.url || "");
+  const backupLineUrl = absoluteUrl(lines[1]?.url || "");
   const previewOptions = [
     { key: "recommended" as const, label: "推荐", url: preferredLineUrl, hint: preferredLine?.label || "自动选择" },
     { key: "play" as const, label: "主线", url: absoluteUrl(lines[0]?.url || ""), hint: lineState(lines[0]).label },
@@ -292,16 +333,47 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     ? (previewRecord?.title || "播放记录")
     : `${latest?.movieTitle || latest?.title || latest?.movieId || "当前视频"} · ${previewLineLabel(activePreviewKey)}`;
   const previewSourceLabel = isPlaylistUrl(previewUrl) ? "HLS播放列表" : previewUrl ? "视频源" : "等待链接";
+  const previewProgress = percent(playerStats.currentTime, playerStats.duration);
+  const previewBuffered = percent(playerStats.bufferedEnd, playerStats.duration);
+  const playerRateOptions = [0.75, 1, 1.25, 1.5, 2];
   const health = playbackHealth(latest, lines, preferredLine);
   const healthReport = playbackHealthReport(latest, lines, health, currentTask);
+  const playerDiagnosticReport = [
+    "糖心志者网页播放器诊断报告",
+    `视频标题：${previewTitle}`,
+    `当前线路：${previewLineLabel(activePreviewKey)}`,
+    `播放内核：hls.js`,
+    `播放源类型：${previewSourceLabel}`,
+    `完整链接：${previewUrl || "暂无"}`,
+    `播放器状态：${playerStatus}`,
+    `播放异常：${playerError || "暂无"}`,
+    `播放进度：${formatDuration(playerStats.currentTime)} / ${playerStats.duration ? formatDuration(playerStats.duration) : "未知"}`,
+    `缓冲进度：${playerStats.duration ? `${previewBuffered}%` : "未知"}`,
+    `播放速度：${playerStats.rate}x`,
+    `自动切换备用：${playerAutoBackupUsed ? "已触发" : "未触发"}`,
+    `推荐线路：${health.recommendedLabel}`,
+    `体检分：${health.score}`,
+    "",
+    "风险提示：",
+    ...health.risks.map((item) => `- ${item}`)
+  ].join("\n");
+  playerDiagnosticReportRef.current = playerDiagnosticReport;
 
   useEffect(() => {
-    // 内嵌播放器只消费已经捕获到的完整链接，HLS增强用于提升 m3u8 在网页面板内直接播放的成功率。
-    const video = videoRef.current;
-    if (!video) return;
+    // 完整播放器体验交给 ArtPlayer，HLS/m3u8 内核仍由 hls.js 接管，避免回退到功能过少的原生控件。
+    const container = playerContainerRef.current;
+    if (!container) return;
     const source = previewUrl;
+    const storageKey = playerStorageKey(source);
     let disposed = false;
-    let hls: Hls | null = null;
+
+    artRef.current?.destroy(true);
+    artRef.current = null;
+    videoRef.current = null;
+    container.innerHTML = "";
+    setPlayerError("");
+    setPlayerResumeTip("");
+    setPlayerStats({ currentTime: 0, duration: 0, bufferedEnd: 0, paused: true, rate: 1 });
 
     const setSafeStatus = (message: string) => {
       if (!disposed) setPlayerStatus(message);
@@ -309,62 +381,227 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     const setSafeError = (message: string) => {
       if (!disposed) setPlayerError(message);
     };
-    const onLoadedMetadata = () => {
-      setSafeStatus(`播放器就绪${Number.isFinite(video.duration) && video.duration > 0 ? ` · ${formatDuration(video.duration)}` : ""}`);
+    const rememberSnapshot = () => {
+      const next = playerSnapshot(videoRef.current);
+      if (!disposed) setPlayerStats(next);
+      if (storageKey && next.duration && next.currentTime > 5 && next.currentTime < next.duration - 8) {
+        window.localStorage.setItem(storageKey, JSON.stringify({ currentTime: Math.floor(next.currentTime), updatedAt: new Date().toISOString() }));
+      }
     };
-    const onVideoError = () => {
-      setSafeStatus("播放异常");
-      setSafeError("视频加载失败，可重载播放器、切换备用线路或打开完整链接。");
+    const restoreProgress = () => {
+      const video = videoRef.current;
+      if (!video || !storageKey) return;
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+          setPlayerResumeTip("");
+          return;
+        }
+        const saved = JSON.parse(raw) as { currentTime?: number };
+        const savedTime = Number(saved.currentTime || 0);
+        if (savedTime > 5 && Number.isFinite(savedTime) && (!video.duration || savedTime < video.duration - 8)) {
+          video.currentTime = savedTime;
+          setPlayerResumeTip(`已恢复到 ${formatDuration(savedTime)}`);
+        } else {
+          setPlayerResumeTip("");
+        }
+      } catch {
+        window.localStorage.removeItem(storageKey);
+        setPlayerResumeTip("");
+      }
     };
-
-    setPlayerError("");
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
-    video.addEventListener("loadedmetadata", onLoadedMetadata);
-    video.addEventListener("error", onVideoError);
+    const switchBackupOnError = () => {
+      if (!playerAutoBackupUsed && activePreviewKey !== "backup" && backupLineUrl) {
+        setPlayerAutoBackupUsed(true);
+        setPreviewRecord(null);
+        setPreviewKey("backup");
+        setPlayerReloadKey((value) => value + 1);
+        setSafeStatus("播放异常，已自动切换备用线路");
+      }
+    };
 
     if (!source) {
       setSafeStatus("等待可播放链接");
-    } else if (isPlaylistUrl(source) && Hls.isSupported()) {
-      hls = new Hls({
-        // 关闭独立 worker，减少页面 CSP 或沙箱策略对插件内嵌播放器的影响。
-        enableWorker: false,
-        maxBufferLength: 30,
-        backBufferLength: 30
-      });
-      hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
-        setSafeStatus(`HLS增强播放就绪${data.levels?.length ? ` · ${data.levels.length}档清晰度` : ""}`);
-      });
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (!data.fatal) {
-          setSafeStatus("播放波动，正在自动恢复");
-          return;
-        }
-        setSafeStatus("播放异常");
-        setSafeError("播放列表读取失败，可先切换备用线路或打开完整链接。");
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls?.startLoad();
-        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls?.recoverMediaError();
-      });
-      hls.loadSource(source);
-      hls.attachMedia(video);
-      setSafeStatus("正在读取HLS播放列表");
-    } else if (!isPlaylistUrl(source) || video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = source;
-      video.load();
-      setSafeStatus(isPlaylistUrl(source) ? "浏览器原生HLS播放" : "原生视频播放就绪");
-    } else {
-      setSafeStatus("需要外部打开");
-      setSafeError("当前浏览器不支持直接播放此播放列表，可点击打开线路在新窗口播放。");
+      return () => { disposed = true; };
     }
+
+    const art = new Artplayer({
+      container,
+      url: source,
+      type: isPlaylistUrl(source) ? "m3u8" : "mp4",
+      title: previewTitle,
+      theme: "#38bdf8",
+      volume: 0.8,
+      autoplay: false,
+      autoSize: false,
+      autoMini: false,
+      loop: false,
+      flip: true,
+      playbackRate: true,
+      aspectRatio: true,
+      screenshot: true,
+      setting: true,
+      hotkey: true,
+      pip: true,
+      mutex: true,
+      backdrop: true,
+      fullscreen: true,
+      fullscreenWeb: true,
+      miniProgressBar: true,
+      playsInline: true,
+      lock: true,
+      gesture: true,
+      fastForward: true,
+      autoPlayback: true,
+      autoOrientation: true,
+      airplay: true,
+      moreVideoAttr: {
+        crossOrigin: "anonymous",
+        preload: "metadata"
+      },
+      customType: {
+        m3u8(video, url, artInstance) {
+          if (Hls.isSupported()) {
+            const hls = new Hls({
+              // 关闭独立 worker，减少页面 CSP 或沙箱策略对插件内嵌播放器的影响。
+              enableWorker: false,
+              maxBufferLength: 45,
+              backBufferLength: 45
+            });
+            hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+              setSafeStatus(`HLS内核就绪${data.levels?.length ? ` · ${data.levels.length}档清晰度` : ""}`);
+            });
+            hls.on(Hls.Events.ERROR, (_event, data) => {
+              if (!data.fatal) {
+                setSafeStatus("播放波动，正在自动恢复");
+                return;
+              }
+              setSafeStatus("播放异常");
+              setSafeError("播放列表读取失败，已尝试恢复；仍失败时会切换备用线路。");
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+              else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+              switchBackupOnError();
+            });
+            hls.loadSource(url);
+            hls.attachMedia(video);
+            artInstance.hls = hls;
+            artInstance.on("destroy", () => hls.destroy());
+          } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+            video.src = url;
+            setSafeStatus("浏览器原生HLS播放");
+          } else {
+            setSafeStatus("需要外部打开");
+            setSafeError("当前浏览器不支持直接播放此播放列表，可点击打开完整链接。");
+          }
+        }
+      },
+      settings: [
+        {
+          html: "快进步长",
+          tooltip: "10 秒",
+          selector: [5, 10, 30, 60].map((value) => ({ html: `${value} 秒`, value, default: value === 10 })),
+          onSelect(item) {
+            Artplayer.SEEK_STEP = Number(item.value || 10);
+            this.notice.show = `快进步长：${item.value} 秒`;
+          }
+        }
+      ],
+      controls: [
+        {
+          name: "txzz-backward",
+          position: "left",
+          html: "-10秒",
+          tooltip: "后退 10 秒",
+          click() {
+            this.backward = 10;
+            rememberSnapshot();
+          }
+        },
+        {
+          name: "txzz-forward",
+          position: "left",
+          html: "+10秒",
+          tooltip: "前进 10 秒",
+          click() {
+            this.forward = 10;
+            rememberSnapshot();
+          }
+        },
+        {
+          name: "txzz-backup",
+          position: "right",
+          html: "备用",
+          tooltip: "切换备用线路",
+          click() {
+            if (!backupLineUrl) {
+              this.notice.show = "暂无备用线路";
+              return;
+            }
+            setPreviewRecord(null);
+            setPreviewKey("backup");
+          }
+        }
+      ],
+      contextmenu: [
+        {
+          html: "复制完整链接",
+          click: () => onAction("copy-play-link", { url: source, label: `${previewLineLabel(activePreviewKey)}完整链接` })
+        },
+        {
+          html: "打开完整链接",
+          click: () => onAction("open-playback-url", { url: source, label: `${previewLineLabel(activePreviewKey)}完整链接` })
+        },
+        {
+          html: "复制播放器诊断",
+          click: () => onAction("copy-playback-health-report", { report: playerDiagnosticReportRef.current })
+        }
+      ]
+    }, (instance) => {
+      artRef.current = instance;
+      videoRef.current = instance.video;
+      setSafeStatus("完整播放器已就绪");
+      restoreProgress();
+      rememberSnapshot();
+    });
+
+    artRef.current = art;
+    videoRef.current = art.video;
+    art.on("ready", () => {
+      setSafeStatus("完整播放器已就绪");
+      restoreProgress();
+      rememberSnapshot();
+    });
+    art.on("video:loadedmetadata", () => {
+      setSafeStatus(`完整播放器就绪${art.duration ? ` · ${formatDuration(art.duration)}` : ""}`);
+      restoreProgress();
+      rememberSnapshot();
+    });
+    art.on("video:timeupdate", rememberSnapshot);
+    art.on("video:progress", rememberSnapshot);
+    art.on("video:play", rememberSnapshot);
+    art.on("video:pause", rememberSnapshot);
+    art.on("video:ratechange", rememberSnapshot);
+    art.on("video:ended", () => {
+      if (storageKey) window.localStorage.removeItem(storageKey);
+      rememberSnapshot();
+      setPlayerResumeTip("");
+    });
+    art.on("video:error", () => {
+      setSafeStatus("播放异常");
+      setSafeError("视频加载失败，可切换备用线路、重载播放器或打开完整链接。");
+      switchBackupOnError();
+    });
+    art.on("screenshot", () => {
+      setSafeStatus("截图已生成");
+    });
 
     return () => {
       disposed = true;
-      video.removeEventListener("loadedmetadata", onLoadedMetadata);
-      video.removeEventListener("error", onVideoError);
-      hls?.destroy();
+      art.destroy(true);
+      if (artRef.current === art) artRef.current = null;
+      if (videoRef.current === art.video) videoRef.current = null;
     };
-  }, [activePreviewKey, previewUrl, playerReloadKey]);
+  }, [activePreviewKey, backupLineUrl, playerAutoBackupUsed, previewTitle, previewUrl, playerReloadKey]);
   const recordRows = records.map((item, index) => {
     // 播放记录筛选全部使用本地已有状态，避免为了筛选再次请求播放接口。
     const recordUrl = absoluteUrl(item.playLink || item.backupLink || "");
@@ -509,9 +746,9 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
-              <Film size={14} className="text-sky-400" /> 网页播放控制台
+              <Film size={14} className="text-sky-400" /> 完整播放器
             </h3>
-            <p className="mt-1 truncate text-xs text-purple-400">{previewTitle}</p>
+            <p className="mt-1 truncate text-xs text-purple-400">{previewTitle} · 支持热键、倍速、截图、画中画和全屏</p>
           </div>
           <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${previewUrl ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
             {previewSourceLabel}
@@ -538,24 +775,87 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           })}
         </div>
         <div className="overflow-hidden rounded-2xl bg-black shadow-inner">
-          <video
+          <div
             key={`${activePreviewKey}-${playerReloadKey}`}
-            ref={videoRef}
-            controls
-            playsInline
-            preload="metadata"
-            className="aspect-video w-full bg-black"
+            ref={playerContainerRef}
+            className="aspect-video w-full bg-black [&_.art-video-player]:h-full [&_.art-video-player]:w-full"
           />
         </div>
         <div className="flex items-start gap-2 rounded-xl bg-sky-50 p-2">
           <Signal size={12} className="mt-0.5 shrink-0 text-sky-500" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[11px] font-medium text-sky-600">{playerStatus}</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-[11px] font-medium text-sky-600">{playerStatus}</p>
+              <span className="shrink-0 text-[10px] text-sky-500">{playerStats.rate}x</span>
+            </div>
             <p className="mt-0.5 truncate font-mono text-[10px] text-purple-400">{previewUrl ? maskUrl(previewUrl) : "暂无可预览链接"}</p>
+            {playerResumeTip && <p className="mt-1 text-[10px] text-emerald-600">{playerResumeTip}</p>}
             {playerError && <p className="mt-1 text-[10px] leading-relaxed text-rose-600">{playerError}</p>}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
+        <div className="space-y-1.5 rounded-xl bg-gray-50 p-2">
+          <div className="flex items-center justify-between gap-2 text-[10px] text-purple-400">
+            <span>{formatDuration(playerStats.currentTime)}</span>
+            <span>{playerStats.duration ? formatDuration(playerStats.duration) : "时长未知"} · 缓冲 {previewBuffered}%</span>
+          </div>
+          <div className="relative h-2 overflow-hidden rounded-full bg-white">
+            <div className="absolute inset-y-0 left-0 rounded-full bg-sky-100" style={{ width: `${previewBuffered}%` }} />
+            <div className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-sky-400 to-blue-500" style={{ width: `${previewProgress}%` }} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+          <button
+            onClick={() => {
+              const art = artRef.current;
+              if (!art) return;
+              art.backward = 10;
+              setPlayerStats(playerSnapshot(art.video));
+            }}
+            disabled={!previewUrl}
+            className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-sky-200 px-2 text-[11px] font-medium text-sky-500 transition-transform active:scale-95 disabled:opacity-45"
+            title="后退 10 秒"
+          >
+            <SkipBack size={11} /> 10秒
+          </button>
+          <button
+            onClick={() => {
+              const art = artRef.current;
+              if (!art) return;
+              art.forward = 10;
+              setPlayerStats(playerSnapshot(art.video));
+            }}
+            disabled={!previewUrl}
+            className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-sky-200 px-2 text-[11px] font-medium text-sky-500 transition-transform active:scale-95 disabled:opacity-45"
+            title="前进 10 秒"
+          >
+            <SkipForward size={11} /> 10秒
+          </button>
+          <button
+            onClick={() => {
+              const art = artRef.current;
+              if (!art) return;
+              const index = playerRateOptions.findIndex((rate) => rate === art.playbackRate);
+              const nextRate = playerRateOptions[(index + 1 + playerRateOptions.length) % playerRateOptions.length];
+              art.playbackRate = nextRate;
+              art.notice.show = `倍速：${nextRate}x`;
+              setPlayerStats(playerSnapshot(art.video));
+            }}
+            disabled={!previewUrl}
+            className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-amber-200 px-2 text-[11px] font-medium text-amber-600 transition-transform active:scale-95 disabled:opacity-45"
+            title="切换播放速度"
+          >
+            <Zap size={11} /> 倍速
+          </button>
+          <button
+            onClick={() => onAction("copy-playback-health-report", { report: playerDiagnosticReportRef.current })}
+            disabled={!previewUrl}
+            className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 text-[11px] font-medium text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
+            title="复制网页播放器诊断报告"
+          >
+            <Activity size={11} /> 诊断
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-6">
           <button
             onClick={() => setPlayerReloadKey((value) => value + 1)}
             disabled={!previewUrl}
@@ -580,16 +880,31 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           </button>
           <button
             onClick={() => {
-              const video = videoRef.current;
-              if (!video) return;
-              if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => setPlayerError("退出画中画失败，请使用播放器原生按钮。"));
-              else video.requestPictureInPicture().catch(() => setPlayerError("当前页面暂不支持画中画，可继续使用内嵌播放或打开完整链接。"));
+              const art = artRef.current;
+              if (!art) return;
+              try {
+                art.pip = !art.pip;
+              } catch {
+                setPlayerError("当前页面暂不支持画中画，可继续使用完整播放器或打开完整链接。");
+              }
             }}
             disabled={!previewUrl}
             className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 text-[11px] font-medium text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
             title="开启或退出画中画"
           >
             <Maximize2 size={11} /> 画中画
+          </button>
+          <button
+            onClick={() => {
+              const art = artRef.current;
+              if (!art) return;
+              art.fullscreenWeb = !art.fullscreenWeb;
+            }}
+            disabled={!previewUrl}
+            className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 text-[11px] font-medium text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
+            title="切换网页全屏"
+          >
+            <Maximize2 size={11} /> 全屏
           </button>
           <button
             onClick={() => onAction("copy-play-link", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}

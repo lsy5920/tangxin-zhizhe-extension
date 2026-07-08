@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.6.3",
-  "build": "2026-07-08-0802",
-  "releasedAt": "2026-07-08 08:02",
+  "version": "2.7.0",
+  "build": "2026-07-08-0821",
+  "releasedAt": "2026-07-08 08:21",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -12,10 +12,10 @@
   ],
   "changelog": [
     {
-      "id": "2026-07-08-0802",
+      "id": "2026-07-08-0821",
       "type": "优化",
-      "title": "嵌入开源 HLS 播放内核并升级网页直接播放体验",
-      "detail": "播放页嵌入 hls.js 1.6.16 作为 HLS/m3u8 播放内核，新增网页播放控制台，可在面板内直接预览推荐线路、主线路、备用线路和历史播放记录；同时新增播放器重载、备用线路切换、画中画、当前预览完整链接复制和完整链接打开能力。设置页同步展示播放内核版本和升级系统 v3 信息，方便排查播放与更新问题。"
+      "title": "升级为完整网页播放器体验",
+      "detail": "播放页从原生 video 预览升级为 ArtPlayer 5.4.0 + hls.js 1.6.16 完整播放器方案，补齐进度拖动、快进快退、倍速、热键、截图、画中画、网页全屏、断点续播、移动端手势、长按快进、播放状态诊断和右键菜单；仍保留推荐线路、主线路、备用线路、历史记录预览、完整链接复制和完整链接打开，并在播放异常时自动尝试切换备用线路。设置页同步展示完整播放器和 HLS 内核版本。"
     }
   ]
 }
