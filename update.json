@@ -2,8 +2,8 @@
   "schema": 2,
   "name": "糖心志者",
   "version": "2.8.0",
-  "build": "2026-07-08-1645",
-  "releasedAt": "2026-07-08 16:45",
+  "build": "2026-07-08-1938",
+  "releasedAt": "2026-07-08 19:38",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-08-1938",
+      "type": "新增",
+      "title": "新增西瓜播放器引擎 · 支持一键切换播放内核",
+      "detail": "嵌入字节出品的西瓜播放器（XGPlayer 3.0.23）作为备用播放引擎，Artplayer 保持为默认引擎。在播放器控制栏「更多」菜单的「引擎」面板可一键切换，切换后播放器自动重载，无需刷新页面。状态栏新增当前使用引擎显示，遇到播放异常时可尝试切换引擎排查兼容性问题。"
+    },
     {
       "id": "2026-07-08-1645",
       "type": "优化",

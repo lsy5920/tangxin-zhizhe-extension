@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-1529";
+const LOCAL_UPDATE_BUILD = "2026-07-08-1938";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 15:29 【优化】升级版本到 v2.7.7，新增播放器全屏体检能力，全屏时会显示全屏来源、视口覆盖率和容器贴合状态，播放器诊断报告同步写入全屏容器尺寸、当前视口、覆盖率和异常原因，方便继续排查黑边、圆角、裁剪或宿主全屏模式失效问题。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 19:38 【新增】升级版本到 v2.9.0，全面重构视频播放内核，新增 XGPlayer 3.0.23（西瓜播放器）作为备用引擎，Artplayer 保留为默认，支持在播放器设置中一键切换引擎。";
 
 const DEFAULT_STATE = {
   role: "guest",

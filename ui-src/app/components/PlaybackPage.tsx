@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Artplayer from "artplayer";
 import Hls from "hls.js";
+import XGPlayer from "xgplayer";
+import HlsXGPlayer from "xgplayer-hls";
 import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, Maximize2, Minimize2, MoreHorizontal, Pause, Play, Ratio, RectangleHorizontal, RectangleVertical, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SkipBack, SkipForward, SlidersHorizontal, SortDesc, Sun, Timer, Volume2, VolumeX, Wifi, Zap } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
@@ -26,7 +28,8 @@ type PlaybackRecordSort = "recent" | "failed" | "saveable" | "backup";
 type PlaybackPreviewKey = "recommended" | "play" | "backup" | "record";
 type PlayerFitMode = "auto" | "wide" | "vertical";
 type PlayerFillMode = "contain" | "cover" | "fill";
-type PlayerMorePanel = "line" | "display" | "sound" | "tools";
+type PlayerMorePanel = "line" | "display" | "sound" | "tools" | "engine";
+type PlayerEngine = "artplayer" | "xgplayer";
 type PlaybackPreviewRecord = {
   url: string;
   title: string;
@@ -481,10 +484,12 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const [playerBrightness, setPlayerBrightness] = useState(initialPlayerBrightness);
   const [playerCursorHidden, setPlayerCursorHidden] = useState(false);
   const [playerFullscreenDiagnostic, setPlayerFullscreenDiagnostic] = useState<PlayerFullscreenDiagnostic>(emptyFullscreenDiagnostic);
+  const [playerEngine, setPlayerEngine] = useState<PlayerEngine>("artplayer");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerShellRef = useRef<HTMLDivElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
   const artRef = useRef<Artplayer | null>(null);
+  const xgRef = useRef<InstanceType<typeof XGPlayer> | null>(null);
   const holdSeekRef = useRef<{ delay?: number; interval?: number; active: boolean; seconds: number }>({ active: false, seconds: 0 });
   const clickSeekRef = useRef<{ timer?: number; count: number; clientX: number }>({ count: 0, clientX: 0 });
   const controlsTimerRef = useRef<number | undefined>();
@@ -840,6 +845,73 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       return () => { disposed = true; };
     }
 
+    // ——— XGPlayer 引擎分支 ———
+    if (playerEngine === "xgplayer") {
+      const isHls = isPlaylistUrl(source);
+      const PlayerClass = isHls ? HlsXGPlayer : XGPlayer;
+      let xg: InstanceType<typeof XGPlayer>;
+      try {
+        xg = new PlayerClass({
+          el: container,
+          url: source,
+          autoplay: false,
+          volume: playerVolume,
+          muted: playerMuted,
+          fluid: true,
+          fitVideoSize: "fixWidth",
+          videoInit: true,
+          pip: true,
+          cssFullscreen: false, // 由插件自己控制全屏
+          rotateFullscreen: false,
+          lang: "zh-cn",
+          isLive: false,
+          defaultPlaybackRate: 1,
+          playbackRate: [0.5, 0.75, 1, 1.25, 1.5, 2],
+          screenShot: false,
+          closeVideoClick: false,
+          closeVideoDblclick: false,
+          errorTips: "视频加载失败，请切换线路或重载",
+          // 隐藏西瓜播放器自带控制栏，使用插件自定义控制层
+          controls: [{}],
+        } as any);
+        xgRef.current = xg;
+        videoRef.current = (xg as any).video as HTMLVideoElement || null;
+        setSafeStatus(`西瓜播放器加载中`);
+
+        xg.once("ready", () => {
+          if (disposed) return;
+          setSafeStatus("西瓜播放器已就绪");
+          revealPlayerControls(true);
+          restoreProgress();
+        });
+        xg.on("play", () => { if (!disposed) rememberSnapshot(); });
+        xg.on("pause", () => { if (!disposed) { rememberSnapshot(); revealPlayerControls(true); } });
+        xg.on("timeupdate", () => { if (!disposed) rememberSnapshot(); });
+        xg.on("ended", () => {
+          if (!disposed && storageKey) window.localStorage.removeItem(storageKey);
+        });
+        xg.on("error", () => {
+          if (disposed) return;
+          setSafeStatus("西瓜播放器异常");
+          setSafeError("视频加载失败，可切换备用线路、重载播放器或打开完整链接。");
+          revealPlayerControls(true);
+          switchBackupOnError();
+        });
+      } catch (err) {
+        setSafeStatus("西瓜播放器初始化失败");
+        setSafeError(`西瓜播放器创建失败，建议切换回 Artplayer：${err instanceof Error ? err.message : String(err)}`);
+        return () => { disposed = true; };
+      }
+
+      return () => {
+        disposed = true;
+        try { xg.destroy(); } catch { /* ignore */ }
+        if (xgRef.current === xg) xgRef.current = null;
+        if (videoRef.current === (xg as any).video) videoRef.current = null;
+      };
+    }
+
+    // ——— Artplayer 引擎分支（默认）———
     const art = new Artplayer({
       container,
       url: source,
@@ -1070,7 +1142,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       if (artRef.current === art) artRef.current = null;
       if (videoRef.current === art.video) videoRef.current = null;
     };
-  }, [activePreviewKey, backupLineUrl, playerAutoBackupUsed, previewTitle, previewUrl, playerReloadKey]);
+  }, [activePreviewKey, backupLineUrl, playerAutoBackupUsed, previewTitle, previewUrl, playerReloadKey, playerEngine]);
 
   const exitPlayerFullscreen = async () => {
     const art = artRef.current;
@@ -1647,12 +1719,13 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             </div>
             {playerMoreOpen && (
               <div className="mt-2 rounded-2xl bg-black/45 p-2">
-                <div className="mb-2 grid grid-cols-4 gap-1.5">
+                <div className="mb-2 grid grid-cols-5 gap-1.5">
                   {[
                     { key: "line" as const, label: "线路", icon: Route },
                     { key: "display" as const, label: "显示", icon: Ratio },
                     { key: "sound" as const, label: "声音", icon: playerMuted ? VolumeX : Volume2 },
-                    { key: "tools" as const, label: "工具", icon: SlidersHorizontal }
+                    { key: "tools" as const, label: "工具", icon: SlidersHorizontal },
+                    { key: "engine" as const, label: "引擎", icon: Zap }
                   ].map((item) => {
                     const active = playerMorePanel === item.key;
                     return (
@@ -1866,8 +1939,38 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                     </button>
                   </div>
                 )}
+                {playerMorePanel === "engine" && (
+                  <div className="space-y-1.5">
+                    <p className="px-1 text-[9px] text-white/45">选择播放器内核，遇到播放异常时可尝试切换。切换后播放器会自动重载。</p>
+                    {([
+                      { value: "artplayer" as const, label: "Artplayer（默认）", desc: "功能全面，PC端稳定，支持多种格式" },
+                      { value: "xgplayer" as const, label: "西瓜播放器", desc: "字节出品，移动端优化，播放流畅" }
+                    ] as const).map((item) => {
+                      const active = playerEngine === item.value;
+                      return (
+                        <button
+                          key={item.value}
+                          onClick={() => {
+                            if (active) return;
+                            setPlayerEngine(item.value);
+                            setPlayerReloadKey((v) => v + 1);
+                            revealPlayerControls(true);
+                          }}
+                          className={`flex w-full flex-col items-start rounded-xl px-3 py-2.5 text-left transition-transform active:scale-95 ${active ? "bg-sky-500 text-white" : "bg-white/15 text-white/80 hover:bg-white/20"}`}
+                        >
+                          <span className="flex items-center gap-1 text-[11px] font-semibold">
+                            <Zap size={11} className={active ? "text-yellow-300" : "opacity-60"} />
+                            {item.label}
+                            {active && <span className="ml-1 rounded bg-white/20 px-1 text-[9px] font-medium">当前</span>}
+                          </span>
+                          <span className={`mt-0.5 text-[9px] ${active ? "text-white/80" : "text-white/50"}`}>{item.desc}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <p className="mt-1.5 truncate text-[9px] text-white/55">
-                  当前：{previewLineLabel(activePreviewKey)} · {playerStats.rate}x · {playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`} · 步长{playerSeekStep}秒 · {playerFitLabel} · {fillModeLabel(playerFillMode)} · 亮度{playerBrightness}% · {currentQualityLabel}{playerFullscreenActive ? ` · ${fullscreenDiagnosticLabel}` : ""}
+                  当前：{previewLineLabel(activePreviewKey)} · {playerStats.rate}x · {playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`} · 步长{playerSeekStep}秒 · {playerFitLabel} · {fillModeLabel(playerFillMode)} · 亮度{playerBrightness}% · {currentQualityLabel} · {playerEngine === "xgplayer" ? "西瓜播放器" : "Artplayer"}{playerFullscreenActive ? ` · ${fullscreenDiagnosticLabel}` : ""}
                 </p>
               </div>
             )}
@@ -2243,7 +2346,6 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   </button>
                   <button
                     onClick={() => {
-                      // 播放记录里的主按钮按当前下载状态智能切换，减少用户再跳回下载页找任务。
                       if (recordTask?.stage === "error") onAction("download-full-video", { movieId: recordTask.movieId || item.movieId || "" });
                       else if (recordCanSave) onAction("save-download-device", { taskId: recordTask?.taskId || "" });
                       else if (recordRunning) onPage?.("downloads");
