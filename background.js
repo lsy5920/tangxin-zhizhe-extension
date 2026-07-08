@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-0821";
+const LOCAL_UPDATE_BUILD = "2026-07-08-1310";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 08:21 【优化】升级版本到 v2.7.0，播放页升级为 ArtPlayer + hls.js 完整播放器，补齐快进快退、倍速、热键、截图、画中画、网页全屏、断点续播、移动端手势和诊断报告。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 13:10 【优化】升级版本到 v2.7.1，新增页面悬浮视频按钮，点击后暂停网页原生视频并调用插件 ArtPlayer 全屏播放；更新弹窗直接展示更新内容和一键下载入口，设置页已检测后按钮改为下载。";
 
 const DEFAULT_STATE = {
   role: "guest",

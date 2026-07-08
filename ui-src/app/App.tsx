@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Download, Info, LayoutDashboard, Play, Settings, Users, X, Zap } from "lucide-react";
+import { Bell, Download, Info, LayoutDashboard, Play, Settings, Users, Video, X, Zap } from "lucide-react";
 import { listenBridgeState, notifyUiReady, sendUiAction } from "./bridge";
 import type { AccountsPageIntent, BridgeState, Page } from "./types";
 import { OverviewPage } from "./components/OverviewPage";
@@ -8,7 +8,7 @@ import { PlaybackPage } from "./components/PlaybackPage";
 import { DownloadsPage } from "./components/DownloadsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { APP_VERSION_LABEL } from "./constants";
-import { flowItemText } from "./helpers";
+import { absoluteUrl, flowItemText, latestFullDetail } from "./helpers";
 
 const navItems: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "总览", icon: LayoutDashboard },
@@ -61,6 +61,9 @@ export default function App() {
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
   const [bridgeState, setBridgeState] = useState<BridgeState>({});
   const [accountsIntent, setAccountsIntent] = useState<AccountsPageIntent>({});
+  const [playbackAutofullscreenSignal, setPlaybackAutofullscreenSignal] = useState(0);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [dismissedUpdateId, setDismissedUpdateId] = useState("");
   const dragging = useRef(false);
   const dragStart = useRef({ mx: 0, my: 0, bx: 0, by: 0 });
   const moved = useRef(false);
@@ -88,8 +91,23 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [open]);
 
+  useEffect(() => {
+    const remote = bridgeState.repositoryUpdate?.remote;
+    const updateId = String(remote?.id || `${remote?.version || ""}|${remote?.build || ""}`);
+    if (!bridgeState.repositoryUpdate?.updateAvailable || !updateId || dismissedUpdateId === updateId) return;
+    setShowUpdateModal(true);
+  }, [bridgeState.repositoryUpdate?.updateAvailable, bridgeState.repositoryUpdate?.remote?.id, bridgeState.repositoryUpdate?.remote?.version, bridgeState.repositoryUpdate?.remote?.build, dismissedUpdateId]);
+
   const openPanel = () => { setOpen(true); action("toggle", { force: true }); };
   const closePanel = () => { setOpen(false); action("close"); };
+  const openFloatingPlayback = () => {
+    // 网页原生视频先暂停，避免插件播放器全屏后出现双声道或后台继续播放。
+    action("pause-page-video");
+    setOpen(true);
+    setPage("playback");
+    action("toggle", { force: true });
+    setPlaybackAutofullscreenSignal((value) => value + 1);
+  };
 
   const onBallPointerDown = (e: React.PointerEvent) => {
     dragging.current = true; moved.current = false;
@@ -113,12 +131,25 @@ export default function App() {
   const renderPage = () => {
     if (page === "overview") return <OverviewPage state={bridgeState} onAction={action} onPage={setPage} />;
     if (page === "accounts") return <AccountsPage state={bridgeState} onAction={action} intent={accountsIntent} />;
-    if (page === "playback") return <PlaybackPage state={bridgeState} onAction={action} onPage={setPage} />;
+    if (page === "playback") return <PlaybackPage state={bridgeState} onAction={action} onPage={setPage} autoFullscreenSignal={playbackAutofullscreenSignal} />;
     if (page === "downloads") return <DownloadsPage state={bridgeState} onAction={action} />;
     return <SettingsPage state={bridgeState} onAction={action} onPage={goPage} />;
   };
 
   const updateAvailable = Boolean(bridgeState.repositoryUpdate?.updateAvailable);
+  const remoteUpdate = bridgeState.repositoryUpdate?.remote;
+  const currentUpdateId = String(remoteUpdate?.id || `${remoteUpdate?.version || ""}|${remoteUpdate?.build || ""}`);
+  const updateSummary = bridgeState.repositoryUpdate?.ok === false
+    ? `更新检测失败：${bridgeState.repositoryUpdate?.error || "请稍后重试"}`
+    : remoteUpdate?.detail || remoteUpdate?.notes || remoteUpdate?.text || remoteUpdate?.line || remoteUpdate?.title || "检测到新版本，建议下载最新版。";
+  const updateMeta = [
+    remoteUpdate?.version ? `远程版本 v${remoteUpdate.version}` : "",
+    remoteUpdate?.build ? `构建 ${remoteUpdate.build}` : "",
+    remoteUpdate?.releasedAt ? `发布 ${remoteUpdate.releasedAt}` : "",
+    remoteUpdate?.detectionSource ? `来源 ${remoteUpdate.detectionSource}` : bridgeState.repositoryUpdate?.source ? `来源 ${bridgeState.repositoryUpdate.source}` : ""
+  ].filter(Boolean).join(" · ");
+  const latestVideo = latestFullDetail(bridgeState);
+  const latestVideoUrl = absoluteUrl(latestVideo?.playLink || latestVideo?.backupLink || "");
   const activeDownloads = Object.values(bridgeState.downloadTasks || {})
     .filter((t) => t && ["queued", "playlist", "segments", "segment", "ready"].includes(
       String((t as { stage?: string }).stage || "")
@@ -163,6 +194,18 @@ export default function App() {
             </div>
           )}
         </div>
+      )}
+
+      {!open && latestVideoUrl && (
+        <button
+          type="button"
+          onClick={openFloatingPlayback}
+          className="txzz-candy-interactive fixed bottom-40 right-5 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 via-cyan-400 to-emerald-500 text-white shadow-xl transition-transform active:scale-95"
+          title="使用插件播放器全屏播放，并暂停网页原视频"
+        >
+          <Video size={20} />
+          <span className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400 animate-pulse" />
+        </button>
       )}
 
       {open && (
@@ -219,7 +262,7 @@ export default function App() {
                 <div className="flex items-center gap-1.5">
                   {showUpdateBanner && (
                     <button
-                      onClick={() => setPage("settings")}
+                      onClick={() => updateAvailable ? setShowUpdateModal(true) : setPage("settings")}
                       className={`hidden sm:flex items-center gap-1.5 border rounded-full px-3 py-1 text-[11px] ${updateAvailable ? "bg-amber-50 border-amber-200 text-amber-600" : "bg-pink-50 border-pink-100 text-purple-400"}`}
                     >
                       {updateAvailable ? <Bell size={11} /> : <Zap size={11} />}
@@ -238,7 +281,7 @@ export default function App() {
               {showUpdateBanner && updateAvailable && (
                 <div className="flex shrink-0 items-center gap-2 border-b border-amber-100 bg-amber-50 px-4 py-2 text-[11px] text-amber-600 sm:hidden">
                   <Bell size={11} className="shrink-0" />
-                  <button className="flex-1 text-left" onClick={() => setPage("settings")}>发现新版本，点击前往设置页下载</button>
+                  <button className="flex-1 text-left" onClick={() => setShowUpdateModal(true)}>发现新版本，点击查看更新内容并下载</button>
                   <button onClick={() => setShowUpdateBanner(false)}><X size={12} /></button>
                 </div>
               )}
@@ -268,6 +311,63 @@ export default function App() {
                   );
                 })}
               </nav>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUpdateModal && updateAvailable && (
+        <div className="txzz-candy-interactive fixed inset-0 z-[2147483646] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-amber-100 bg-white p-5 shadow-2xl">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+                  <Bell size={12} /> 检测到新版本
+                </div>
+                <h3 className="text-base font-bold text-purple-800">
+                  {remoteUpdate?.version ? `糖心志者 v${remoteUpdate.version}` : "糖心志者新版本"}
+                </h3>
+                {updateMeta && <p className="mt-1 text-[11px] leading-relaxed text-purple-300">{updateMeta}</p>}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDismissedUpdateId(currentUpdateId);
+                  setShowUpdateModal(false);
+                }}
+                className="rounded-full p-1.5 text-purple-300 hover:bg-purple-50"
+                title="关闭更新弹窗"
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <div className="mb-4 max-h-40 overflow-y-auto rounded-2xl bg-amber-50/70 px-3 py-2 text-xs leading-relaxed text-purple-700">
+              {updateSummary}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(true);
+                  setPage("settings");
+                  setShowUpdateModal(false);
+                  action("toggle", { force: true });
+                }}
+                className="rounded-xl border border-purple-200 py-2 text-sm font-medium text-purple-500 transition-transform active:scale-95"
+              >
+                查看详情
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  action("download-latest");
+                  setDismissedUpdateId(currentUpdateId);
+                  setShowUpdateModal(false);
+                }}
+                className="flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 py-2 text-sm font-medium text-white shadow-md transition-transform active:scale-95"
+              >
+                <Download size={15} /> 下载
+              </button>
             </div>
           </div>
         </div>

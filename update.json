@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.7.0",
-  "build": "2026-07-08-0821",
-  "releasedAt": "2026-07-08 08:21",
+  "version": "2.7.1",
+  "build": "2026-07-08-1310",
+  "releasedAt": "2026-07-08 13:10",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -12,10 +12,10 @@
   ],
   "changelog": [
     {
-      "id": "2026-07-08-0821",
+      "id": "2026-07-08-1310",
       "type": "优化",
-      "title": "升级为完整网页播放器体验",
-      "detail": "播放页从原生 video 预览升级为 ArtPlayer 5.4.0 + hls.js 1.6.16 完整播放器方案，补齐进度拖动、快进快退、倍速、热键、截图、画中画、网页全屏、断点续播、移动端手势、长按快进、播放状态诊断和右键菜单；仍保留推荐线路、主线路、备用线路、历史记录预览、完整链接复制和完整链接打开，并在播放异常时自动尝试切换备用线路。设置页同步展示完整播放器和 HLS 内核版本。"
+      "title": "升级悬浮全屏播放入口和更新弹窗体验",
+      "detail": "页面获取到视频链接后会直接显示悬浮视频按钮，点击后先暂停网页原生 video/audio，再打开插件 ArtPlayer 播放页并自动进入浏览器全屏或沉浸全屏；更新系统自动检测到新版本时直接弹出真实更新弹窗，弹窗展示版本号、构建号、发布时间、检测来源和更新内容，并提供一键下载；设置页在已经检测到远程信息后把按钮从“检测并下载”改为“下载”，更新说明优先展示 detail、notes、line 等完整内容。"
     }
   ]
 }

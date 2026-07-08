@@ -289,7 +289,9 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
   const updateAttemptUrls = Array.from(new Set([...(state.repositoryUpdate?.downloadAttemptUrls || [])].filter(Boolean)));
   const updateSummary = updateFailed
     ? `更新检测失败：${state.repositoryUpdate?.error || "请稍后重试"}`
-    : remoteUpdate?.detail || remoteUpdate?.text || remoteUpdate?.title || (remoteUpdate?.version ? "远程版本与本地一致。" : "请点击检查更新获取远程版本。");
+    : remoteUpdate?.detail || remoteUpdate?.notes || remoteUpdate?.text || remoteUpdate?.line || remoteUpdate?.title || (remoteUpdate?.version ? "远程版本与本地一致。" : "请点击检查更新获取远程版本。");
+  const hasRemoteUpdateInfo = Boolean(remoteUpdate?.version || state.repositoryUpdate?.checkedAt);
+  const updateDownloadButtonText = hasRemoteUpdateInfo ? "下载" : "检测并下载";
   const updateSystemTip = state.repositoryUpdate?.updateSystem?.ignoredLegacyCache
     ? "已忽略旧版更新缓存，本次按新版清单重新检测。"
     : "新版升级系统会实时读取远程清单，并保留候选下载地址用于兜底。";
@@ -504,7 +506,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
             <ExternalLink size={13} /> 打开地址
           </button>
           <button onClick={() => onAction("download-latest")} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95">
-            <Download size={13} /> 检测并下载
+            <Download size={13} /> {updateDownloadButtonText}
           </button>
         </div>
         {copyStatus && <p className="text-center text-[10px] text-purple-400">{copyStatus}</p>}
@@ -548,7 +550,15 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
               </div>
               <button onClick={() => setShowUpdateModal(false)}><X size={18} className="text-purple-400" /></button>
             </div>
-            <p className="mb-4 text-xs text-purple-400">{checkingUpdate ? "正在实时读取远程 update.json，请稍候。" : updateFailed ? updateSummary : updateAvailable ? `远程版本 ${remoteVersionText}，构建 ${remoteBuildText}，点击下载最新版。` : `当前版本 ${APP_VERSION_LABEL} 已完成本地校验，可继续使用。`}</p>
+            <div className="mb-4 space-y-2">
+              <p className="text-xs leading-relaxed text-purple-500">{checkingUpdate ? "正在实时读取远程 update.json，请稍候。" : updateFailed ? updateSummary : updateAvailable ? updateSummary : `当前版本 ${APP_VERSION_LABEL} 已完成本地校验，可继续使用。`}</p>
+              <div className="rounded-2xl bg-purple-50 px-3 py-2 text-[10px] leading-relaxed text-purple-400">
+                <p>远程版本：{remoteVersionText} / 构建：{remoteBuildText}</p>
+                {remoteUpdate?.releasedAt && <p>发布时间：{remoteUpdate.releasedAt}</p>}
+                <p>检测来源：{updateSourceDetail}</p>
+                {updateDownloadUrl && <p className="truncate">下载地址：{updateDownloadUrl}</p>}
+              </div>
+            </div>
             <div className="flex gap-2">
               <button onClick={() => setShowUpdateModal(false)} className="flex-1 rounded-xl border border-pink-200 py-2 text-sm font-medium text-purple-500">稍后</button>
               <button
@@ -558,7 +568,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
                 }}
                 className="flex-1 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 py-2 text-sm font-medium text-white shadow-md"
               >
-                检测并下载
+                {updateDownloadButtonText}
               </button>
             </div>
           </div>

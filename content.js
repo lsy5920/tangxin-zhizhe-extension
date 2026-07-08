@@ -1300,18 +1300,35 @@
     rememberRepositoryUpdate(update);
     const versionText = remote.version ? `版本 ${remote.version}` : remote.time || "最新版本";
     const buildText = remote.build ? ` / 构建 ${remote.build}` : "";
+    const updateDetail = remote.detail || remote.notes || remote.text || remote.line || remote.title || "远程仓库已有新的版本清单，建议下载最新版。";
     if (views.updateTitle) views.updateTitle.textContent = `${versionText}${buildText}`;
-    if (views.updateDetail) views.updateDetail.textContent = remote.detail || remote.text || remote.title || "远程仓库已有新的版本清单，建议前往项目主页获取最新版本。";
+    if (views.updateDetail) views.updateDetail.textContent = updateDetail;
     if (views.updateLine) {
       views.updateLine.textContent = [
         remote.releasedAt ? `发布时间：${remote.releasedAt}` : "",
+        remote.detectionSource ? `检测来源：${remote.detectionSource}` : "",
         remote.type || "",
         remote.title || "",
-        remote.line && !remote.version ? remote.line : ""
+        remote.line && !String(updateDetail).includes(remote.line) ? remote.line : ""
       ].filter(Boolean).join(" / ");
     }
     publishState();
-    emitFlow("更新提醒", "远程仓库发现新的版本清单", "ok");
+    emitFlow("更新提醒", updateDetail, "ok");
+  }
+
+  function pausePageVideos() {
+    // 全屏调用插件播放器前暂停页面原生媒体，避免两个播放器同时发声。
+    let paused = 0;
+    document.querySelectorAll("video,audio").forEach((media) => {
+      try {
+        if (!media.paused) {
+          media.pause();
+          paused += 1;
+        }
+      } catch (_) {}
+    });
+    emitFlow("网页视频", paused ? `已暂停 ${paused} 个网页原生媒体，准备使用插件播放器` : "未发现正在播放的网页原生媒体，准备使用插件播放器", "ok");
+    return paused;
   }
 
   function copyFullUrl(url, label) {
@@ -1347,7 +1364,7 @@
       try {
         const response = await sendRuntime("checkRepositoryUpdate", { force, realtime: Boolean(force || options.realtime) });
         const hasUpdate = rememberRepositoryUpdate(response);
-        if (hasUpdate && showDialog) showRepositoryUpdateDialog(response);
+        if (hasUpdate && (showDialog || !silent)) showRepositoryUpdateDialog(response);
         else if (force && !silent) {
           const remote = response?.remote || {};
           const text = remote.version
@@ -1909,6 +1926,7 @@
       if (action === "noop") return;
       if (action === "toggle") togglePanel(typeof payload.force === "boolean" ? payload.force : undefined);
       if (action === "close") togglePanel(false);
+      if (action === "pause-page-video") pausePageVideos();
       if (action === "about") {
         openRepositoryHome();
         emitFlow("关于", "已打开糖心志者项目主页", "ok");
