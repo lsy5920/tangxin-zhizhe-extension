@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, Film, Gauge, Layers, Link, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SortDesc, Timer, Wifi } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import Hls from "hls.js";
+import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, Maximize2, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SortDesc, Timer, Wifi } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 
@@ -15,10 +16,17 @@ type PlaybackLine = {
   url?: string;
   stat?: FullDetail["fullStat"];
   copyAction: string;
+  openAction: string;
 };
 
 type PlaybackRecordFilter = "all" | "downloadable" | "saveable" | "failed" | "backup";
 type PlaybackRecordSort = "recent" | "failed" | "saveable" | "backup";
+type PlaybackPreviewKey = "recommended" | "play" | "backup" | "record";
+type PlaybackPreviewRecord = {
+  url: string;
+  title: string;
+  movieId?: string;
+};
 
 function lineState(line: PlaybackLine) {
   if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false };
@@ -29,6 +37,17 @@ function lineState(line: PlaybackLine) {
 
 function bestLine(lines: PlaybackLine[]) {
   return lines.find((line) => lineState(line).ready && line.url) || lines.find((line) => line.url);
+}
+
+function isPlaylistUrl(url?: string) {
+  return /\.m3u8(?:[?#]|$)/i.test(String(url || "")) || /m3u8/i.test(String(url || ""));
+}
+
+function previewLineLabel(key: PlaybackPreviewKey) {
+  if (key === "play") return "主线路";
+  if (key === "backup") return "备用线路";
+  if (key === "record") return "播放记录";
+  return "推荐线路";
 }
 
 function playbackTip(latest?: FullDetail) {
@@ -239,11 +258,17 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const [recordFilter, setRecordFilter] = useState<PlaybackRecordFilter>("all");
   const [recordSearch, setRecordSearch] = useState("");
   const [recordSort, setRecordSort] = useState<PlaybackRecordSort>("recent");
+  const [previewKey, setPreviewKey] = useState<PlaybackPreviewKey>("recommended");
+  const [previewRecord, setPreviewRecord] = useState<PlaybackPreviewRecord | null>(null);
+  const [playerReloadKey, setPlayerReloadKey] = useState(0);
+  const [playerStatus, setPlayerStatus] = useState("等待播放链接");
+  const [playerError, setPlayerError] = useState("");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const latest = latestFullDetail(state);
   const records = (state.fullDetails || []).slice(-24).reverse();
   const lines: PlaybackLine[] = [
-    { key: "play", label: "主线路", url: latest?.playLink, stat: latest?.fullStat, copyAction: "copy-play-link" },
-    { key: "backup", label: "备用线路", url: latest?.backupLink, stat: latest?.backupStat, copyAction: "copy-backup-link" }
+    { key: "play", label: "主线路", url: latest?.playLink, stat: latest?.fullStat, copyAction: "copy-play-link", openAction: "open-playback-url" },
+    { key: "backup", label: "备用线路", url: latest?.backupLink, stat: latest?.backupStat, copyAction: "copy-backup-link", openAction: "open-playback-url" }
   ];
   const preferredLine = bestLine(lines);
   const segmentTotal = preferredLine?.stat?.segments || latest?.fullStat?.segments || latest?.backupStat?.segments || 0;
@@ -255,8 +280,91 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const currentTaskTone = taskTone(currentTask);
   const currentTaskUrl = absoluteUrl(currentTask?.url || "");
   const preferredLineUrl = absoluteUrl(preferredLine?.url || "");
+  const previewOptions = [
+    { key: "recommended" as const, label: "推荐", url: preferredLineUrl, hint: preferredLine?.label || "自动选择" },
+    { key: "play" as const, label: "主线", url: absoluteUrl(lines[0]?.url || ""), hint: lineState(lines[0]).label },
+    { key: "backup" as const, label: "备用", url: absoluteUrl(lines[1]?.url || ""), hint: lineState(lines[1]).label }
+  ];
+  const activePreviewKey = previewKey === "record" && previewRecord?.url ? "record" : previewKey === "record" ? "recommended" : previewKey;
+  const selectedPreviewOption = previewOptions.find((item) => item.key === activePreviewKey) || previewOptions[0];
+  const previewUrl = activePreviewKey === "record" ? absoluteUrl(previewRecord?.url || "") : selectedPreviewOption.url;
+  const previewTitle = activePreviewKey === "record"
+    ? (previewRecord?.title || "播放记录")
+    : `${latest?.movieTitle || latest?.title || latest?.movieId || "当前视频"} · ${previewLineLabel(activePreviewKey)}`;
+  const previewSourceLabel = isPlaylistUrl(previewUrl) ? "HLS播放列表" : previewUrl ? "视频源" : "等待链接";
   const health = playbackHealth(latest, lines, preferredLine);
   const healthReport = playbackHealthReport(latest, lines, health, currentTask);
+
+  useEffect(() => {
+    // 内嵌播放器只消费已经捕获到的完整链接，HLS增强用于提升 m3u8 在网页面板内直接播放的成功率。
+    const video = videoRef.current;
+    if (!video) return;
+    const source = previewUrl;
+    let disposed = false;
+    let hls: Hls | null = null;
+
+    const setSafeStatus = (message: string) => {
+      if (!disposed) setPlayerStatus(message);
+    };
+    const setSafeError = (message: string) => {
+      if (!disposed) setPlayerError(message);
+    };
+    const onLoadedMetadata = () => {
+      setSafeStatus(`播放器就绪${Number.isFinite(video.duration) && video.duration > 0 ? ` · ${formatDuration(video.duration)}` : ""}`);
+    };
+    const onVideoError = () => {
+      setSafeStatus("播放异常");
+      setSafeError("视频加载失败，可重载播放器、切换备用线路或打开完整链接。");
+    };
+
+    setPlayerError("");
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+    video.addEventListener("error", onVideoError);
+
+    if (!source) {
+      setSafeStatus("等待可播放链接");
+    } else if (isPlaylistUrl(source) && Hls.isSupported()) {
+      hls = new Hls({
+        // 关闭独立 worker，减少页面 CSP 或沙箱策略对插件内嵌播放器的影响。
+        enableWorker: false,
+        maxBufferLength: 30,
+        backBufferLength: 30
+      });
+      hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+        setSafeStatus(`HLS增强播放就绪${data.levels?.length ? ` · ${data.levels.length}档清晰度` : ""}`);
+      });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data.fatal) {
+          setSafeStatus("播放波动，正在自动恢复");
+          return;
+        }
+        setSafeStatus("播放异常");
+        setSafeError("播放列表读取失败，可先切换备用线路或打开完整链接。");
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls?.startLoad();
+        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls?.recoverMediaError();
+      });
+      hls.loadSource(source);
+      hls.attachMedia(video);
+      setSafeStatus("正在读取HLS播放列表");
+    } else if (!isPlaylistUrl(source) || video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = source;
+      video.load();
+      setSafeStatus(isPlaylistUrl(source) ? "浏览器原生HLS播放" : "原生视频播放就绪");
+    } else {
+      setSafeStatus("需要外部打开");
+      setSafeError("当前浏览器不支持直接播放此播放列表，可点击打开线路在新窗口播放。");
+    }
+
+    return () => {
+      disposed = true;
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.removeEventListener("error", onVideoError);
+      hls?.destroy();
+    };
+  }, [activePreviewKey, previewUrl, playerReloadKey]);
   const recordRows = records.map((item, index) => {
     // 播放记录筛选全部使用本地已有状态，避免为了筛选再次请求播放接口。
     const recordUrl = absoluteUrl(item.playLink || item.backupLink || "");
@@ -385,6 +493,120 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               <Copy size={12} /> 复制完整链接
             </button>
           )}
+          {preferredLine?.url && (
+            <button
+              onClick={() => onAction(preferredLine.openAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}
+              className="flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 px-3 py-1.5 text-xs font-medium backdrop-blur transition-all"
+              title="用完整链接打开推荐线路"
+            >
+              <ExternalLink size={12} /> 打开线路
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
+              <Film size={14} className="text-sky-400" /> 网页播放控制台
+            </h3>
+            <p className="mt-1 truncate text-xs text-purple-400">{previewTitle}</p>
+          </div>
+          <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${previewUrl ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+            {previewSourceLabel}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {previewOptions.map((item) => {
+            const active = activePreviewKey === item.key;
+            return (
+              <button
+                key={item.key}
+                onClick={() => {
+                  setPreviewRecord(null);
+                  setPreviewKey(item.key);
+                }}
+                disabled={!item.url}
+                className={`min-h-10 rounded-xl px-2 py-1.5 text-center transition-all disabled:opacity-45 ${active ? "bg-gradient-to-r from-sky-400 to-blue-500 text-white shadow-sm" : "bg-sky-50 text-sky-600 hover:bg-sky-100"}`}
+                title={`切换到${item.label}预览`}
+              >
+                <p className="text-xs font-bold">{item.label}</p>
+                <p className={`mt-0.5 truncate text-[9px] ${active ? "text-white/80" : "text-sky-400"}`}>{item.hint}</p>
+              </button>
+            );
+          })}
+        </div>
+        <div className="overflow-hidden rounded-2xl bg-black shadow-inner">
+          <video
+            key={`${activePreviewKey}-${playerReloadKey}`}
+            ref={videoRef}
+            controls
+            playsInline
+            preload="metadata"
+            className="aspect-video w-full bg-black"
+          />
+        </div>
+        <div className="flex items-start gap-2 rounded-xl bg-sky-50 p-2">
+          <Signal size={12} className="mt-0.5 shrink-0 text-sky-500" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[11px] font-medium text-sky-600">{playerStatus}</p>
+            <p className="mt-0.5 truncate font-mono text-[10px] text-purple-400">{previewUrl ? maskUrl(previewUrl) : "暂无可预览链接"}</p>
+            {playerError && <p className="mt-1 text-[10px] leading-relaxed text-rose-600">{playerError}</p>}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
+          <button
+            onClick={() => setPlayerReloadKey((value) => value + 1)}
+            disabled={!previewUrl}
+            className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-sky-200 px-2 text-[11px] font-medium text-sky-500 transition-transform active:scale-95 disabled:opacity-45"
+            title="重新载入当前播放器"
+          >
+            <RefreshCw size={11} /> 重载
+          </button>
+          <button
+            onClick={() => {
+              const backupUrl = absoluteUrl(lines[1]?.url || "");
+              if (backupUrl) {
+                setPreviewRecord(null);
+                setPreviewKey("backup");
+              }
+            }}
+            disabled={!absoluteUrl(lines[1]?.url || "") || activePreviewKey === "backup"}
+            className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-emerald-200 px-2 text-[11px] font-medium text-emerald-600 transition-transform active:scale-95 disabled:opacity-45"
+            title="播放不稳时切换到备用线路"
+          >
+            <Route size={11} /> 备用
+          </button>
+          <button
+            onClick={() => {
+              const video = videoRef.current;
+              if (!video) return;
+              if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => setPlayerError("退出画中画失败，请使用播放器原生按钮。"));
+              else video.requestPictureInPicture().catch(() => setPlayerError("当前页面暂不支持画中画，可继续使用内嵌播放或打开完整链接。"));
+            }}
+            disabled={!previewUrl}
+            className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 text-[11px] font-medium text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
+            title="开启或退出画中画"
+          >
+            <Maximize2 size={11} /> 画中画
+          </button>
+          <button
+            onClick={() => onAction("copy-play-link", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}
+            disabled={!previewUrl}
+            className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 text-[11px] font-medium text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
+            title="复制当前预览完整链接"
+          >
+            <Copy size={11} /> 复制
+          </button>
+          <button
+            onClick={() => onAction("open-playback-url", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}
+            disabled={!previewUrl}
+            className="flex min-h-9 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 px-2 text-[11px] font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-45"
+            title="用完整链接在新窗口打开当前预览"
+          >
+            <ExternalLink size={11} /> 打开
+          </button>
         </div>
       </div>
 
@@ -457,13 +679,22 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                   {line.stat?.status && <span className="rounded-full bg-white/70 px-2 py-0.5 text-purple-500">HTTP {line.stat.status}</span>}
                 </div>
                 {line.stat?.error && <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-amber-600">{line.stat.error}</p>}
-                <button
-                  onClick={() => onAction(line.copyAction, { url: lineUrl, label: `${line.label}完整链接` })}
-                  disabled={!line.url}
-                  className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl bg-white/80 px-3 py-1.5 text-[11px] font-medium text-purple-500 shadow-sm transition-transform active:scale-95 disabled:opacity-50"
-                >
-                  <Copy size={11} /> 复制完整链接
-                </button>
+                <div className="mt-3 grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => onAction(line.copyAction, { url: lineUrl, label: `${line.label}完整链接` })}
+                    disabled={!line.url}
+                    className="flex items-center justify-center gap-1 rounded-xl bg-white/80 px-2 py-1.5 text-[11px] font-medium text-purple-500 shadow-sm transition-transform active:scale-95 disabled:opacity-50"
+                  >
+                    <Copy size={11} /> 复制
+                  </button>
+                  <button
+                    onClick={() => onAction(line.openAction, { url: lineUrl, label: `${line.label}完整链接` })}
+                    disabled={!line.url}
+                    className="flex items-center justify-center gap-1 rounded-xl bg-white/80 px-2 py-1.5 text-[11px] font-medium text-sky-500 shadow-sm transition-transform active:scale-95 disabled:opacity-50"
+                  >
+                    <ExternalLink size={11} /> 打开
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -679,7 +910,31 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                     </div>
                   </div>
                 )}
-                <div className="mt-2 grid grid-cols-3 gap-1.5">
+                <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-5">
+                  <button
+                    onClick={() => {
+                      setPreviewRecord({
+                        url: recordUrl,
+                        title: item.movieTitle || item.title || item.movieId || "播放记录",
+                        movieId: item.movieId
+                      });
+                      setPreviewKey("record");
+                      setPlayerReloadKey((value) => value + 1);
+                    }}
+                    disabled={!recordUrl}
+                    className="flex items-center justify-center gap-1 rounded-xl border border-emerald-200 px-2 py-1.5 text-[11px] text-emerald-600 transition-transform active:scale-95 disabled:opacity-45"
+                    title="在网页播放控制台预览该记录"
+                  >
+                    <Film size={11} /> 预览
+                  </button>
+                  <button
+                    onClick={() => onAction("open-playback-url", { url: recordUrl, label: "播放记录完整链接" })}
+                    disabled={!recordUrl}
+                    className="flex items-center justify-center gap-1 rounded-xl border border-sky-200 px-2 py-1.5 text-[11px] text-sky-500 transition-transform active:scale-95 disabled:opacity-45"
+                    title="用完整链接打开该播放记录"
+                  >
+                    <ExternalLink size={11} /> 打开
+                  </button>
                   <button
                     onClick={() => onAction("copy-playback-health-report", { report: recordReport })}
                     className="flex items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 py-1.5 text-[11px] text-purple-500 transition-transform active:scale-95 disabled:opacity-45"

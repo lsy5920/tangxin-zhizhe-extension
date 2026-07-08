@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "2.6.2",
-  "build": "2026-07-08-0242",
-  "releasedAt": "2026-07-08 02:42",
+  "version": "2.6.3",
+  "build": "2026-07-08-0802",
+  "releasedAt": "2026-07-08 08:02",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -12,10 +12,10 @@
   ],
   "changelog": [
     {
-      "id": "2026-07-08-0242",
+      "id": "2026-07-08-0802",
       "type": "优化",
-      "title": "全面重构升级检测和最新版下载链路",
-      "detail": "升级系统提升到 v3，旧更新缓存和旧运行数据不再沿用；检查更新每次都会重新读取远程 update.json，并用 README 更新日志兜底识别清单漏更；下载最新版会重新检测远程清单，给实际下载地址追加时间戳并自动尝试多个 GitHub 压缩包候选地址，设置页同步展示缓存策略、下载策略、尝试地址和失败原因。"
+      "title": "嵌入开源 HLS 播放内核并升级网页直接播放体验",
+      "detail": "播放页嵌入 hls.js 1.6.16 作为 HLS/m3u8 播放内核，新增网页播放控制台，可在面板内直接预览推荐线路、主线路、备用线路和历史播放记录；同时新增播放器重载、备用线路切换、画中画、当前预览完整链接复制和完整链接打开能力。设置页同步展示播放内核版本和升级系统 v3 信息，方便排查播放与更新问题。"
     }
   ]
 }

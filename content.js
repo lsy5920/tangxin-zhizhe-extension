@@ -1323,6 +1323,14 @@
     return copyFullUrl(url, label || "完整播放链接");
   }
 
+  function openFullUrl(url, label) {
+    const fullUrl = normalizeUrl(url || "");
+    if (!fullUrl) throw new Error("没有可打开的完整链接");
+    window.open(fullUrl, "_blank", "noopener,noreferrer");
+    emitFlow("打开链接", `${label || "完整链接"}已打开`, "ok");
+    return fullUrl;
+  }
+
   async function closeRepositoryUpdateDialog(mode = "dismissed") {
     const updateId = uiState.repositoryUpdate?.remote?.id || "";
     if (updateId) {
@@ -1937,6 +1945,10 @@
       if (action === "copy-backup-link") {
         const latest = state.fullDetails[state.fullDetails.length - 1];
         await copyPlayableUrl(payload.url || latest?.backupLink || "", payload.label || "备用线路完整链接");
+      }
+      if (action === "open-playback-url") {
+        const latest = state.fullDetails[state.fullDetails.length - 1];
+        openFullUrl(payload.url || latest?.playLink || latest?.backupLink || "", payload.label || "播放线路完整链接");
       }
       if (action === "copy-playback-health-report") {
         await copyText(String(payload.report || ""), "播放资源体检报告");

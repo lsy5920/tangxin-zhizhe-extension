@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Activity, AlertTriangle, CheckCircle, Copy, Download, ExternalLink, Info, Lightbulb, Package, Radio, RefreshCw, Sparkles, Trash2, Users, X } from "lucide-react";
 import type { BridgeState, Page, WorkerDiagnostics } from "../types";
 import { formatRelativeTime } from "../helpers";
-import { APP_BUILD, APP_VERSION, APP_VERSION_LABEL } from "../constants";
+import { APP_BUILD, APP_VERSION, APP_VERSION_LABEL, HLS_CORE_VERSION } from "../constants";
 
 type Props = {
   state: BridgeState;
@@ -311,7 +311,14 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
         <div className="absolute right-3 top-2 select-none text-5xl opacity-15 pointer-events-none">🍭</div>
         <div className="mb-2 flex items-center gap-2"><Package size={18} /><span className="font-bold">糖心志者</span></div>
         <div className="grid grid-cols-2 gap-2 text-xs">
-          {[{ label: "版本", value: APP_VERSION_LABEL }, { label: "构建", value: APP_BUILD }, { label: "mux.js", value: "7.0.0" }, { label: "React", value: "18 + TSX" }].map((item) => (
+          {[
+            { label: "版本", value: APP_VERSION_LABEL },
+            { label: "构建", value: APP_BUILD },
+            { label: "播放内核", value: `hls.js ${HLS_CORE_VERSION}` },
+            { label: "mux.js", value: "7.0.0" },
+            { label: "升级系统", value: "v3" },
+            { label: "React", value: "18 + TSX" }
+          ].map((item) => (
             <div key={item.label} className="rounded-xl bg-white/20 px-3 py-1.5 backdrop-blur">
               <p className="text-[10px] opacity-70">{item.label}</p>
               <p className="font-semibold">{item.value}</p>

@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-0242";
+const LOCAL_UPDATE_BUILD = "2026-07-08-0802";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 02:42 【优化】升级版本到 v2.6.2，全面重构升级检测和最新版下载链路。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 08:02 【优化】升级版本到 v2.6.3，嵌入 hls.js 播放内核，播放页新增网页播放控制台、主备线路切换、历史记录预览、播放器重载、画中画和完整链接打开能力。";
 
 const DEFAULT_STATE = {
   role: "guest",
