@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Artplayer from "artplayer";
 import Hls from "hls.js";
-import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, Maximize2, Minimize2, MoreHorizontal, Pause, Play, Ratio, RectangleHorizontal, RectangleVertical, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SkipBack, SkipForward, SlidersHorizontal, SortDesc, Timer, Wifi, Zap } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, Maximize2, Minimize2, MoreHorizontal, Pause, Play, Ratio, RectangleHorizontal, RectangleVertical, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SkipBack, SkipForward, SlidersHorizontal, SortDesc, Timer, Volume2, VolumeX, Wifi, Zap } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 
@@ -25,7 +25,7 @@ type PlaybackRecordFilter = "all" | "downloadable" | "saveable" | "failed" | "ba
 type PlaybackRecordSort = "recent" | "failed" | "saveable" | "backup";
 type PlaybackPreviewKey = "recommended" | "play" | "backup" | "record";
 type PlayerFitMode = "auto" | "wide" | "vertical";
-type PlayerMorePanel = "line" | "display" | "tools";
+type PlayerMorePanel = "line" | "display" | "sound" | "tools";
 type PlaybackPreviewRecord = {
   url: string;
   title: string;
@@ -56,6 +56,11 @@ type FullscreenDocument = Document & {
   webkitExitFullscreen?: () => Promise<void> | void;
   msExitFullscreen?: () => Promise<void> | void;
 };
+
+const playerRateOptions = [0.75, 1, 1.25, 1.5, 2];
+const playerSeekStepOptions = [5, 10, 30, 60];
+const playerVolumeStorageKey = "txzz-player-volume";
+const playerMutedStorageKey = "txzz-player-muted";
 
 function lineState(line: PlaybackLine) {
   if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false };
@@ -364,6 +369,15 @@ function taskTone(task?: DownloadTask | null) {
   return { label: downloadStageLabel(task.stage), color: "bg-amber-50 text-amber-600" };
 }
 
+function initialPlayerVolume() {
+  const saved = Number(window.localStorage.getItem(playerVolumeStorageKey) || "");
+  return Number.isFinite(saved) ? Math.max(0, Math.min(1, saved)) : 0.8;
+}
+
+function initialPlayerMuted() {
+  return window.localStorage.getItem(playerMutedStorageKey) === "1";
+}
+
 export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0 }: Props) {
   const [recordFilter, setRecordFilter] = useState<PlaybackRecordFilter>("all");
   const [recordSearch, setRecordSearch] = useState("");
@@ -386,6 +400,10 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const [playerMoreOpen, setPlayerMoreOpen] = useState(false);
   const [playerMorePanel, setPlayerMorePanel] = useState<PlayerMorePanel>("line");
   const [playerControlsVisible, setPlayerControlsVisible] = useState(true);
+  const [playerVolume, setPlayerVolume] = useState(initialPlayerVolume);
+  const [playerMuted, setPlayerMuted] = useState(initialPlayerMuted);
+  const [playerSeekStep, setPlayerSeekStep] = useState(10);
+  const [playerCursorHidden, setPlayerCursorHidden] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerShellRef = useRef<HTMLDivElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
@@ -393,6 +411,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const holdSeekRef = useRef<{ delay?: number; interval?: number; active: boolean; seconds: number }>({ active: false, seconds: 0 });
   const clickSeekRef = useRef<{ timer?: number; count: number; clientX: number }>({ count: 0, clientX: 0 });
   const controlsTimerRef = useRef<number | undefined>();
+  const cursorTimerRef = useRef<number | undefined>();
   const playerDiagnosticReportRef = useRef("");
   const fullscreenIntentRef = useRef(0);
   const latest = latestFullDetail(state);
@@ -426,7 +445,6 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const previewSourceLabel = isPlaylistUrl(previewUrl) ? "HLS播放列表" : previewUrl ? "视频源" : "等待链接";
   const previewProgress = percent(playerStats.currentTime, playerStats.duration);
   const previewBuffered = percent(playerStats.bufferedEnd, playerStats.duration);
-  const playerRateOptions = [0.75, 1, 1.25, 1.5, 2];
   const playerFullscreenActive = playerImmersive || browserFullscreenActive;
   const playerFitLabel = fitModeLabel(playerFitMode, detectedFitMode);
   const playerShellAspect = playerFullscreenActive ? undefined : fitModeAspect(playerFitMode, detectedFitMode);
@@ -449,6 +467,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     `播放进度：${formatDuration(playerStats.currentTime)} / ${playerStats.duration ? formatDuration(playerStats.duration) : "未知"}`,
     `缓冲进度：${playerStats.duration ? `${previewBuffered}%` : "未知"}`,
     `播放速度：${playerStats.rate}x`,
+    `播放音量：${playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`}`,
+    `快进步长：${playerSeekStep}秒`,
     `当前清晰度：${currentQualityLabel}`,
     `自动切换备用：${playerAutoBackupUsed ? "已触发" : "未触发"}`,
     `推荐线路：${health.recommendedLabel}`,
@@ -466,12 +486,31 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     }
   };
 
+  const applyPlayerVolume = (nextVolume: number, nextMuted = false) => {
+    const volume = Math.max(0, Math.min(1, nextVolume));
+    const art = artRef.current;
+    setPlayerVolume(volume);
+    setPlayerMuted(nextMuted);
+    window.localStorage.setItem(playerVolumeStorageKey, String(volume));
+    window.localStorage.setItem(playerMutedStorageKey, nextMuted ? "1" : "0");
+    if (art) {
+      art.volume = volume;
+      art.muted = nextMuted;
+      art.notice.show = nextMuted ? "已静音" : `音量：${Math.round(volume * 100)}%`;
+      setPlayerStats(playerSnapshot(art.video));
+    }
+    revealPlayerControls(true);
+  };
+
   const revealPlayerControls = (keepVisible = false) => {
     // 播放时控制层短暂停留，暂停、报错或菜单展开时保持显示，避免按钮长期遮挡画面。
     setPlayerControlsVisible(true);
+    setPlayerCursorHidden(false);
     clearControlsTimer();
+    if (cursorTimerRef.current) window.clearTimeout(cursorTimerRef.current);
     if (keepVisible || controlsShouldStayVisible || !previewUrl) return;
     controlsTimerRef.current = window.setTimeout(() => setPlayerControlsVisible(false), playerFullscreenActive ? 2400 : 3200);
+    if (playerFullscreenActive) cursorTimerRef.current = window.setTimeout(() => setPlayerCursorHidden(true), 2600);
   };
 
   useEffect(() => {
@@ -497,20 +536,54 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     setPlayerControlsVisible(true);
     if (!controlsShouldStayVisible && previewUrl) {
       controlsTimerRef.current = window.setTimeout(() => setPlayerControlsVisible(false), playerFullscreenActive ? 2400 : 3200);
+      if (playerFullscreenActive) cursorTimerRef.current = window.setTimeout(() => setPlayerCursorHidden(true), 2600);
     }
-    return clearControlsTimer;
+    return () => {
+      clearControlsTimer();
+      if (cursorTimerRef.current) window.clearTimeout(cursorTimerRef.current);
+    };
   }, [controlsShouldStayVisible, previewUrl, playerFullscreenActive]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && playerImmersive) {
-        setPlayerImmersive(false);
-        artRef.current?.notice && (artRef.current.notice.show = "已退出沉浸全屏");
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input,textarea,select,[contenteditable='true']")) return;
+      const key = event.key.toLowerCase();
+      if (key === "escape" && playerFullscreenActive) {
+        event.preventDefault();
+        exitPlayerFullscreen().catch(() => setPlayerImmersive(false));
+        return;
+      }
+      if (!previewUrl || !artRef.current) return;
+      if (key === " " || key === "k") {
+        event.preventDefault();
+        togglePlayerPlay();
+        revealPlayerControls();
+      } else if (key === "arrowleft") {
+        event.preventDefault();
+        seekPlayer(-playerSeekStep);
+        revealPlayerControls();
+      } else if (key === "arrowright") {
+        event.preventDefault();
+        seekPlayer(playerSeekStep);
+        revealPlayerControls();
+      } else if (key === "arrowup") {
+        event.preventDefault();
+        applyPlayerVolume(playerVolume + 0.05, false);
+      } else if (key === "arrowdown") {
+        event.preventDefault();
+        applyPlayerVolume(playerVolume - 0.05, playerVolume <= 0.05);
+      } else if (key === "m") {
+        event.preventDefault();
+        applyPlayerVolume(playerVolume || 0.8, !playerMuted);
+      } else if (key === "f") {
+        event.preventDefault();
+        togglePlayerFullscreen().catch((err) => setPlayerError(err instanceof Error ? err.message : String(err)));
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [playerImmersive]);
+  }, [playerFullscreenActive, playerMuted, playerSeekStep, playerVolume, previewUrl]);
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
@@ -530,10 +603,10 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     };
     setHandler("play", () => artRef.current?.play());
     setHandler("pause", () => artRef.current?.pause());
-    setHandler("previoustrack", () => seekPlayer(-10));
-    setHandler("nexttrack", () => seekPlayer(10));
-    setHandler("seekbackward", (details) => seekPlayer(-Number(details.seekOffset || 10)));
-    setHandler("seekforward", (details) => seekPlayer(Number(details.seekOffset || 10)));
+    setHandler("previoustrack", () => seekPlayer(-playerSeekStep));
+    setHandler("nexttrack", () => seekPlayer(playerSeekStep));
+    setHandler("seekbackward", (details) => seekPlayer(-Number(details.seekOffset || playerSeekStep)));
+    setHandler("seekforward", (details) => seekPlayer(Number(details.seekOffset || playerSeekStep)));
     setHandler("seekto", (details) => {
       const art = artRef.current;
       const value = Number(details.seekTime || 0);
@@ -545,7 +618,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       (["play", "pause", "previoustrack", "nexttrack", "seekbackward", "seekforward", "seekto"] as MediaSessionAction[])
         .forEach((name) => setHandler(name, null));
     };
-  }, [activePreviewKey, latest?.accountLabel, latest?.accountUser, previewTitle, previewUrl]);
+  }, [activePreviewKey, latest?.accountLabel, latest?.accountUser, playerSeekStep, previewTitle, previewUrl]);
 
   const stopHoldSeek = () => {
     const state = holdSeekRef.current;
@@ -634,7 +707,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       type: isPlaylistUrl(source) ? "m3u8" : "mp4",
       title: previewTitle,
       theme: "#38bdf8",
-      volume: 0.8,
+      volume: playerVolume,
+      muted: playerMuted,
       autoplay: false,
       autoSize: false,
       autoMini: false,
@@ -707,8 +781,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       settings: [
         {
           html: "快进步长",
-          tooltip: "10 秒",
-          selector: [5, 10, 30, 60].map((value) => ({ html: `${value} 秒`, value, default: value === 10 })),
+          tooltip: `${playerSeekStep} 秒`,
+          selector: playerSeekStepOptions.map((value) => ({ html: `${value} 秒`, value, default: value === playerSeekStep })),
           onSelect(item) {
             Artplayer.SEEK_STEP = Number(item.value || 10);
             this.notice.show = `快进步长：${item.value} 秒`;
@@ -733,6 +807,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     }, (instance) => {
       artRef.current = instance;
       videoRef.current = instance.video;
+      instance.volume = playerVolume;
+      instance.muted = playerMuted;
       setSafeStatus("完整播放器已就绪");
       restoreProgress();
       rememberSnapshot();
@@ -740,6 +816,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
 
     artRef.current = art;
     videoRef.current = art.video;
+    art.volume = playerVolume;
+    art.muted = playerMuted;
     art.on("ready", () => {
       setSafeStatus("完整播放器已就绪");
       restoreProgress();
@@ -765,6 +843,13 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       revealPlayerControls(true);
     });
     art.on("video:ratechange", rememberSnapshot);
+    art.on("video:volumechange", () => {
+      setPlayerVolume(art.volume);
+      setPlayerMuted(art.muted);
+      window.localStorage.setItem(playerVolumeStorageKey, String(art.volume));
+      window.localStorage.setItem(playerMutedStorageKey, art.muted ? "1" : "0");
+      rememberSnapshot();
+    });
     art.on("video:ended", () => {
       if (storageKey) window.localStorage.removeItem(storageKey);
       rememberSnapshot();
@@ -939,7 +1024,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       clickSeekRef.current = { count: 0, clientX: 0 };
       const rect = event.currentTarget.getBoundingClientRect();
       if (count >= 2) {
-        seekPlayer(clientX < rect.left + rect.width / 2 ? -10 : 10);
+        seekPlayer(clientX < rect.left + rect.width / 2 ? -playerSeekStep : playerSeekStep);
         revealPlayerControls();
       }
     }, 240);
@@ -950,7 +1035,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     if (!previewUrl || target.closest("button,[role='slider'],.art-bottom,.art-controls,.art-progress,.art-settings,.art-contextmenus")) return;
     revealPlayerControls();
     const rect = event.currentTarget.getBoundingClientRect();
-    const seconds = event.clientX < rect.left + rect.width / 2 ? -10 : 10;
+    const seconds = event.clientX < rect.left + rect.width / 2 ? -playerSeekStep : playerSeekStep;
     stopHoldSeek();
     holdSeekRef.current = { active: false, seconds };
     try {
@@ -1180,7 +1265,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         </div>
         <div
           ref={playerShellRef}
-          className={`txzz-candy-interactive select-none ${playerFullscreenActive ? "fixed inset-0 z-[2147483647] rounded-none" : "relative overflow-hidden rounded-2xl"} bg-black shadow-inner`}
+          className={`txzz-candy-interactive select-none ${playerCursorHidden ? "cursor-none" : ""} ${playerFullscreenActive ? "txzz-player-fullscreen-shell fixed inset-0 z-[2147483647] overflow-hidden rounded-none bg-black" : "relative overflow-hidden rounded-2xl bg-black shadow-inner"}`}
           style={playerShellAspect ? { aspectRatio: playerShellAspect } : undefined}
           onPointerDown={startHoldSeek}
           onPointerMove={() => revealPlayerControls()}
@@ -1195,7 +1280,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
           <div
             key={`${activePreviewKey}-${playerReloadKey}`}
             ref={playerContainerRef}
-            className={`txzz-player-clean ${playerFullscreenActive ? "h-screen min-h-screen" : "h-full"} w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full [&_.art-video]:object-contain`}
+            className={`txzz-player-clean ${playerFullscreenActive ? "txzz-player-fullscreen-clean h-screen min-h-screen" : "h-full"} w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full [&_.art-video]:object-contain`}
           />
           {holdSeekHint && (
             <div className="pointer-events-none absolute inset-0 z-[25] flex items-center justify-center">
@@ -1253,25 +1338,25 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
               </button>
               <button
                 onClick={() => {
-                  seekPlayer(-10);
+                  seekPlayer(-playerSeekStep);
                   revealPlayerControls();
                 }}
                 disabled={!previewUrl}
                 className="flex min-h-9 items-center justify-center gap-1 rounded-xl bg-white/15 px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
-                title="后退 10 秒"
+                title={`后退 ${playerSeekStep} 秒`}
               >
-                <SkipBack size={12} /> -10
+                <SkipBack size={12} /> -{playerSeekStep}
               </button>
               <button
                 onClick={() => {
-                  seekPlayer(10);
+                  seekPlayer(playerSeekStep);
                   revealPlayerControls();
                 }}
                 disabled={!previewUrl}
                 className="flex min-h-9 items-center justify-center gap-1 rounded-xl bg-white/15 px-1.5 text-[11px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
-                title="前进 10 秒"
+                title={`前进 ${playerSeekStep} 秒`}
               >
-                <SkipForward size={12} /> +10
+                <SkipForward size={12} /> +{playerSeekStep}
               </button>
               <button
                 onClick={() => {
@@ -1295,10 +1380,11 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             </div>
             {playerMoreOpen && (
               <div className="mt-2 rounded-2xl bg-black/45 p-2">
-                <div className="mb-2 grid grid-cols-3 gap-1.5">
+                <div className="mb-2 grid grid-cols-4 gap-1.5">
                   {[
                     { key: "line" as const, label: "线路", icon: Route },
                     { key: "display" as const, label: "显示", icon: Ratio },
+                    { key: "sound" as const, label: "声音", icon: playerMuted ? VolumeX : Volume2 },
                     { key: "tools" as const, label: "工具", icon: SlidersHorizontal }
                   ].map((item) => {
                     const active = playerMorePanel === item.key;
@@ -1346,7 +1432,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   </div>
                 )}
                 {playerMorePanel === "display" && (
-                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
                     <button
                       onClick={cyclePlayerRate}
                       disabled={!previewUrl}
@@ -1387,6 +1473,49 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                     >
                       <Film size={11} /> 截图
                     </button>
+                    <button
+                      onClick={() => {
+                        const index = playerSeekStepOptions.indexOf(playerSeekStep);
+                        const nextStep = playerSeekStepOptions[(index + 1 + playerSeekStepOptions.length) % playerSeekStepOptions.length];
+                        setPlayerSeekStep(nextStep);
+                        artRef.current?.notice && (artRef.current.notice.show = `快进步长：${nextStep} 秒`);
+                        revealPlayerControls(true);
+                      }}
+                      disabled={!previewUrl}
+                      className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-white/15 px-2 text-[10px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
+                      title="切换快进快退步长"
+                    >
+                      <SkipForward size={11} /> {playerSeekStep}秒
+                    </button>
+                  </div>
+                )}
+                {playerMorePanel === "sound" && (
+                  <div className="space-y-2 rounded-xl bg-white/10 p-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => applyPlayerVolume(playerVolume || 0.8, !playerMuted)}
+                        disabled={!previewUrl}
+                        className={`flex min-h-8 w-20 items-center justify-center gap-1 rounded-xl px-2 text-[10px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40 ${playerMuted ? "bg-rose-500/80" : "bg-white/15"}`}
+                        title={playerMuted ? "取消静音" : "静音"}
+                      >
+                        {playerMuted ? <VolumeX size={11} /> : <Volume2 size={11} />} {playerMuted ? "静音" : "声音"}
+                      </button>
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={Math.round(playerVolume * 100)}
+                        onChange={(event) => applyPlayerVolume(Number(event.target.value) / 100, false)}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        className="min-w-0 flex-1 accent-sky-400"
+                        title="调节播放音量"
+                      />
+                      <span className="w-10 text-right text-[10px] text-white/75">{playerMuted ? "0%" : `${Math.round(playerVolume * 100)}%`}</span>
+                    </div>
+                    <p className="truncate text-[9px] text-white/55">
+                      快捷键：空格/K 播放暂停 · ←/→ 快退快进 · ↑/↓ 调音量 · M 静音 · F 全屏
+                    </p>
                   </div>
                 )}
                 {playerMorePanel === "tools" && (
@@ -1446,7 +1575,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   </div>
                 )}
                 <p className="mt-1.5 truncate text-[9px] text-white/55">
-                  当前：{previewLineLabel(activePreviewKey)} · {playerStats.rate}x · {playerFitLabel} · {currentQualityLabel}
+                  当前：{previewLineLabel(activePreviewKey)} · {playerStats.rate}x · {playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`} · 步长{playerSeekStep}秒 · {playerFitLabel} · {currentQualityLabel}
                 </p>
               </div>
             )}

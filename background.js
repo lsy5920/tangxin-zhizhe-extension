@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-1357";
+const LOCAL_UPDATE_BUILD = "2026-07-08-1421";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 13:57 【优化】升级版本到 v2.7.3，播放器控制层支持播放时自动隐藏，菜单按线路、显示、工具分组，进度条支持点击跳转；全屏进入改为浏览器全屏叠加播放器视口覆盖，避免插件导航栏或网页导航栏残留。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 14:21 【优化】升级版本到 v2.7.4，播放器新增声音菜单、音量记忆、静音切换、可切换快进步长和键盘快捷键；全屏模式改为无框铺满视口，移除全屏后画面内仍像套着视频框的边框感，鼠标会随控制层自动隐藏。";
 
 const DEFAULT_STATE = {
   role: "guest",
