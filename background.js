@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-08-1421";
+const LOCAL_UPDATE_BUILD = "2026-07-08-1447";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 14:21 【优化】升级版本到 v2.7.4，播放器新增声音菜单、音量记忆、静音切换、可切换快进步长和键盘快捷键；全屏模式改为无框铺满视口，移除全屏后画面内仍像套着视频框的边框感，鼠标会随控制层自动隐藏。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-08 14:47 【修复】升级版本到 v2.7.5，重构全屏视频填充策略，默认按原比例尽可能完整显示视频，避免全屏后画面被裁剪或强行拉伸；显示菜单新增原比例、裁满、铺满三种模式，声音菜单新增亮度调节和本地记忆。";
 
 const DEFAULT_STATE = {
   role: "guest",

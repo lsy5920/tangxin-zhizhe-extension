@@ -55,11 +55,31 @@
 }
 
 .txzz-player-clean .art-video-player {
+  width: 100% !important;
+  height: 100% !important;
   background: #000 !important;
 }
 
 .txzz-player-clean .art-mask {
   bottom: 0 !important;
+}
+
+.txzz-player-clean .art-video {
+  width: 100% !important;
+  height: 100% !important;
+  filter: brightness(var(--txzz-player-brightness, 100%)) !important;
+}
+
+.txzz-player-fill-contain .art-video {
+  object-fit: contain !important;
+}
+
+.txzz-player-fill-cover .art-video {
+  object-fit: cover !important;
+}
+
+.txzz-player-fill-fill .art-video {
+  object-fit: fill !important;
 }
 
 /* 全屏播放时只保留一层播放器画面，清掉普通卡片模式留下的边框感和内层尺寸限制。 */
@@ -107,7 +127,6 @@
 }
 
 .txzz-player-fullscreen-clean .art-video {
-  object-fit: contain !important;
   background-color: #000 !important;
 }
 

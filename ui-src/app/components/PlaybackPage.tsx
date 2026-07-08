@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Artplayer from "artplayer";
 import Hls from "hls.js";
-import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, Maximize2, Minimize2, MoreHorizontal, Pause, Play, Ratio, RectangleHorizontal, RectangleVertical, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SkipBack, SkipForward, SlidersHorizontal, SortDesc, Timer, Volume2, VolumeX, Wifi, Zap } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, Maximize2, Minimize2, MoreHorizontal, Pause, Play, Ratio, RectangleHorizontal, RectangleVertical, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SkipBack, SkipForward, SlidersHorizontal, SortDesc, Sun, Timer, Volume2, VolumeX, Wifi, Zap } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 
@@ -25,6 +25,7 @@ type PlaybackRecordFilter = "all" | "downloadable" | "saveable" | "failed" | "ba
 type PlaybackRecordSort = "recent" | "failed" | "saveable" | "backup";
 type PlaybackPreviewKey = "recommended" | "play" | "backup" | "record";
 type PlayerFitMode = "auto" | "wide" | "vertical";
+type PlayerFillMode = "contain" | "cover" | "fill";
 type PlayerMorePanel = "line" | "display" | "sound" | "tools";
 type PlaybackPreviewRecord = {
   url: string;
@@ -61,6 +62,8 @@ const playerRateOptions = [0.75, 1, 1.25, 1.5, 2];
 const playerSeekStepOptions = [5, 10, 30, 60];
 const playerVolumeStorageKey = "txzz-player-volume";
 const playerMutedStorageKey = "txzz-player-muted";
+const playerFillStorageKey = "txzz-player-fill";
+const playerBrightnessStorageKey = "txzz-player-brightness";
 
 function lineState(line: PlaybackLine) {
   if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false };
@@ -123,6 +126,12 @@ function fitModeLabel(mode: PlayerFitMode, detected: Exclude<PlayerFitMode, "aut
 
 function fitModeAspect(mode: PlayerFitMode, detected: Exclude<PlayerFitMode, "auto">) {
   return (mode === "auto" ? detected : mode) === "vertical" ? "9 / 16" : "16 / 9";
+}
+
+function fillModeLabel(mode: PlayerFillMode) {
+  if (mode === "cover") return "裁满";
+  if (mode === "fill") return "铺满";
+  return "原比例";
 }
 
 function hlsQualityLabel(level: { name?: string; height?: number; bitrate?: number } | undefined, index: number) {
@@ -378,6 +387,18 @@ function initialPlayerMuted() {
   return window.localStorage.getItem(playerMutedStorageKey) === "1";
 }
 
+function initialPlayerFillMode(): PlayerFillMode {
+  // 默认使用原比例完整显示，避免全屏观看时裁剪或强行拉伸视频画面。
+  const saved = window.localStorage.getItem(playerFillStorageKey);
+  return saved === "cover" || saved === "fill" ? saved : "contain";
+}
+
+function initialPlayerBrightness() {
+  // 亮度偏好本地记忆，范围保持克制，避免误操作后画面过暗或过曝。
+  const saved = Number(window.localStorage.getItem(playerBrightnessStorageKey) || "");
+  return Number.isFinite(saved) ? Math.max(60, Math.min(140, saved)) : 100;
+}
+
 export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0 }: Props) {
   const [recordFilter, setRecordFilter] = useState<PlaybackRecordFilter>("all");
   const [recordSearch, setRecordSearch] = useState("");
@@ -403,6 +424,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const [playerVolume, setPlayerVolume] = useState(initialPlayerVolume);
   const [playerMuted, setPlayerMuted] = useState(initialPlayerMuted);
   const [playerSeekStep, setPlayerSeekStep] = useState(10);
+  const [playerFillMode, setPlayerFillMode] = useState<PlayerFillMode>(initialPlayerFillMode);
+  const [playerBrightness, setPlayerBrightness] = useState(initialPlayerBrightness);
   const [playerCursorHidden, setPlayerCursorHidden] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerShellRef = useRef<HTMLDivElement | null>(null);
@@ -469,6 +492,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     `播放速度：${playerStats.rate}x`,
     `播放音量：${playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`}`,
     `快进步长：${playerSeekStep}秒`,
+    `画面填充：${fillModeLabel(playerFillMode)}`,
+    `画面亮度：${playerBrightness}%`,
     `当前清晰度：${currentQualityLabel}`,
     `自动切换备用：${playerAutoBackupUsed ? "已触发" : "未触发"}`,
     `推荐线路：${health.recommendedLabel}`,
@@ -499,6 +524,14 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       art.notice.show = nextMuted ? "已静音" : `音量：${Math.round(volume * 100)}%`;
       setPlayerStats(playerSnapshot(art.video));
     }
+    revealPlayerControls(true);
+  };
+
+  const applyPlayerBrightness = (nextBrightness: number) => {
+    const brightness = Math.max(60, Math.min(140, Math.round(nextBrightness)));
+    setPlayerBrightness(brightness);
+    window.localStorage.setItem(playerBrightnessStorageKey, String(brightness));
+    if (artRef.current) artRef.current.notice.show = `亮度：${brightness}%`;
     revealPlayerControls(true);
   };
 
@@ -1080,6 +1113,16 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     revealPlayerControls(true);
   };
 
+  const cyclePlayerFill = () => {
+    const order: PlayerFillMode[] = ["contain", "cover", "fill"];
+    const next = order[(order.indexOf(playerFillMode) + 1) % order.length];
+    setPlayerFillMode(next);
+    window.localStorage.setItem(playerFillStorageKey, next);
+    const art = artRef.current;
+    if (art) art.notice.show = `填充：${fillModeLabel(next)}`;
+    revealPlayerControls(true);
+  };
+
   const togglePlayerPip = () => {
     const art = artRef.current;
     if (!art) return;
@@ -1280,7 +1323,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
           <div
             key={`${activePreviewKey}-${playerReloadKey}`}
             ref={playerContainerRef}
-            className={`txzz-player-clean ${playerFullscreenActive ? "txzz-player-fullscreen-clean h-screen min-h-screen" : "h-full"} w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full [&_.art-video]:object-contain`}
+            className={`txzz-player-clean txzz-player-fill-${playerFillMode} ${playerFullscreenActive ? "txzz-player-fullscreen-clean h-screen min-h-screen" : "h-full"} w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full`}
+            style={{ "--txzz-player-brightness": `${playerBrightness}%` } as CSSProperties}
           />
           {holdSeekHint && (
             <div className="pointer-events-none absolute inset-0 z-[25] flex items-center justify-center">
@@ -1296,7 +1340,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
               </div>
               <div className="flex shrink-0 flex-wrap justify-end gap-1">
                 <span className={`rounded-full px-2 py-1 text-[10px] backdrop-blur ${previewUrl ? "bg-emerald-500/75" : "bg-rose-500/75"}`}>{playerStatus}</span>
-                {playerFullscreenActive && <span className="rounded-full bg-sky-500/75 px-2 py-1 text-[10px] backdrop-blur">全屏</span>}
+                {playerFullscreenActive && <span className="rounded-full bg-sky-500/75 px-2 py-1 text-[10px] backdrop-blur">全屏 · {fillModeLabel(playerFillMode)}</span>}
               </div>
             </div>
             {(playerResumeTip || playerError) && (
@@ -1432,7 +1476,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   </div>
                 )}
                 {playerMorePanel === "display" && (
-                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-7">
                     <button
                       onClick={cyclePlayerRate}
                       disabled={!previewUrl}
@@ -1456,6 +1500,14 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                       title="切换 HLS 清晰度"
                     >
                       <SlidersHorizontal size={11} /> 清晰
+                    </button>
+                    <button
+                      onClick={cyclePlayerFill}
+                      disabled={!previewUrl}
+                      className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-white/15 px-2 text-[10px] font-medium text-white transition-transform active:scale-95 disabled:opacity-40"
+                      title="切换原比例完整、裁满屏幕或铺满屏幕"
+                    >
+                      <Layers size={11} /> {fillModeLabel(playerFillMode)}
                     </button>
                     <button
                       onClick={switchPlayerBackup}
@@ -1516,6 +1568,23 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                     <p className="truncate text-[9px] text-white/55">
                       快捷键：空格/K 播放暂停 · ←/→ 快退快进 · ↑/↓ 调音量 · M 静音 · F 全屏
                     </p>
+                    <div className="flex items-center gap-2 border-t border-white/10 pt-2">
+                      <span className="flex w-20 items-center justify-center gap-1 rounded-xl bg-white/15 px-2 py-1.5 text-[10px] font-medium text-white">
+                        <Sun size={11} /> 亮度
+                      </span>
+                      <input
+                        type="range"
+                        min={60}
+                        max={140}
+                        step={5}
+                        value={playerBrightness}
+                        onChange={(event) => applyPlayerBrightness(Number(event.target.value))}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        className="min-w-0 flex-1 accent-amber-300"
+                        title="调节播放画面亮度"
+                      />
+                      <span className="w-10 text-right text-[10px] text-white/75">{playerBrightness}%</span>
+                    </div>
                   </div>
                 )}
                 {playerMorePanel === "tools" && (
@@ -1575,7 +1644,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   </div>
                 )}
                 <p className="mt-1.5 truncate text-[9px] text-white/55">
-                  当前：{previewLineLabel(activePreviewKey)} · {playerStats.rate}x · {playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`} · 步长{playerSeekStep}秒 · {playerFitLabel} · {currentQualityLabel}
+                  当前：{previewLineLabel(activePreviewKey)} · {playerStats.rate}x · {playerMuted ? "静音" : `${Math.round(playerVolume * 100)}%`} · 步长{playerSeekStep}秒 · {playerFitLabel} · {fillModeLabel(playerFillMode)} · 亮度{playerBrightness}% · {currentQualityLabel}
                 </p>
               </div>
             )}
