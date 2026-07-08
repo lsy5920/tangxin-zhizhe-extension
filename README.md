@@ -16,7 +16,8 @@
 - 本地检查工具：Node.js `22.16.0` 及以上
 - 本机验证版本：Node.js `25.8.0`，npm `11.11.0`
 - 前端界面：React `18.3.1`，React DOM `18.3.1`，lucide-react `0.487.0`
-- 完整播放器：ArtPlayer `5.4.0`
+- 主播放器内核：ArtPlayer `5.4.0`（默认，PC 端首选）
+- 备用播放器内核：XGPlayer `3.0.23` + xgplayer-hls `3.0.22`（字节出品，移动端优化）
 - HLS 播放内核：hls.js `1.6.16`
 - 构建工具：Vite `8.0.16`，@vitejs/plugin-react `6.0.2`，Tailwind CSS `4.1.12`，@tailwindcss/vite `4.3.1`
 - 远程服务：Cloudflare Worker
@@ -426,9 +427,11 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 
 | 组件 | 版本 |
 | --- | --- |
-| 糖心志者 | `2.7.7` |
+| 糖心志者 | `2.9.0` |
 | Manifest | `3` |
-| ArtPlayer 完整播放器 | `5.4.0` |
+| ArtPlayer 主播放器 | `5.4.0` |
+| XGPlayer 备用播放器 | `3.0.23` |
+| xgplayer-hls HLS支持 | `3.0.22` |
 | hls.js HLS 内核 | `1.6.16` |
 | mux.js | `7.0.0` |
 | Worker 推荐版本 | `1.2.0` |
@@ -530,3 +533,4 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 2026-07-08 14:47 【修复】升级版本到 v2.7.5，重构全屏视频填充策略，默认按原比例尽可能完整显示视频，避免全屏后画面被裁剪或强行拉伸；播放器外层、ArtPlayer 内层和 video 节点都会铺满全屏宿主，避免全屏后仍出现内层视频框；显示菜单新增「原比例」「裁满」「铺满」三种填充模式，声音菜单新增亮度滑块和本地记忆，诊断报告同步记录填充模式与亮度；同步更新版本清单、构建产物和 README。
 2026-07-08 15:18 【修复】升级版本到 v2.7.6，修复播放器真实全屏层级问题，浏览器全屏优先请求播放器壳层；宿主全屏兜底时自动隐藏插件面板外壳、侧栏、标题栏、底部导航和其它播放页卡片，并把播放器外壳、ArtPlayer 容器和 video 节点锁定到完整视口，避免全屏后仍出现圆角、内层视频框、面板宽度限制或父容器裁剪；同步更新版本清单、构建产物和 README。
 2026-07-08 15:29 【优化】升级版本到 v2.7.7，新增播放器全屏体检能力，全屏时会显示全屏来源、视口覆盖率和容器贴合状态，播放器诊断报告同步写入全屏容器尺寸、当前视口、覆盖率和异常原因，方便继续排查黑边、右上角圆角、内层视频框、父容器裁剪或宿主全屏模式失效问题；同步更新版本清单、构建产物和 README。
+2026-07-08 19:38 【新增】升级版本到 v2.9.0，全面重构视频播放内核，新增 XGPlayer 3.0.23（西瓜播放器）作为备用播放引擎，同时保留 ArtPlayer 5.4.0 作为默认引擎。建立统一播放器引擎抽象层（engines/types.ts），ArtplayerEngine 和 XGPlayerEngine 均实现统一接口，通过 PlayerEngineFactory 工厂动态创建和切换引擎。usePlayer 替换为 useEnhancedPlayer，useFullscreen 替换为 useEnhancedFullscreen，新增画中画支持、移动端横屏自动全屏、全屏进入/退出过渡动画。PlayerControls 新增画中画按钮、引擎切换标签、沉浸模式按钮；PlayerSettingsMenu 新增「引擎」设置页，支持在面板内一键切换 Artplayer / 西瓜播放器；PlayerProgressBar 重构拖拽逻辑，悬停时进度条放大更明显，拖拽手柄始终可见，时间气泡跟随鼠标；index.css 新增全屏进入/退出过渡动画（txzz-fullscreen-in / txzz-fullscreen-out），新增播放器加载 Spinner 样式，覆写 XGPlayer 和 Artplayer 内置控制栏避免与自定义控制栏冲突。

@@ -299,3 +299,120 @@
 #txzz-candy-ui .bg-gradient-to-br.from-rose-400.to-pink-500 {
   background-image: linear-gradient(135deg, #fb7185 0%, #ec4899 100%) !important;
 }
+
+/* ============================================================
+   播放器增强全屏动画 & 过渡效果
+   ============================================================ */
+
+/* 全屏进入过渡 */
+.txzz-fullscreen-entering {
+  animation: txzz-fullscreen-in 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* 全屏退出过渡 */
+.txzz-fullscreen-exiting {
+  animation: txzz-fullscreen-out 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* 全屏激活状态 */
+.txzz-fullscreen-active {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483640 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  background: #000 !important;
+}
+
+@keyframes txzz-fullscreen-in {
+  from {
+    opacity: 0.7;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes txzz-fullscreen-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0.7;
+    transform: scale(0.96);
+  }
+}
+
+/* 播放器壳层基础样式 */
+.txzz-player-shell {
+  position: relative;
+  background: #000;
+  overflow: hidden;
+  border-radius: 0.75rem;
+}
+
+.txzz-player-shell--fullscreen,
+.txzz-player-shell--immersive {
+  border-radius: 0 !important;
+}
+
+/* 移动端：全屏时隐藏浏览器 UI */
+@media (max-width: 768px) {
+  .txzz-player-shell--fullscreen,
+  .txzz-player-shell--immersive {
+    height: 100dvh !important;
+    width: 100dvw !important;
+  }
+}
+
+/* 加载动画（3px border spinner） */
+@keyframes txzz-spin {
+  to { transform: rotate(360deg); }
+}
+
+.txzz-player-spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #ec4899;
+  border-radius: 50%;
+  animation: txzz-spin 0.8s linear infinite;
+}
+
+/* 进度条悬停时整体放大 */
+.txzz-player-shell:fullscreen .group\/bar:hover > div {
+  height: 10px !important;
+}
+
+/* XGPlayer 内核样式覆写，保持与整体 UI 一致 */
+.txzz-player-shell .xgplayer {
+  width: 100% !important;
+  height: 100% !important;
+  background: #000 !important;
+}
+
+.txzz-player-shell .xgplayer-controls {
+  display: none !important; /* 使用自定义控制栏 */
+}
+
+/* Artplayer 内核样式覆写 */
+.txzz-player-shell .art-video-player {
+  width: 100% !important;
+  height: 100% !important;
+  background: #000 !important;
+}
+
+.txzz-player-shell .art-bottom,
+.txzz-player-shell .art-settings,
+.txzz-player-shell .art-info {
+  display: none !important; /* 使用自定义控制栏 */
+}
+
+.txzz-player-shell .art-video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain;
+}
