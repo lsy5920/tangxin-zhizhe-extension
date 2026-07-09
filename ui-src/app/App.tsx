@@ -40,28 +40,34 @@ function action(actionName: string, payload: Record<string, unknown> = {}) {
 }
 
 type FullscreenTarget = HTMLElement & {
-  webkitRequestFullscreen?: () => Promise<void> | void;
+  requestFullscreen?: (options?: { navigationUI?: "auto" | "hide" | "show" }) => Promise<void>;
+  webkitRequestFullscreen?: (options?: { navigationUI?: "auto" | "hide" | "show" } | unknown) => Promise<void> | void;
   msRequestFullscreen?: () => Promise<void> | void;
 };
 
 function requestHostFullscreen() {
   const host = document.getElementById("txzz-candy-ui-root") as FullscreenTarget | null;
-  const request = host?.requestFullscreen || host?.webkitRequestFullscreen || host?.msRequestFullscreen;
-  if (!host || !request) return;
-  // 仅在浏览器真正进入全屏后再挂宿主全屏模式类，避免 request 失败时面板被 CSS 藏成黑屏。
+  if (!host) return;
+  // 悬浮视频按钮：优先对 light DOM 宿主申请真正浏览器全屏（隐藏导航 UI）。
+  const request = host.requestFullscreen || host.webkitRequestFullscreen || host.msRequestFullscreen;
+  if (!request) return;
   const markIfFullscreen = () => {
     const doc = document as Document & { webkitFullscreenElement?: Element | null };
     if (document.fullscreenElement === host || doc.webkitFullscreenElement === host) {
       host.classList.add(playerFullscreenHostClass);
+      host.style.setProperty("background", "#000", "important");
+      host.style.setProperty("pointer-events", "auto", "important");
     }
   };
   try {
-    Promise.resolve(request.call(host)).then(markIfFullscreen).catch(() => {
+    const result = request.length
+      ? (request as (options?: { navigationUI?: string }) => Promise<void>).call(host, { navigationUI: "hide" })
+      : request.call(host);
+    Promise.resolve(result).then(markIfFullscreen).catch(() => {
       host.classList.remove(playerFullscreenHostClass);
     });
   } catch {
     host.classList.remove(playerFullscreenHostClass);
-    // 浏览器全屏只能在用户点击时尝试，失败后播放页会继续使用沉浸全屏兜底。
   }
   window.setTimeout(markIfFullscreen, 80);
   window.setTimeout(markIfFullscreen, 240);

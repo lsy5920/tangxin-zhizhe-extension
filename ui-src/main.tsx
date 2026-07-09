@@ -51,17 +51,73 @@ function createHost() {
     const style = document.createElement("style");
     style.id = ARTPLAYER_STYLE_ID;
     style.textContent = `${Artplayer.STYLE}
-:host(:fullscreen), :host(:-webkit-full-screen) {
-  width: var(--txzz-player-viewport-width, 100vw) !important;
-  height: var(--txzz-player-viewport-height, 100dvh) !important;
+/* 真正进入浏览器 Fullscreen API 时：铺满系统全屏层，隐藏浏览器 UI 后的可视区域。 */
+:host(:fullscreen),
+:host(:-webkit-full-screen) {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
   background: #000 !important;
+  pointer-events: auto !important;
+  overflow: hidden !important;
+}
+:host(:fullscreen) #${ROOT_ID},
+:host(:-webkit-full-screen) #${ROOT_ID},
+:host(:fullscreen) .txzz-candy-app,
+:host(:-webkit-full-screen) .txzz-candy-app,
+:host(:fullscreen) .txzz-app-panel-overlay,
+:host(:-webkit-full-screen) .txzz-app-panel-overlay,
+:host(:fullscreen) .txzz-app-panel-frame,
+:host(:-webkit-full-screen) .txzz-app-panel-frame,
+:host(:fullscreen) .txzz-app-main,
+:host(:-webkit-full-screen) .txzz-app-main,
+:host(:fullscreen) .txzz-playback-root,
+:host(:-webkit-full-screen) .txzz-playback-root,
+:host(:fullscreen) .txzz-player-card,
+:host(:-webkit-full-screen) .txzz-player-card,
+:host(:fullscreen) .txzz-player-shell,
+:host(:-webkit-full-screen) .txzz-player-shell,
+:host(:fullscreen) .txzz-player-orientation-stage,
+:host(:-webkit-full-screen) .txzz-player-orientation-stage,
+:host(:fullscreen) .txzz-player-card-body,
+:host(:-webkit-full-screen) .txzz-player-card-body {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 100% !important;
+  min-height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
   pointer-events: auto !important;
 }
-:host(:fullscreen) #${ROOT_ID}, :host(:-webkit-full-screen) #${ROOT_ID} {
-  width: var(--txzz-player-viewport-width, 100vw) !important;
-  height: var(--txzz-player-viewport-height, 100dvh) !important;
-  background: #000 !important;
-  pointer-events: auto !important;
+:host(:fullscreen) .txzz-app-panel-backdrop,
+:host(:-webkit-full-screen) .txzz-app-panel-backdrop,
+:host(:fullscreen) .txzz-app-sidebar,
+:host(:-webkit-full-screen) .txzz-app-sidebar,
+:host(:fullscreen) .txzz-app-header,
+:host(:-webkit-full-screen) .txzz-app-header,
+:host(:fullscreen) .txzz-app-mobile-nav,
+:host(:-webkit-full-screen) .txzz-app-mobile-nav,
+:host(:fullscreen) .txzz-playback-hidden-during-fullscreen,
+:host(:-webkit-full-screen) .txzz-playback-hidden-during-fullscreen,
+:host(:fullscreen) .txzz-player-card-title,
+:host(:-webkit-full-screen) .txzz-player-card-title,
+:host(:fullscreen) .txzz-player-card-actions,
+:host(:-webkit-full-screen) .txzz-player-card-actions {
+  display: none !important;
 }`;
     shadow.appendChild(style);
   }

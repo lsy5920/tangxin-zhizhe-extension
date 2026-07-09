@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2240";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2305";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 22:40 【新增】升级版本到 v3.0.9，完整专业手势系统：单击/三区双击/长按倍速快退/横滑进度/左右竖滑音量亮度/滚轮音量/Shift滚轮亮度，双击区域闪烁与侧边 HUD。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 23:05 【优化】升级版本到 v3.1.0，强化浏览器沉浸全屏：优先 light DOM 宿主 + navigationUI hide，失败再尝试页面根节点/video/壳层，对齐网站原生全屏体验。";
 
 const DEFAULT_STATE = {
   role: "guest",

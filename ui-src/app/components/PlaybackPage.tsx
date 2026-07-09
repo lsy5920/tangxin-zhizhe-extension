@@ -72,8 +72,11 @@ type PlayerFullscreenTune = {
 
 
 type FullscreenTarget = HTMLElement & {
-  webkitRequestFullscreen?: () => Promise<void> | void;
+  requestFullscreen?: (options?: FullscreenOptions) => Promise<void>;
+  webkitRequestFullscreen?: (options?: FullscreenOptions | unknown) => Promise<void> | void;
+  webkitRequestFullScreen?: (options?: FullscreenOptions | unknown) => Promise<void> | void;
   msRequestFullscreen?: () => Promise<void> | void;
+  webkitEnterFullscreen?: () => Promise<void> | void;
 };
 
 type FullscreenDocument = Document & {
@@ -81,6 +84,10 @@ type FullscreenDocument = Document & {
   msFullscreenElement?: Element | null;
   webkitExitFullscreen?: () => Promise<void> | void;
   msExitFullscreen?: () => Promise<void> | void;
+};
+
+type FullscreenOptions = {
+  navigationUI?: "auto" | "hide" | "show";
 };
 
 type ScreenOrientationController = ScreenOrientation & {
@@ -360,7 +367,8 @@ function hlsQualityLabel(level: { name?: string; height?: number; bitrate?: numb
 
 function fullscreenElement() {
   const doc = document as FullscreenDocument;
-  const shadowFullscreen = fullscreenHostElement()?.shadowRoot?.fullscreenElement || null;
+  const host = fullscreenHostElement();
+  const shadowFullscreen = host?.shadowRoot?.fullscreenElement || null;
   return shadowFullscreen || document.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement || null;
 }
 
@@ -373,21 +381,85 @@ function isPlayerFullscreenElement(node: Element | null, shell: HTMLElement | nu
     node && (
       (shell && (node === shell || shell.contains(node)))
       || Boolean(host && node === host)
+      || node === document.documentElement
+      || node === document.body
+      || (node instanceof HTMLVideoElement)
     )
   );
 }
 
-async function requestFullscreen(target: HTMLElement) {
-  const node = target as FullscreenTarget;
-  const request = node.requestFullscreen || node.webkitRequestFullscreen || node.msRequestFullscreen;
-  if (!request) throw new Error("当前浏览器不支持浏览器全屏");
-  await request.call(node);
+function isRealBrowserFullscreen() {
+  return Boolean(fullscreenElement());
+}
+
+/**
+ * 请求真正的浏览器沉浸全屏（隐藏地址栏/系统 UI，尽量对齐网站原生 video 全屏）。
+ * 优先 light DOM 宿主：Shadow 内部节点在扩展场景经常 requestFullscreen 失败。
+ */
+async function requestTrueBrowserFullscreen(targets: Array<HTMLElement | null | undefined>) {
+  const options: FullscreenOptions = { navigationUI: "hide" };
+  let lastError: unknown = null;
+  for (const target of targets) {
+    if (!target) continue;
+    const node = target as FullscreenTarget;
+    try {
+      if (typeof node.requestFullscreen === "function") {
+        await node.requestFullscreen(options);
+        return target;
+      }
+      if (typeof node.webkitRequestFullscreen === "function") {
+        await Promise.resolve(node.webkitRequestFullscreen.call(node, options));
+        return target;
+      }
+      if (typeof node.webkitRequestFullScreen === "function") {
+        await Promise.resolve(node.webkitRequestFullScreen.call(node));
+        return target;
+      }
+      if (typeof node.msRequestFullscreen === "function") {
+        await Promise.resolve(node.msRequestFullscreen.call(node));
+        return target;
+      }
+      // iOS Safari：仅 video 支持 webkitEnterFullscreen，可进入系统级视频全屏。
+      if (typeof node.webkitEnterFullscreen === "function") {
+        await Promise.resolve(node.webkitEnterFullscreen.call(node));
+        return target;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("当前浏览器未允许进入系统全屏");
 }
 
 async function exitFullscreen() {
   const doc = document as FullscreenDocument;
   const exit = document.exitFullscreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
-  if (fullscreenElement() && exit) await exit.call(document);
+  if (fullscreenElement() && exit) {
+    try {
+      await exit.call(document);
+    } catch {
+      // 部分环境退出全屏会抛错，忽略后继续清本地状态。
+    }
+  }
+}
+
+function prepareHostForBrowserFullscreen(host: HTMLElement | null) {
+  if (!host) return;
+  host.classList.add(playerFullscreenHostClass);
+  host.style.setProperty("background", "#000", "important");
+  host.style.setProperty("pointer-events", "auto", "important");
+  host.style.setProperty("width", "100vw", "important");
+  host.style.setProperty("height", "100vh", "important");
+  host.style.setProperty("inset", "0", "important");
+}
+
+function restoreHostAfterBrowserFullscreen(host: HTMLElement | null) {
+  if (!host) return;
+  host.classList.remove(playerFullscreenHostClass);
+  host.style.removeProperty("background");
+  host.style.pointerEvents = "none";
+  host.style.width = "100vw";
+  host.style.height = "100vh";
 }
 
 function wantedScreenOrientation(mode: PlayerOrientationMode, videoLandscape: boolean) {
@@ -981,15 +1053,15 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   useEffect(() => {
     const host = fullscreenHostElement();
     if (!host) return;
-    // 只有用户明确进入全屏（浏览器全屏或沉浸全屏）时才挂宿主模式类，避免普通播放误藏面板。
+    // 只有用户明确进入全屏时才挂宿主模式类，避免普通播放误藏面板。
     if (playerFullscreenActive && wantFullscreenRef.current) {
-      host.classList.add(playerFullscreenHostClass);
+      prepareHostForBrowserFullscreen(host);
       return () => {
-        if (!wantFullscreenRef.current) host.classList.remove(playerFullscreenHostClass);
+        if (!wantFullscreenRef.current) restoreHostAfterBrowserFullscreen(host);
       };
     }
     if (!playerFullscreenActive || !wantFullscreenRef.current) {
-      host.classList.remove(playerFullscreenHostClass);
+      restoreHostAfterBrowserFullscreen(host);
     }
     return undefined;
   }, [playerFullscreenActive]);
@@ -999,34 +1071,43 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       const fullscreenNode = fullscreenElement();
       const shell = playerShellRef.current;
       const host = fullscreenHostElement();
-      const active = isPlayerFullscreenElement(fullscreenNode, shell, host);
-      if (active && wantFullscreenRef.current && fullscreenNode === host) {
-        host?.classList.add(playerFullscreenHostClass);
+      const active = Boolean(fullscreenNode);
+      const ours = isPlayerFullscreenElement(fullscreenNode, shell, host);
+      if (active && ours && wantFullscreenRef.current) {
+        prepareHostForBrowserFullscreen(host);
+        setBrowserFullscreenActive(true);
+        setPlayerImmersive(true);
+      } else if (!active) {
+        // 用户按 Esc / 系统手势退出真实全屏时，同步清本地状态。
+        setBrowserFullscreenActive(false);
+        if (wantFullscreenRef.current) {
+          // 仍保留沉浸铺满，直到用户点退出；若本就不想全屏则彻底清理。
+          if (!playerImmersive) {
+            wantFullscreenRef.current = false;
+            restoreHostAfterBrowserFullscreen(host);
+          }
+        } else {
+          setPlayerImmersive(false);
+          restoreHostAfterBrowserFullscreen(host);
+        }
       }
-      setBrowserFullscreenActive(active && wantFullscreenRef.current);
       setPlayerFullscreenDiagnostic(
         measureFullscreenDiagnostic(shell, host, (playerImmersive || active) && wantFullscreenRef.current, videoRef.current)
       );
-      // 浏览器已退出全屏，或当前并不是用户主动全屏：清理沉浸态和宿主类，防止面板一直黑屏消失。
-      if (!active) {
-        if (!wantFullscreenRef.current) {
-          setPlayerImmersive(false);
-          host?.classList.remove(playerFullscreenHostClass);
-        } else if (fullscreenNode !== shell && fullscreenNode !== host) {
-          wantFullscreenRef.current = false;
-          setPlayerImmersive(false);
-          host?.classList.remove(playerFullscreenHostClass);
-        }
-      }
     };
     document.addEventListener("fullscreenchange", syncFullscreen);
     document.addEventListener("webkitfullscreenchange", syncFullscreen);
+    // iOS 视频全屏进出
+    document.addEventListener("webkitbeginfullscreen", syncFullscreen as EventListener);
+    document.addEventListener("webkitendfullscreen", syncFullscreen as EventListener);
     syncFullscreen();
     return () => {
       document.removeEventListener("fullscreenchange", syncFullscreen);
       document.removeEventListener("webkitfullscreenchange", syncFullscreen);
+      document.removeEventListener("webkitbeginfullscreen", syncFullscreen as EventListener);
+      document.removeEventListener("webkitendfullscreen", syncFullscreen as EventListener);
     };
-  }, []);
+  }, [playerImmersive]);
 
   useEffect(() => {
     refreshFullscreenDiagnostic();
@@ -1614,11 +1695,9 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     } catch {
       // 忽略 ArtPlayer 退出全屏失败。
     }
-    const fullscreenNode = fullscreenElement();
-    const shell = playerShellRef.current;
     const host = fullscreenHostElement();
-    if (isPlayerFullscreenElement(fullscreenNode, shell, host)) await exitFullscreen();
-    host?.classList.remove(playerFullscreenHostClass);
+    if (isRealBrowserFullscreen()) await exitFullscreen();
+    restoreHostAfterBrowserFullscreen(host);
     setBrowserFullscreenActive(false);
     setPlayerFullscreenDiagnostic(emptyFullscreenDiagnostic);
     setPlayerFullscreenTune(emptyFullscreenTune);
@@ -1633,15 +1712,18 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     closePlayerPopovers();
     wantFullscreenRef.current = true;
     const host = fullscreenHostElement();
-    const fullscreenTarget = shell;
-    host?.classList.add(playerFullscreenHostClass);
-
+    const video = (art.video || videoRef.current) as HTMLVideoElement | null;
+    // 先挂播放专用样式，再申请系统全屏，避免全屏瞬间露出侧栏/底栏。
+    prepareHostForBrowserFullscreen(host);
     setPlayerError("");
-    if (playerFullscreenActive || isPlayerFullscreenElement(fullscreenElement(), shell, host)) {
+
+    // 已在真实浏览器全屏中：只补齐播放器铺满，不再重复 request。
+    if (isRealBrowserFullscreen() && isPlayerFullscreenElement(fullscreenElement(), shell, host)) {
+      setBrowserFullscreenActive(true);
       setPlayerImmersive(true);
       revealPlayerControls(true);
-      setPlayerStatus(browserFullscreenActive ? "已进入浏览器全屏" : "已进入沉浸全屏");
-      art.notice.show = browserFullscreenActive ? "已进入浏览器全屏" : "已进入沉浸全屏";
+      setPlayerStatus("已进入浏览器沉浸全屏");
+      art.notice.show = "已进入浏览器沉浸全屏";
       requestScreenOrientation(playerOrientationMode, playerVideoLandscape).then((message) => {
         if (artRef.current && message) artRef.current.notice.show = message;
       });
@@ -1650,36 +1732,48 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     }
 
     try {
-      await requestFullscreen(fullscreenTarget);
+      // 优先级说明（对齐网站原生 video 全屏体验）：
+      // 1) light DOM 插件宿主：扩展 Shadow 内节点全屏经常失败
+      // 2) documentElement / body：部分浏览器只允许页面根节点
+      // 3) video 元素：最接近网站原生全屏（部分内核会切系统播放器）
+      // 4) 播放器壳层：最后尝试 Shadow 内部节点
+      const accepted = await requestTrueBrowserFullscreen([
+        host,
+        document.documentElement,
+        document.body,
+        video,
+        shell
+      ]);
       const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape);
-      setBrowserFullscreenActive(true);
+      const real = isRealBrowserFullscreen();
+      setBrowserFullscreenActive(real);
       setPlayerImmersive(true);
       revealPlayerControls(true);
-      setPlayerStatus("已进入浏览器全屏");
-      art.notice.show = orientationMessage ? `已进入浏览器全屏 · ${orientationMessage}` : "已进入浏览器全屏";
+      const via = accepted === host
+        ? "插件宿主"
+        : accepted === document.documentElement || accepted === document.body
+          ? "页面根节点"
+          : accepted === video
+            ? "视频节点"
+            : "播放器壳层";
+      const status = real ? `已进入浏览器沉浸全屏 · ${via}` : "已进入沉浸全屏";
+      setPlayerStatus(status);
+      art.notice.show = orientationMessage ? `${status} · ${orientationMessage}` : status;
+      if (!real) {
+        setPlayerError("浏览器未进入系统全屏，当前为插件内铺满兜底；可再点一次全屏或检查页面是否限制 Fullscreen。");
+      }
       scheduleFullscreenDiagnosticRefresh();
     } catch (err) {
-      try {
-        // 少数浏览器不允许 Shadow DOM 内部节点全屏，退回宿主全屏并用全屏模式样式只保留播放器。
-        if (!host) throw err;
-        await requestFullscreen(host);
-        const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape);
-        setBrowserFullscreenActive(true);
-        setPlayerImmersive(true);
-        revealPlayerControls(true);
-        setPlayerStatus("已进入浏览器全屏");
-        art.notice.show = orientationMessage ? `已进入浏览器全屏 · ${orientationMessage}` : "已进入浏览器全屏";
-        scheduleFullscreenDiagnosticRefresh();
-      } catch (fallbackErr) {
-        // 部分网页或浏览器环境会拒绝真实全屏，插件内沉浸全屏用于保证观看体验不中断。
-        const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape);
-        setPlayerImmersive(true);
-        revealPlayerControls(true);
-        setPlayerStatus("浏览器全屏受限，已切换沉浸全屏");
-        setPlayerError(`浏览器全屏未被允许，已使用沉浸全屏兜底：${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`);
-        art.notice.show = orientationMessage ? `已进入沉浸全屏 · ${orientationMessage}` : "已进入沉浸全屏";
-        scheduleFullscreenDiagnosticRefresh();
-      }
+      // 真实 Fullscreen API 被拒时，仍提供插件内铺满，但明确提示与网站原生全屏的差异。
+      const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape);
+      setBrowserFullscreenActive(false);
+      setPlayerImmersive(true);
+      prepareHostForBrowserFullscreen(host);
+      revealPlayerControls(true);
+      setPlayerStatus("浏览器全屏受限，已使用铺满兜底");
+      setPlayerError(`未能进入系统沉浸全屏（地址栏可能仍显示）：${err instanceof Error ? err.message : String(err)}`);
+      art.notice.show = orientationMessage ? `铺满兜底 · ${orientationMessage}` : "铺满兜底";
+      scheduleFullscreenDiagnosticRefresh();
     }
   };
 

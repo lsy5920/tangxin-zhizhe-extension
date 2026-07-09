@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.0.9",
-  "build": "2026-07-09-2240",
-  "releasedAt": "2026-07-09 22:40",
+  "version": "3.1.0",
+  "build": "2026-07-09-2305",
+  "releasedAt": "2026-07-09 23:05",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2305",
+      "type": "优化",
+      "title": "浏览器沉浸全屏强化 · 对齐网站原生视频全屏",
+      "detail": "修复插件全屏不像网站原生全屏的问题：全屏请求改为优先 light DOM 宿主节点并带 navigationUI:hide，失败再依次尝试页面根节点、video、播放器壳层；真正进入 Fullscreen API 后样式强制 100% 铺满系统全屏层并隐藏侧栏/底栏/标题；仅在 API 被拒时才使用插件内铺满兜底并明确提示。悬浮视频按钮同步改用系统全屏申请。"
+    },
     {
       "id": "2026-07-09-2240",
       "type": "新增",
