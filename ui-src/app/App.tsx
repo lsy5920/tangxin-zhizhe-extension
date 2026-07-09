@@ -10,7 +10,15 @@ import { SettingsPage } from "./components/SettingsPage";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
 import { APP_VERSION_LABEL } from "./constants";
 import { absoluteUrl, flowItemText, latestFullDetail } from "./helpers";
-import { getPluginHost, prepareFullscreenChrome, requestElementFullscreen, restoreFullscreenChrome, PLAYER_FULLSCREEN_HOST_CLASS } from "./components/player/browserFullscreen";
+import {
+  clearFloatingPlaybackIntent,
+  getPluginHost,
+  markFloatingPlaybackIntent,
+  prepareFullscreenChrome,
+  requestElementFullscreen,
+  restoreFullscreenChrome,
+  PLAYER_FULLSCREEN_HOST_CLASS
+} from "./components/player/browserFullscreen";
 
 const navItems: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "总览", icon: LayoutDashboard },
@@ -38,20 +46,29 @@ function action(actionName: string, payload: Record<string, unknown> = {}) {
   sendUiAction(actionName, payload);
 }
 
-/** 悬浮视频按钮：与网站一致，直接 requestFullscreen（navigationUI: hide）。 */
-function requestHostFullscreen() {
+/**
+ * 悬浮视频按钮：在用户手势栈内立刻申请系统全屏。
+ * 失败时不 restore（保留 CSS 沉浸类），交给播放页做沉浸全屏兜底。
+ */
+function requestHostFullscreenFromGesture() {
   const host = getPluginHost();
   if (!host) return;
   prepareFullscreenChrome(host);
   requestElementFullscreen(host)
-    .then(() => prepareFullscreenChrome(host))
-    .catch(() => restoreFullscreenChrome(host));
-  window.setTimeout(() => {
-    if (document.fullscreenElement === host) prepareFullscreenChrome(host);
-  }, 100);
+    .then(() => {
+      prepareFullscreenChrome(host);
+    })
+    .catch(() => {
+      // 手势全屏被拒：仍保持宿主沉浸样式，播放页会继续 CSS 铺满
+      prepareFullscreenChrome(host);
+    });
+  // 部分 Android 内核 fullscreenchange 稍晚，再补一帧宿主样式
+  window.setTimeout(() => prepareFullscreenChrome(host), 80);
+  window.setTimeout(() => prepareFullscreenChrome(host), 240);
 }
 
 function disableHostPlaybackFullscreenMode() {
+  clearFloatingPlaybackIntent();
   restoreFullscreenChrome(getPluginHost());
   // 兼容旧类名清理
   getPluginHost()?.classList.remove(PLAYER_FULLSCREEN_HOST_CLASS);
@@ -132,7 +149,11 @@ export default function App() {
   const openFloatingPlayback = () => {
     // 网页原生视频先暂停，避免插件播放器全屏后出现双声道或后台继续播放。
     action("pause-page-video");
-    requestHostFullscreen();
+    // 1) 标记悬浮全屏意图，防止播放页挂载时误清宿主全屏类
+    markFloatingPlaybackIntent();
+    // 2) 用户手势内立刻系统全屏（此时播放器可能还没挂载）
+    requestHostFullscreenFromGesture();
+    // 3) 打开播放页并触发自动全屏衔接（等 ArtPlayer 就绪后校正画面/播起）
     setOpen(true);
     setPage("playback");
     action("toggle", { force: true });

@@ -33,6 +33,43 @@ type FsDoc = Document & {
 
 export const PLAYER_FULLSCREEN_HOST_CLASS = "txzz-player-fullscreen-mode";
 
+/**
+ * 悬浮视频按钮全屏意图：
+ * 点击时在用户手势里先 requestFullscreen，播放器可能尚未挂载。
+ * 若播放页挂载时误调用 restoreFullscreenChrome，会把宿主全屏类清掉，导致「点悬浮图标不能正常全屏」。
+ * 用模块级标记串起 App → PlaybackPage 整条链路。
+ */
+let floatingPlaybackIntentActive = false;
+let floatingPlaybackIntentToken = 0;
+
+/** 标记：用户点了悬浮视频按钮，准备全屏播放。 */
+export function markFloatingPlaybackIntent(): number {
+  floatingPlaybackIntentActive = true;
+  floatingPlaybackIntentToken += 1;
+  return floatingPlaybackIntentToken;
+}
+
+/** 是否仍有未完成的悬浮全屏意图。 */
+export function peekFloatingPlaybackIntent(): boolean {
+  return floatingPlaybackIntentActive;
+}
+
+/** 消费意图（进入全屏流程成功或明确取消时调用）。 */
+export function consumeFloatingPlaybackIntent(): boolean {
+  if (!floatingPlaybackIntentActive) return false;
+  floatingPlaybackIntentActive = false;
+  return true;
+}
+
+/** 取消意图（打开普通面板 / 退出全屏时）。 */
+export function clearFloatingPlaybackIntent() {
+  floatingPlaybackIntentActive = false;
+}
+
+export function getFloatingPlaybackIntentToken() {
+  return floatingPlaybackIntentToken;
+}
+
 export function getPluginHost(): HTMLElement | null {
   return document.getElementById("txzz-candy-ui-root");
 }

@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2225";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2235";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 22:25 【修复】升级版本到 v3.1.7，修复全屏仍无画面：取消层层 fixed 黑底、video 容器透明、强制重绘合成层。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 22:35 【修复】升级版本到 v3.1.8，修复悬浮视频按钮点击后不能正常全屏：意图标记防误清宿主样式，播放器就绪后再衔接全屏。";
 
 const DEFAULT_STATE = {
   role: "guest",

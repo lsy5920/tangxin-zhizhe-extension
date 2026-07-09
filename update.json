@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.1.7",
-  "build": "2026-07-09-2225",
-  "releasedAt": "2026-07-09 22:25",
+  "version": "3.1.8",
+  "build": "2026-07-09-2235",
+  "releasedAt": "2026-07-09 22:35",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2235",
+      "type": "修复",
+      "title": "修复悬浮视频按钮不能正常全屏播放",
+      "detail": "点击右侧悬浮视频图标后：原先在用户手势里 requestFullscreen，但播放页挂载时 playerFullscreenActive=false 会误调用 restoreFullscreenChrome 清掉宿主全屏类，导致全屏失败/半残状态。现增加 floatingPlaybackIntent 意图标记串起 App→PlaybackPage；挂载立刻沉浸；最多重试等待 ArtPlayer 就绪；已在系统全屏则只校正画面播起；失败也保留 CSS 沉浸兜底。"
+    },
     {
       "id": "2026-07-09-2225",
       "type": "修复",
