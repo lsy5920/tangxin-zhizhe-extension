@@ -1501,6 +1501,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       videoRef.current = instance.video;
       instance.volume = playerVolume;
       instance.muted = playerMuted;
+      applyAdaptiveVideoLayout(instance.video, playerFillMode);
       setSafeStatus("完整播放器已就绪");
       restoreProgress();
       rememberSnapshot();
@@ -1510,7 +1511,9 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     videoRef.current = art.video;
     art.volume = playerVolume;
     art.muted = playerMuted;
+    applyAdaptiveVideoLayout(art.video, playerFillMode);
     art.on("ready", () => {
+      applyAdaptiveVideoLayout(art.video, playerFillMode);
       setSafeStatus("完整播放器已就绪");
       restoreProgress();
       rememberSnapshot();
@@ -1518,7 +1521,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     art.on("video:loadedmetadata", () => {
       const nextFit = detectVideoFit(art.video);
       setDetectedFitMode(nextFit);
-      // 元数据就绪后按原比例自适应容器，避免黑边偏移或拉伸
+      // 元数据就绪后按原比例自适应容器，并清掉可能残留的 filter
       applyAdaptiveVideoLayout(art.video, playerFillMode);
       setSafeStatus(`完整播放器就绪${art.duration ? ` · ${formatDuration(art.duration)}` : ""}`);
       art.notice.show = nextFit === "vertical" ? "已自动适配竖屏比例" : "已自动适配横屏比例";
@@ -1527,6 +1530,10 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       rememberSnapshot();
     });
     art.on("video:loadeddata", () => {
+      applyAdaptiveVideoLayout(art.video, playerFillMode);
+    });
+    art.on("video:playing", () => {
+      // 起播后再校正一次，修复部分机型「有声音无画面」
       applyAdaptiveVideoLayout(art.video, playerFillMode);
     });
     art.on("resize", () => {
@@ -2147,12 +2154,24 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             key={`${activePreviewKey}-${playerReloadKey}`}
             ref={playerContainerRef}
             className={`txzz-player-clean txzz-player-fill-${playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain"} ${playerFullscreenActive ? "txzz-player-fullscreen-clean" : "h-full"} txzz-player-card-body w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full`}
+            style={
+              playerFullscreenActive
+                ? ({ position: "absolute", inset: 0, width: "100%", height: "100%", minHeight: 0, background: "#000" } as CSSProperties)
+                : ({ background: "#000" } as CSSProperties)
+            }
+          />
+          {/* 亮度遮罩：替代 video 上的 CSS filter，避免 Android 黑屏只剩声音 */}
+          <div
+            className="txzz-player-brightness-mask"
+            data-mode={playerBrightness > 100 ? "boost" : "dim"}
             style={{
-              "--txzz-player-brightness": `${playerBrightness}%`,
-              ...(playerFullscreenActive
-                ? { position: "absolute", inset: 0, width: "100%", height: "100%", minHeight: 0, background: "#000" }
-                : {})
-            } as CSSProperties}
+              opacity: playerBrightness === 100
+                ? 0
+                : playerBrightness < 100
+                  ? Math.min(0.75, (100 - playerBrightness) / 100)
+                  : Math.min(0.55, (playerBrightness - 100) / 80)
+            }}
+            aria-hidden
           />
           {/* 专业手势层：单击显隐、三区双击、长按倍速/快退、横滑进度、左右竖滑音量亮度、滚轮音量。 */}
           <PlayerGestureSurface

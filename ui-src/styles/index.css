@@ -252,17 +252,26 @@
   }
 }
 
-/* 视频自适应：完整显示、居中、随容器伸缩（网站常见 object-fit: contain） */
+/*
+ * 视频自适应：完整显示、居中、随容器伸缩。
+ * 严禁对 video 使用 CSS filter（brightness 等）——
+ * Android / Kiwi 上 filter 会导致「只听得见声音、画面全黑」。
+ * 亮度改用上层遮罩 .txzz-player-brightness-mask 实现。
+ */
 .txzz-player-clean .art-video,
 .txzz-player-clean video,
 .txzz-player-shell video {
   width: 100% !important;
   height: 100% !important;
-  max-width: 100% !important;
-  max-height: 100% !important;
-  filter: brightness(var(--txzz-player-brightness, 100%)) !important;
-  object-position: var(--txzz-player-video-position-x, 50%) 50% !important;
+  max-width: none !important;
+  max-height: none !important;
+  filter: none !important;
+  -webkit-filter: none !important;
+  object-fit: contain !important;
+  object-position: center center !important;
   background: #000 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
 }
 
 .txzz-player-fill-contain .art-video,
@@ -360,7 +369,24 @@
   opacity: 1 !important;
   visibility: visible !important;
   z-index: 1 !important;
-  filter: brightness(var(--txzz-player-brightness, 100%)) !important;
+  filter: none !important;
+  -webkit-filter: none !important;
+}
+
+/* 亮度遮罩：叠在视频上，绝不给 video 本身加 filter */
+.txzz-player-brightness-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  background: #000;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.txzz-player-brightness-mask[data-mode="boost"] {
+  background: #fff;
+  mix-blend-mode: soft-light;
 }
 
 /* 全屏时手势层必须透明且在视频之上，不能挡成实心黑块 */

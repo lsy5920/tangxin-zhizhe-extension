@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2355";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0010";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 23:55 【修复】升级版本到 v3.1.3，修复全屏后视频黑屏不显示：去掉错误 viewport 像素尺寸，全屏强制 100% 铺满并校正 video 绘制。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 00:10 【修复】升级版本到 v3.1.4，修复有声音无画面：Android/Kiwi 禁止对 video 使用 CSS filter，亮度改为遮罩层。";
 
 const DEFAULT_STATE = {
   role: "guest",

@@ -216,6 +216,7 @@ export function restoreFullscreenChrome(host: HTMLElement | null) {
 export function applyAdaptiveVideoLayout(video: HTMLVideoElement | null, fill: "contain" | "cover" | "fill" = "contain") {
   if (!video) return;
   const fit = fill || "contain";
+  // 关键：不要写 filter / -webkit-filter，Android/Kiwi 会黑屏只剩声音
   video.style.cssText = [
     "position:absolute",
     "inset:0",
@@ -233,16 +234,22 @@ export function applyAdaptiveVideoLayout(video: HTMLVideoElement | null, fill: "
     "padding:0",
     "border:0",
     "transform:none",
+    "filter:none",
+    "-webkit-filter:none",
     `object-fit:${fit}`,
     "object-position:50% 50%",
     "background:#000",
     "opacity:1",
     "visibility:visible",
+    "display:block",
     "z-index:1"
   ].join(";");
   // 移动端内联播放，避免非全屏时被系统播放器抢走
   video.setAttribute("playsinline", "true");
   video.setAttribute("webkit-playsinline", "true");
+  video.setAttribute("x5-playsinline", "true");
+  video.setAttribute("x5-video-player-type", "h5");
+  video.setAttribute("x5-video-player-fullscreen", "true");
   (video as HTMLVideoElement & { playsInline?: boolean }).playsInline = true;
 }
 
