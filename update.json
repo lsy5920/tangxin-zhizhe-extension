@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.0.7",
-  "build": "2026-07-09-2200",
-  "releasedAt": "2026-07-09 22:00",
+  "version": "3.0.8",
+  "build": "2026-07-09-2215",
+  "releasedAt": "2026-07-09 22:15",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2215",
+      "type": "修复",
+      "title": "恢复视频画面手势 · 单击显隐控制、双击暂停",
+      "detail": "修复视频画面单击、双击等手势失灵：此前为防止 ArtPlayer 误抢全屏，给视频层加了 pointer-events:none，但未提供稳定的手势承接层，导致点击落不到自定义逻辑。现新增 .txzz-player-gesture-surface 盖在视频上、控制层下；单击显示/隐藏悬浮控制，中间双击暂停/播放，左右双击快进快退，触摸滑动音量/亮度/进度恢复可用。"
+    },
     {
       "id": "2026-07-09-2200",
       "type": "修复",

@@ -128,15 +128,33 @@
   background: #000 !important;
 }
 
-/* 屏蔽 ArtPlayer 内置点击层：所有点击交给外层自定义控制与手势，避免单击暂停、双击误进全屏。 */
+/*
+ * ArtPlayer 内核整层不接收指针事件，避免内置单击/双击抢手势。
+ * 真正的单击显示控制层、双击暂停/快进、滑动调节，全部由 .txzz-player-gesture-surface 承接。
+ */
+.txzz-player-clean,
+.txzz-player-clean .art-video-player,
 .txzz-player-clean .art-video,
 .txzz-player-clean .art-poster,
 .txzz-player-clean .art-danmuku,
 .txzz-player-clean .art-layers,
 .txzz-player-clean .art-mask,
 .txzz-player-clean .art-state,
+.txzz-player-clean .art-loading,
 .txzz-player-clean video {
   pointer-events: none !important;
+}
+
+/* 手势承接层：盖在视频上、控制层下，保证单击/双击/滑动一定点得到。 */
+.txzz-player-gesture-surface {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  touch-action: none;
+  background: transparent;
+  -webkit-tap-highlight-color: transparent;
+  cursor: inherit;
+  pointer-events: auto;
 }
 
 .txzz-player-clean .art-video {

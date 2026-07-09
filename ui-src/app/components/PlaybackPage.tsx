@@ -1845,23 +1845,17 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   };
 
   const handlePlayerClick = (event: ReactMouseEvent<HTMLDivElement>) => {
-    // 滑动调节或长按手势结束后会派生一次 click，这里吞掉它避免误触发双击快进。
+    // 手势层专用：单击显示/隐藏悬浮控制，双击中间暂停/播放，双击左右快退/快进。
+    event.stopPropagation();
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
       return;
     }
-    // 刚点过主控按钮（播放/暂停/全屏等）时，忽略随后冒泡到外壳的 surface 点击。
+    // 刚点过主控按钮时，忽略紧随其后的 surface 点击。
     if (Date.now() - controlActionStampRef.current < 450) return;
-    const target = event.target as HTMLElement;
-    if (
-      !previewUrl
-      || target.closest(
-        "button,input,textarea,[role='slider'],.txzz-player-control-panel,.txzz-player-top-bar,.txzz-player-more-sheet,.txzz-player-unlock-fab,.art-bottom,.art-controls,.art-progress,.art-settings,.art-contextmenus"
-      )
-    ) {
-      return;
-    }
-    // 锁屏后单击不展开控制层，避免误触；双击左右仍允许快退快进，方便不解锁也能跳进度。
+    if (!previewUrl) return;
+
+    // 锁屏后单击不展开控制层；双击左右仍可跳进度。
     if (playerUiLocked) {
       const state = clickSeekRef.current;
       state.count += 1;
@@ -1876,13 +1870,14 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
           return;
         }
         const rect = event.currentTarget.getBoundingClientRect();
-        const zone = (clientX - rect.left) / rect.width;
+        const zone = (clientX - rect.left) / Math.max(1, rect.width);
         if (zone < 0.33) seekPlayer(-playerSeekStep);
         else if (zone > 0.67) seekPlayer(playerSeekStep);
         else showPlayerGestureHud({ kind: "lock", text: "点击右下角解锁", percent: 100 }, 1000);
       }, 240);
       return;
     }
+
     const state = clickSeekRef.current;
     state.count += 1;
     state.clientX = event.clientX;
@@ -1894,21 +1889,19 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       const rect = event.currentTarget.getBoundingClientRect();
       if (count >= 2) {
         controlsPinnedByClickRef.current = false;
-        // 三区域双击手势：左侧1/3快退，右侧1/3快进；中间1/3按设备习惯区分——
-        // PC 鼠标双击切换全屏（对齐主流视频网站），触摸双击切换播放/暂停（对齐手机播放器）。
-        const zone = (clientX - rect.left) / rect.width;
+        // 三区域双击：左 1/3 快退，右 1/3 快进，中间切换播放/暂停（手机与电脑一致）。
+        const zone = (clientX - rect.left) / Math.max(1, rect.width);
         if (zone < 0.33) {
           seekPlayer(-playerSeekStep);
         } else if (zone > 0.67) {
           seekPlayer(playerSeekStep);
-        } else if (lastPointerTypeRef.current === "mouse") {
-          togglePlayerFullscreen().catch((err) => setPlayerError(err instanceof Error ? err.message : String(err)));
         } else {
           togglePlayerPlay();
         }
-        revealPlayerControls();
+        revealPlayerControls(true);
         return;
       }
+      // 单击：显示或隐藏悬浮控制层。
       if (controlsVisibleBeforePointerRef.current || playerControlsVisible) {
         hidePlayerControlsBySurfaceClick();
       } else {
@@ -1918,18 +1911,17 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   };
 
   const startHoldSeek = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement;
+    // 手势层 pointer 入口：记录单击前的控制层可见状态，并准备长按/滑动。
     lastPointerTypeRef.current = event.pointerType || "mouse";
     controlsVisibleBeforePointerRef.current = playerControlsVisible;
-    // 锁屏时禁用长按倍速和滑动调节，避免躺着看片误触。
     if (playerUiLocked) return;
-    if (!previewUrl || target.closest("button,[role='slider'],input,textarea,.txzz-player-control-panel,.txzz-player-more-sheet,.art-bottom,.art-controls,.art-progress,.art-settings,.art-contextmenus")) return;
+    if (!previewUrl) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const pressLeft = event.clientX < rect.left + rect.width / 2;
     const seconds = pressLeft ? -playerSeekStep : playerSeekStep;
     stopHoldSeek();
     holdSeekRef.current = { active: false, seconds };
-    // 触摸场景记录滑动手势起点：横向滑动快进快退，左半屏竖滑亮度，右半屏竖滑音量。
+    // 触摸：横向滑动快进快退，左半屏竖滑亮度，右半屏竖滑音量。
     if (event.pointerType === "touch") {
       swipeGestureRef.current = {
         active: false,
@@ -1947,20 +1939,18 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
-      // 部分浏览器环境不支持捕获也不影响长按手势，后续 pointerup 会清理定时器。
+      // 不支持捕获也不影响后续 pointerup 清理。
     }
     holdSeekRef.current.delay = window.setTimeout(() => {
       if (swipeGestureRef.current.active) return;
       const art = artRef.current;
       if (pressLeft || !art) {
-        // 左侧长按：按当前步长持续快退（倍速无法为负，用连续跳转实现回看）。
         holdSeekRef.current.active = true;
         setHoldSeekHint("长按左侧：持续快退");
         seekPlayer(seconds);
         holdSeekRef.current.interval = window.setInterval(() => seekPlayer(seconds), 520);
         return;
       }
-      // 右侧长按：临时 3 倍速快进，松手立即恢复原倍速，观感比连续跳转更顺滑。
       holdSeekRef.current.active = true;
       holdRateRef.current = { active: true, prevRate: art.playbackRate || 1 };
       art.playbackRate = 3;
@@ -1971,7 +1961,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   };
 
   const handleShellPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    maybeRevealPlayerControls();
+    // 控制层已显示时，鼠标移动只续期显示时间，不强制打断用户主动隐藏。
+    if (playerControlsVisible && !playerUiLocked) maybeRevealPlayerControls();
     if (event.pointerType !== "touch" || !previewUrl) return;
     const gesture = swipeGestureRef.current;
     if (!gesture.height) return;
@@ -1980,7 +1971,6 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     if (!gesture.active) {
       const absX = Math.abs(deltaX);
       const absY = Math.abs(deltaY);
-      // 位移超过阈值后才判定手势方向，避免轻触误触发。
       if ((absX < 18 && absY < 18) || holdSeekRef.current.active) return;
       const holdState = holdSeekRef.current;
       if (holdState.delay) window.clearTimeout(holdState.delay);
@@ -1989,23 +1979,23 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       if (absX >= absY * 1.15) {
         gesture.mode = "seek";
       } else {
-        gesture.mode = gesture.startX < (event.currentTarget.getBoundingClientRect().left + gesture.width / 2) ? "brightness" : "volume";
+        const midX = event.currentTarget.getBoundingClientRect().left + gesture.width / 2;
+        gesture.mode = gesture.startX < midX ? "brightness" : "volume";
       }
     }
 
     if (gesture.mode === "seek") {
       const art = artRef.current;
-      const duration = art?.duration || playerStats.duration || 0;
-      if (!art || !duration) return;
-      // 横向滑动满屏约对应 90 秒，兼顾短视频微调与长视频快速定位。
+      const total = art?.duration || playerStats.duration || 0;
+      if (!art || !total) return;
       const seekSeconds = Math.round((deltaX / Math.max(220, gesture.width)) * 90);
       gesture.seekSeconds = seekSeconds;
-      const nextTime = Math.max(0, Math.min(duration, gesture.startTime + seekSeconds));
+      const nextTime = Math.max(0, Math.min(total, gesture.startTime + seekSeconds));
       setProgressPreviewTime(nextTime);
       showPlayerGestureHud({
         kind: seekSeconds < 0 ? "seek-back" : "seek-forward",
         text: `${seekSeconds >= 0 ? "+" : ""}${seekSeconds} 秒 · ${formatDuration(nextTime)}`,
-        percent: percent(nextTime, duration)
+        percent: percent(nextTime, total)
       }, 1200);
       return;
     }
@@ -2308,22 +2298,13 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
               <Film size={14} className="text-sky-400" /> 完整播放器
             </h3>
-            <p className="mt-1 truncate text-xs text-purple-400">{previewTitle} · 重构主控栏 · 横滑快进 · 音量/倍速快开 · 锁屏防误触</p>
+            <p className="mt-1 truncate text-xs text-purple-400">{previewTitle} · 单击显隐控制 · 双击暂停 · 左右双击快进快退</p>
           </div>
         </div>
         <div
           ref={playerShellRef}
           className={`txzz-player-shell txzz-candy-interactive select-none ${playerCursorHidden ? "cursor-none" : ""} ${playerFullscreenActive ? "txzz-player-fullscreen-shell txzz-fullscreen-active fixed inset-0 z-[2147483647] overflow-hidden rounded-none bg-black" : "relative overflow-hidden rounded-2xl bg-black shadow-inner ring-1 ring-black/20"}`}
           style={playerShellAspect ? { ...playerStageStyle, aspectRatio: playerShellAspect } : playerStageStyle}
-          onPointerDown={startHoldSeek}
-          onPointerMove={handleShellPointerMove}
-          onPointerUp={finishHoldSeek}
-          onPointerCancel={finishHoldSeek}
-          onPointerLeave={finishHoldSeek}
-          onLostPointerCapture={finishHoldSeek}
-          onMouseMove={maybeRevealPlayerControls}
-          onTouchStart={maybeRevealPlayerControls}
-          onClick={handlePlayerClick}
         >
           <div
             className="txzz-player-orientation-stage"
@@ -2336,6 +2317,22 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             ref={playerContainerRef}
             className={`txzz-player-clean txzz-player-fill-${playerFillMode} ${playerFullscreenActive ? "txzz-player-fullscreen-clean h-screen min-h-screen" : "h-full"} txzz-player-card-body w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full`}
             style={{ "--txzz-player-brightness": `${playerBrightness}%` } as CSSProperties}
+          />
+          {/* 手势承接层：盖在视频上、控制层下，专门处理单击/双击/滑动，避免 ArtPlayer 抢事件。 */}
+          <div
+            className="txzz-player-gesture-surface"
+            role="presentation"
+            aria-label="视频手势区域"
+            onPointerDown={startHoldSeek}
+            onPointerMove={handleShellPointerMove}
+            onPointerUp={finishHoldSeek}
+            onPointerCancel={finishHoldSeek}
+            onPointerLeave={finishHoldSeek}
+            onLostPointerCapture={finishHoldSeek}
+            onMouseMove={() => {
+              if (playerControlsVisible && !playerUiLocked) maybeRevealPlayerControls();
+            }}
+            onClick={handlePlayerClick}
           />
           <PlayerOverlays
             holdSeekHint={holdSeekHint}

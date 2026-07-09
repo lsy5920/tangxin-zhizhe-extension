@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2200";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2215";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 22:00 【修复】升级版本到 v3.0.7，修复点击底部「播放」导航后整页崩溃：补回 Layers 图标导入，并增加页面错误边界，避免单页异常拖垮悬浮球和面板。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 22:15 【修复】升级版本到 v3.0.8，恢复视频画面手势：新增手势承接层，单击显隐控制、双击中间暂停/播放、左右双击快进快退，滑动调节可正常使用。";
 
 const DEFAULT_STATE = {
   role: "guest",

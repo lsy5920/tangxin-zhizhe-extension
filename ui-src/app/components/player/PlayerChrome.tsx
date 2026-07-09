@@ -328,9 +328,12 @@ export function PlayerOverlays({
           <button
             type="button"
             onClick={(event) => {
+              event.preventDefault();
               event.stopPropagation();
               onPlay();
             }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onPointerUp={(event) => event.stopPropagation()}
             className="pointer-events-auto flex h-[4.25rem] w-[4.25rem] items-center justify-center rounded-full bg-black/55 text-white shadow-xl ring-1 ring-white/25 backdrop-blur transition-transform hover:scale-105 active:scale-95"
             title="播放"
           >
