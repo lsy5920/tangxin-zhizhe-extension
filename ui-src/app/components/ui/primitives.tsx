@@ -314,37 +314,61 @@ export function ModalSheet({
 
 /**
  * 快捷操作宫格。
- * 注意：渐变 class 必须写完整静态字符串，不能靠变量拼接，否则 Tailwind 扫不到、移动端会只剩白底白字。
+ * 背景必须用内联 style，避免 Shadow DOM + Tailwind 在部分机型上只生成部分渐变类，导致白底白字。
  */
-const QUICK_ACTION_TONE: Record<string, string> = {
-  pink: "bg-gradient-to-br from-pink-400 to-rose-500 shadow-pink-400/30",
-  purple: "bg-gradient-to-br from-purple-400 to-violet-500 shadow-purple-400/30",
-  sky: "bg-gradient-to-br from-sky-400 to-blue-500 shadow-sky-400/30",
-  amber: "bg-gradient-to-br from-amber-400 to-orange-500 shadow-amber-400/30",
-  emerald: "bg-gradient-to-br from-emerald-400 to-teal-500 shadow-emerald-400/30",
-  rose: "bg-gradient-to-br from-rose-400 to-pink-500 shadow-rose-400/30"
+const QUICK_ACTION_STYLE: Record<string, { background: string; boxShadow: string }> = {
+  pink: {
+    background: "linear-gradient(145deg, #f472b6 0%, #fb7185 48%, #f43f5e 100%)",
+    boxShadow: "0 8px 18px rgba(244, 63, 94, 0.28)"
+  },
+  purple: {
+    background: "linear-gradient(145deg, #c084fc 0%, #a855f7 48%, #8b5cf6 100%)",
+    boxShadow: "0 8px 18px rgba(147, 51, 234, 0.28)"
+  },
+  sky: {
+    background: "linear-gradient(145deg, #38bdf8 0%, #0ea5e9 48%, #2563eb 100%)",
+    boxShadow: "0 8px 18px rgba(14, 165, 233, 0.28)"
+  },
+  amber: {
+    background: "linear-gradient(145deg, #fbbf24 0%, #f59e0b 48%, #f97316 100%)",
+    boxShadow: "0 8px 18px rgba(249, 115, 22, 0.28)"
+  },
+  emerald: {
+    background: "linear-gradient(145deg, #34d399 0%, #10b981 48%, #14b8a6 100%)",
+    boxShadow: "0 8px 18px rgba(16, 185, 129, 0.28)"
+  },
+  rose: {
+    background: "linear-gradient(145deg, #fb7185 0%, #f43f5e 48%, #e11d48 100%)",
+    boxShadow: "0 8px 18px rgba(244, 63, 94, 0.28)"
+  }
 };
 
 export function QuickActionGrid({
   items
 }: {
-  items: Array<{ label: string; icon: LucideIcon; tone?: keyof typeof QUICK_ACTION_TONE; color?: string; onClick: () => void }>;
+  items: Array<{ label: string; icon: LucideIcon; tone?: keyof typeof QUICK_ACTION_STYLE; color?: string; onClick: () => void }>;
 }) {
   return (
     <div className="grid grid-cols-4 gap-2">
       {items.map((item) => {
-        // 优先用 tone 映射完整 class；兼容旧 color 字段时回落到 purple。
-        const toneKey = (item.tone || "purple") as keyof typeof QUICK_ACTION_TONE;
-        const toneClass = QUICK_ACTION_TONE[toneKey] || QUICK_ACTION_TONE.purple;
+        const toneKey = (item.tone || "purple") as keyof typeof QUICK_ACTION_STYLE;
+        const style = QUICK_ACTION_STYLE[toneKey] || QUICK_ACTION_STYLE.purple;
         return (
           <button
             key={item.label}
             type="button"
             onClick={item.onClick}
-            className={`flex min-h-[4.5rem] flex-col items-center justify-center gap-1.5 rounded-2xl p-2.5 text-white shadow-md transition-transform active:scale-95 ${toneClass}`}
+            className="txzz-quick-action-btn flex min-h-[4.5rem] flex-col items-center justify-center gap-1.5 rounded-2xl border-0 p-2.5 transition-transform active:scale-95"
+            style={{
+              background: style.background,
+              boxShadow: style.boxShadow,
+              color: "#ffffff"
+            }}
           >
-            <item.icon size={18} strokeWidth={2.2} className="text-white" />
-            <span className="text-center text-[10px] font-semibold leading-tight text-white">{item.label}</span>
+            <item.icon size={18} strokeWidth={2.2} color="#ffffff" />
+            <span className="text-center text-[10px] font-semibold leading-tight" style={{ color: "#ffffff" }}>
+              {item.label}
+            </span>
           </button>
         );
       })}

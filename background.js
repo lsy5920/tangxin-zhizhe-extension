@@ -29,18 +29,27 @@ const REPOSITORY_CONFIG = {
     "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
+  // 主源 + CDN 镜像，国内 raw.githubusercontent 经常失败时自动切换。
+  updateManifestUrls: [
+    "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/update.json",
+    "https://cdn.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/update.json",
+    "https://fastly.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/update.json",
+    "https://gcore.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/update.json"
+  ],
   updateManifestUrl: "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/update.json",
   readmeUrls: [
     "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/README.md",
+    "https://cdn.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/README.md",
+    "https://fastly.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/README.md",
     "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/master/README.md"
   ],
   checkIntervalMs: 0,
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0215";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0230";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 02:15 【修复】升级版本到 v3.4.1，修复总览快捷操作仅同步账号有背景色、其余按钮不可见；下载页去掉重复的顶部数量统计。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 02:30 【修复】升级版本到 v3.4.2，快捷操作改内联渐变彻底修复白底；更新检测增加 jsDelivr 多镜像，避免 raw.githubusercontent 失败导致检测不到新版本。";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1631,12 +1640,16 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
   const localVersion = localExtensionVersion();
   const localBuild = LOCAL_UPDATE_BUILD;
   const readmeFallback = options.readmeFallback || null;
-  const updateAvailable = shouldUpdateByManifest(remoteManifest, localVersion, localBuild) || Boolean(readmeFallback);
+  const versionUpdate = shouldUpdateByManifest(remoteManifest, localVersion, localBuild);
+  const updateAvailable = versionUpdate || Boolean(readmeFallback);
   const updateId = readmeFallback?.id || remoteManifest.id || `${remoteManifest.version}|${remoteManifest.build}`;
   const latest = remoteManifest.latest || {};
   const downloadCandidates = repositoryArchiveCandidates(remoteManifest);
   const downloadUrl = downloadCandidates[0] || currentArchiveUrl(remoteManifest);
   const changelog = normalizeChangelogItems(remoteManifest.changelog || []);
+  const compareHint = versionUpdate
+    ? `远程 v${remoteManifest.version}/${remoteManifest.build} 新于本地 v${localVersion}/${localBuild}`
+    : `本地 v${localVersion}/${localBuild} · 远程 v${remoteManifest.version || "?"}/${remoteManifest.build || "?"}`;
   const remote = {
     id: updateId,
     line: readmeFallback?.line || `${remoteManifest.releasedAt || remoteManifest.build} 【${latest.type || "更新"}】${latest.title || "发现新版本"}`,
@@ -1645,14 +1658,17 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
     text: readmeFallback?.detail || latest.detail || latest.title || "远程版本清单已发布新版本。",
     title: readmeFallback?.title || latest.title || (updateAvailable ? "发现新版本" : "当前已是最新版本"),
     detail: readmeFallback?.detail || latest.detail || latest.title || (updateAvailable
-      ? "远程已发布新版本，建议下载并重新加载扩展。"
-      : "远程版本与本地一致，可继续使用。"),
+      ? `远程已发布新版本（${compareHint}），建议下载并重新加载扩展。`
+      : `当前已是最新（${compareHint}），可继续使用。`),
     version: readmeFallback?.version || remoteManifest.version,
     build: readmeFallback?.build || remoteManifest.build,
     releasedAt: readmeFallback?.releasedAt || remoteManifest.releasedAt,
     archiveUrl: downloadUrl,
     downloadCandidates,
-    detectionSource: readmeFallback ? "README 更新日志兜底" : "update.json",
+    detectionSource: readmeFallback
+      ? "README 更新日志兜底"
+      : (options.manifestSourceLabel || "update.json"),
+    compareHint,
     changelog: changelog.length
       ? changelog
       : (readmeFallback
@@ -1669,44 +1685,75 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
     updateAvailable,
     shouldNotify: Boolean(updateAvailable),
     repositoryUrl: remoteManifest.homepage || REPOSITORY_CONFIG.url,
-    manifestUrl: options.manifestUrl || REPOSITORY_CONFIG.updateManifestUrl,
+    manifestUrl: options.manifestUrl || remoteManifest.manifestUrl || REPOSITORY_CONFIG.updateManifestUrl,
     downloadUrl,
     downloadCandidates,
     local: { version: localVersion, build: localBuild },
     remote,
     updateManifest: remoteManifest,
     readmeFallback,
+    compareHint,
     updateSystem: {
       schemaVersion: UPDATE_STATE_SCHEMA_VERSION,
-      engine: "upgrade-system-v4",
+      engine: "upgrade-system-v5",
       cacheTtlMs: REPOSITORY_CONFIG.checkIntervalMs,
       ignoredLegacyCache: Boolean(options.ignoredLegacyCache),
-      cachePolicy: "升级系统 v4：每次检查都实时拉取 update.json，不复用旧缓存。",
-      downloadPolicy: "下载前重新检测清单；地址追加时间戳；自动尝试 GitHub 多候选源。"
+      cachePolicy: "升级系统 v5：实时拉取，主源失败自动切换 jsDelivr 等镜像。",
+      downloadPolicy: "下载前重新检测清单；地址追加时间戳；自动尝试 GitHub 多候选源。",
+      mirrorCount: (REPOSITORY_CONFIG.updateManifestUrls || []).length
     },
     ...(options.extra || {})
   };
 }
 
-async function fetchRemoteUpdateManifest(options = {}) {
+function updateManifestCandidateUrls(options = {}) {
   const shouldBypassCache = options.force || options.realtime || options.noCache !== false;
-  const sep = REPOSITORY_CONFIG.updateManifestUrl.includes("?") ? "&" : "?";
-  const url = shouldBypassCache
-    ? `${REPOSITORY_CONFIG.updateManifestUrl}${sep}txzz_update=${Date.now()}_${Math.random().toString(16).slice(2)}`
-    : REPOSITORY_CONFIG.updateManifestUrl;
-  const text = await fetchTextWithTimeout(url);
-  const parsed = JSON.parse(text);
-  const manifest = normalizeRemoteUpdateManifest(parsed);
-  if (!manifest.version || !manifest.build) throw new Error("远程 update.json 缺少 version 或 build");
-  manifest.manifestUrl = url;
-  return manifest;
+  const baseList = uniqueTextList([
+    ...(Array.isArray(REPOSITORY_CONFIG.updateManifestUrls) ? REPOSITORY_CONFIG.updateManifestUrls : []),
+    REPOSITORY_CONFIG.updateManifestUrl
+  ]);
+  if (!shouldBypassCache) return baseList;
+  return baseList.map((base) => {
+    const sep = base.includes("?") ? "&" : "?";
+    return `${base}${sep}txzz_update=${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  });
+}
+
+async function fetchRemoteUpdateManifest(options = {}) {
+  const candidates = updateManifestCandidateUrls(options);
+  const errors = [];
+  for (const url of candidates) {
+    try {
+      const text = await fetchTextWithTimeout(url);
+      const parsed = JSON.parse(text);
+      const manifest = normalizeRemoteUpdateManifest(parsed);
+      if (!manifest.version || !manifest.build) {
+        errors.push(`${url}：缺少 version 或 build`);
+        continue;
+      }
+      manifest.manifestUrl = url.split("?")[0];
+      manifest.manifestFetchUrl = url;
+      return manifest;
+    } catch (err) {
+      errors.push(`${url}：${err?.message || String(err)}`);
+    }
+  }
+  throw new Error(`远程版本清单读取失败（已尝试 ${candidates.length} 个源）：${errors.slice(0, 3).join("；")}`);
 }
 
 function shouldUpdateByManifest(remote = {}, localVersion = localExtensionVersion(), localBuild = LOCAL_UPDATE_BUILD) {
-  const versionDiff = compareVersions(remote.version, localVersion);
+  const remoteVersion = String(remote.version || "").trim();
+  const remoteBuild = String(remote.build || "").trim();
+  const localVer = String(localVersion || "").trim();
+  const localBld = String(localBuild || "").trim();
+  if (!remoteVersion) return false;
+  const versionDiff = compareVersions(remoteVersion, localVer);
   if (versionDiff > 0) return true;
   if (versionDiff < 0) return false;
-  return compareBuilds(remote.build, localBuild) > 0;
+  // 版本号相同：构建号更新则提示升级；构建号为空时只要远程有记录也提示。
+  if (!remoteBuild) return false;
+  if (!localBld) return true;
+  return compareBuilds(remoteBuild, localBld) > 0;
 }
 
 /*
@@ -1777,9 +1824,13 @@ async function checkRepositoryUpdate(options = {}) {
     const remoteManifest = await fetchRemoteUpdateManifest({ force: true, realtime: true });
     const readmeFallback = await resolveReadmeFallback(remoteManifest);
     const updateId = readmeFallback?.id || remoteManifest.id || `${remoteManifest.version}|${remoteManifest.build}`;
+    const manifestHost = (() => {
+      try { return new URL(remoteManifest.manifestUrl || "").hostname; } catch (_) { return "update.json"; }
+    })();
     const result = buildRepositoryUpdateResult(remoteManifest, {
       realtime: Boolean(options.realtime || options.force),
       manifestUrl: remoteManifest.manifestUrl,
+      manifestSourceLabel: `update.json · ${manifestHost}`,
       ignoredLegacyCache: !stateSchemaOk,
       readmeFallback
     });

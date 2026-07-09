@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.4.1",
-  "build": "2026-07-10-0215",
-  "releasedAt": "2026-07-10 02:15",
+  "version": "3.4.2",
+  "build": "2026-07-10-0230",
+  "releasedAt": "2026-07-10 02:30",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0230",
+      "type": "修复",
+      "title": "快捷操作内联渐变 · 更新检测多镜像",
+      "detail": "1) 总览快捷操作背景改内联 style + 原生 CSS 双保险，彻底解决 Shadow DOM 下白底白字。2) 升级检测改为 raw.githubusercontent + jsDelivr 多镜像轮询，失败时显示明确错误；结果摘要带上本地/远程版本比对说明。"
+    },
     {
       "id": "2026-07-10-0215",
       "type": "修复",

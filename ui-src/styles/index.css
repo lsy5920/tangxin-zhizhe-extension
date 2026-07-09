@@ -68,6 +68,26 @@
   min-height: 100%;
 }
 
+/* 快捷操作按钮：内联渐变 + 原生 CSS 双保险，防止白底白字 */
+.txzz-quick-action-btn {
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  color: #fff !important;
+  border: 0 !important;
+  outline: none;
+}
+
+.txzz-quick-action-btn svg {
+  color: #fff !important;
+  stroke: #fff !important;
+  flex-shrink: 0;
+}
+
+.txzz-quick-action-btn span {
+  color: #fff !important;
+}
+
 .txzz-section {
   transition: box-shadow 0.18s ease, border-color 0.18s ease;
 }

@@ -28,6 +28,7 @@ export type RepositoryUpdateState = {
   updateAvailable?: boolean;
   shouldNotify?: boolean;
   status?: string;
+  compareHint?: string;
   updateSystem?: {
     schemaVersion?: string;
     cacheTtlMs?: number;
@@ -54,6 +55,7 @@ export type RepositoryUpdateState = {
     archiveUrl?: string;
     downloadCandidates?: string[];
     detectionSource?: string;
+    compareHint?: string;
     changelog?: UpdateChangelogItem[];
   };
 };

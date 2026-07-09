@@ -593,3 +593,4 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 2026-07-10 01:15 【优化】升级版本到 v3.3.1，缩小播放器主控与多级菜单功能图标：全屏主控改为紧凑 md 尺寸；菜单芯片与工具宫格图标约 10–12px，工具区改为上图标下文字四列布局；CSS 强制限制 more-sheet 内 svg 尺寸，减少遮挡画面。
 2026-07-10 02:00 【优化】升级版本到 v3.4.0，完全重构插件面板 UI：新增 `ui-src/app/components/ui/primitives.tsx` 统一设计系统；总览/账号/下载/设置页按 SectionCard、StatGrid、HeroBanner、ModalSheet 等组件重做布局；App 外壳侧栏/顶栏/底栏与面板动效升级；播放页外围卡片视觉对齐；同步版本号、update.json、构建产物与 README。
 2026-07-10 02:15 【修复】升级版本到 v3.4.1，修复总览「快捷操作」仅同步账号显示背景、其余按钮白底不可见（Tailwind 动态 class 未扫入）；下载页移除顶部重复 StatGrid，仅保留分段筛选数量。
+2026-07-10 02:30 【修复】升级版本到 v3.4.2，快捷操作改内联渐变+CSS 强制白字彻底修白底；更新检测增加 jsDelivr 多镜像轮询，结果展示本地/远程比对说明，降低 raw.githubusercontent 失败导致“检测不到新版本”。

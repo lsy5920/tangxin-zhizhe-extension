@@ -84,14 +84,15 @@ export function buildUpdateViewModel(
   const downloadUrl = update?.downloadUrl || remote?.archiveUrl || candidates[0] || "";
   const attemptUrls = uniqueUrls(update?.downloadAttemptUrls || []);
   const changelog = Array.isArray(remote?.changelog) ? remote.changelog.slice(0, 8) : [];
+  const compareHint = update?.compareHint || remote?.compareHint || "";
   const summary = status === "error"
-    ? `更新检测失败：${update?.error || "请稍后重试"}`
+    ? `更新检测失败：${update?.error || "请稍后重试"}（已尝试主源与 CDN 镜像）`
     : status === "available"
       ? (remote?.detail || remote?.notes || remote?.text || remote?.line || remote?.title || "远程已发布新版本，建议立即更新。")
       : status === "latest"
-        ? (remote?.detail || "当前已是最新版本，可继续使用。")
+        ? (remote?.detail || (compareHint ? `当前已是最新版本（${compareHint}）` : "当前已是最新版本，可继续使用。"))
         : status === "checking"
-          ? "正在实时读取远程版本清单，请稍候…"
+          ? "正在实时读取远程版本清单（主源 + CDN 镜像），请稍候…"
           : status === "downloading"
             ? "正在提交最新版压缩包下载，请留意浏览器下载栏。"
             : status === "downloaded"
