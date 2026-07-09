@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.1.9",
-  "build": "2026-07-09-2245",
-  "releasedAt": "2026-07-09 22:45",
+  "version": "3.2.0",
+  "build": "2026-07-09-2305",
+  "releasedAt": "2026-07-09 23:05",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2305",
+      "type": "删除",
+      "title": "移除悬浮视频图标 · 详情页默认暂停",
+      "detail": "删除获取到播放链接后显示的右侧悬浮视频按钮及其一键全屏播放链路。新增进入 /movie/detail/* 视频详情页时阻止网站自动播放：主世界拦截 HTMLMediaElement.play、去掉 autoplay、默认 pause；用户点击播放器区域后放行。content 脚本在进入详情页后短时补扫兜底。"
+    },
     {
       "id": "2026-07-09-2245",
       "type": "优化",

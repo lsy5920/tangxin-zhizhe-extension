@@ -1548,19 +1548,85 @@
     emitFlow("更新提醒", updateDetail, "ok");
   }
 
-  function pausePageVideos() {
-    // 全屏调用插件播放器前暂停页面原生媒体，避免两个播放器同时发声。
+  function isMovieDetailPage(pathname = location.pathname) {
+    return /^\/movie\/detail\/\d+\/?$/.test(String(pathname || ""));
+  }
+
+  function pausePageVideos(options = {}) {
+    // 暂停页面原生媒体；详情页还会清掉 autoplay，避免网站自动开播。
+    const quiet = Boolean(options.quiet);
     let paused = 0;
     document.querySelectorAll("video,audio").forEach((media) => {
       try {
+        media.autoplay = false;
+        media.removeAttribute("autoplay");
         if (!media.paused) {
           media.pause();
           paused += 1;
         }
       } catch (_) {}
     });
-    emitFlow("网页视频", paused ? `已暂停 ${paused} 个网页原生媒体，准备使用插件播放器` : "未发现正在播放的网页原生媒体，准备使用插件播放器", "ok");
+    if (!quiet) {
+      emitFlow(
+        "网页视频",
+        paused ? `已暂停 ${paused} 个网页原生媒体` : "未发现正在播放的网页原生媒体",
+        "ok"
+      );
+    }
     return paused;
+  }
+
+  /** 进入视频详情页：默认暂停，配合 page_hook 主世界拦截自动 play。 */
+  function installDetailPageDefaultPause() {
+    if (window.__txzzDetailDefaultPauseInstalled) return;
+    window.__txzzDetailDefaultPauseInstalled = true;
+    let lastKey = "";
+    let enterSweepUntil = 0;
+
+    const keyOf = () => `${location.pathname}${location.search}`;
+    const onEnterDetail = () => {
+      if (!isMovieDetailPage()) {
+        lastKey = "";
+        return;
+      }
+      const key = keyOf();
+      if (key === lastKey) return;
+      lastKey = key;
+      enterSweepUntil = Date.now() + 8000;
+      pausePageVideos({ quiet: false });
+      emitFlow("网页视频", "已进入视频详情页：阻止自动播放，默认暂停", "ok");
+      // 仅进入后短时间补扫，避免一直 pause 挡住用户手动播放
+      [150, 400, 900, 1800, 3500, 6000].forEach((delay) => {
+        window.setTimeout(() => {
+          if (!isMovieDetailPage() || keyOf() !== key) return;
+          if (Date.now() > enterSweepUntil) return;
+          pausePageVideos({ quiet: true });
+        }, delay);
+      });
+    };
+
+    onEnterDetail();
+    window.addEventListener("popstate", onEnterDetail);
+    window.addEventListener("hashchange", onEnterDetail);
+    // SPA 切页兜底
+    window.setInterval(onEnterDetail, 1000);
+    try {
+      const observer = new MutationObserver(() => {
+        // 只在刚进入详情页的扫尾窗口内处理晚挂载的 video
+        if (!isMovieDetailPage() || Date.now() > enterSweepUntil) return;
+        pausePageVideos({ quiet: true });
+      });
+      const startObserve = () => {
+        if (document.documentElement) {
+          observer.observe(document.documentElement, { childList: true, subtree: true });
+        }
+      };
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", startObserve, { once: true });
+      } else {
+        startObserve();
+      }
+    } catch (_) {}
   }
 
   function copyFullUrl(url, label) {
@@ -2540,6 +2606,7 @@
   });
 
   installHook();
+  installDetailPageDefaultPause();
   installAdCleaner();
   installDownloadInterceptor();
   syncViewportVars();

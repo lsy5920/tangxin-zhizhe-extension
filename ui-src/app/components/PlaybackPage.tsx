@@ -8,16 +8,13 @@ import { PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerMorePanelKey
 import { PlayerGestureHudOverlay, PlayerGestureSurface, type GestureHudState } from "./player/PlayerGestureSystem";
 import {
   applyAdaptiveVideoLayout,
-  clearFloatingPlaybackIntent,
   clearForcedFullscreenStyles,
-  consumeFloatingPlaybackIntent,
   enterPlayerBrowserFullscreen,
   exitBrowserFullscreen,
   forceFullscreenVideoVisible,
   getFullscreenElement,
   getPluginHost,
   isBrowserFullscreen,
-  peekFloatingPlaybackIntent,
   prepareFullscreenChrome,
   restoreFullscreenChrome,
   PLAYER_FULLSCREEN_HOST_CLASS
@@ -27,7 +24,6 @@ type Props = {
   state: BridgeState;
   onAction: (action: string, payload?: Record<string, unknown>) => void;
   onPage?: (page: Page) => void;
-  autoFullscreenSignal?: number;
 };
 
 type PlaybackLine = {
@@ -688,7 +684,7 @@ function orientationModeLabel(mode: PlayerOrientationMode, rotated: boolean) {
   return rotated ? "自动横屏" : "自动方向";
 }
 
-export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0 }: Props) {
+export function PlaybackPage({ state, onAction, onPage }: Props) {
   const [recordFilter, setRecordFilter] = useState<PlaybackRecordFilter>("all");
   const [recordSearch, setRecordSearch] = useState("");
   const [recordSort, setRecordSort] = useState<PlaybackRecordSort>("recent");
@@ -741,7 +737,6 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const gestureHudTimerRef = useRef<number | undefined>();
   const fullscreenMetaTimerRef = useRef<number | undefined>();
   const playerDiagnosticReportRef = useRef("");
-  const fullscreenIntentRef = useRef(0);
   // 仅在用户明确点全屏时为 true；防止 ArtPlayer 内置全屏失败/误触发把面板打成沉浸黑屏。
   const wantFullscreenRef = useRef(false);
   // 主控按钮刚操作后的短窗口，忽略外壳 surface 点击，避免“点播放却被当成点画面”。
@@ -1031,16 +1026,14 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   useEffect(() => {
     const host = fullscreenHostElement();
     if (!host) return;
-    const floating = peekFloatingPlaybackIntent();
     const realOurs = isRealBrowserFullscreen()
       && isPlayerFullscreenElement(fullscreenElement(), playerShellRef.current, host);
 
-    // 用户明确全屏 / 悬浮按钮意图 / 系统已是我们的全屏：保持宿主沉浸样式，禁止误清。
-    if ((playerFullscreenActive && wantFullscreenRef.current) || floating || wantFullscreenRef.current || realOurs) {
+    // 用户明确全屏 / 系统已是我们的全屏：保持宿主沉浸样式，禁止误清。
+    if ((playerFullscreenActive && wantFullscreenRef.current) || wantFullscreenRef.current || realOurs) {
       prepareHostForBrowserFullscreen(host);
       return () => {
-        // 仅在意图已取消且不在全屏时清理，避免 PlaybackPage 挂载竞态清掉悬浮全屏。
-        if (!wantFullscreenRef.current && !peekFloatingPlaybackIntent() && !isRealBrowserFullscreen()) {
+        if (!wantFullscreenRef.current && !isRealBrowserFullscreen()) {
           restoreHostAfterBrowserFullscreen(host);
         }
       };
@@ -1058,27 +1051,14 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       const stage = shell?.querySelector(".txzz-player-orientation-stage") as HTMLElement | null;
       const active = Boolean(fullscreenNode);
       const ours = isPlayerFullscreenElement(fullscreenNode, shell, host);
-      // 悬浮按钮已在手势里全屏宿主：即使 want 尚未置位，也要接住状态
-      if (active && ours && (wantFullscreenRef.current || peekFloatingPlaybackIntent())) {
-        wantFullscreenRef.current = true;
+      if (active && ours && wantFullscreenRef.current) {
         prepareHostForBrowserFullscreen(host);
         setBrowserFullscreenActive(true);
         setPlayerImmersive(true);
       } else if (!active) {
         // 系统全屏结束（点缩小 / Esc / 手势）：必须完整回到插件面板，禁止卡在「竖排假全屏」。
-        // 悬浮意图进行中、播放器尚未就绪时，fullscreen 可能短暂为空，不要立刻清沉浸。
-        if (peekFloatingPlaybackIntent() && wantFullscreenRef.current) {
-          setBrowserFullscreenActive(false);
-          prepareHostForBrowserFullscreen(host);
-          setPlayerImmersive(true);
-          setPlayerFullscreenDiagnostic(
-            measureFullscreenDiagnostic(shell, host, true, videoRef.current)
-          );
-          return;
-        }
         setBrowserFullscreenActive(false);
         wantFullscreenRef.current = false;
-        clearFloatingPlaybackIntent();
         setPlayerImmersive(false);
         restoreHostAfterBrowserFullscreen(host);
         clearForcedFullscreenStyles({
@@ -1707,7 +1687,6 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     const fill = playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain";
 
     wantFullscreenRef.current = false;
-    clearFloatingPlaybackIntent();
     setPlayerUiLocked(false);
     setPlayerImmersive(false);
     setBrowserFullscreenActive(false);
@@ -1795,7 +1774,6 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     wantFullscreenRef.current = true;
     const host = fullscreenHostElement();
     const video = (art.video || videoRef.current) as HTMLVideoElement | null;
-    const fromFloating = peekFloatingPlaybackIntent();
 
     // 全屏前：画面按 contain 铺满；不要用错误像素变量
     applyAdaptiveVideoLayout(video, playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain");
@@ -1803,23 +1781,21 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     setPlayerImmersive(true);
     setPlayerError("");
 
-    // 已在系统全屏中（悬浮按钮手势已申请）：只校正画面并播起
+    // 已在系统全屏中：只校正画面
     if (isRealBrowserFullscreen() && isPlayerFullscreenElement(fullscreenElement(), shell, host)) {
       setBrowserFullscreenActive(true);
       setPlayerImmersive(true);
       fixFullscreenVideoPaint();
       revealPlayerControls(true);
-      const status = fromFloating ? "悬浮按钮已全屏 · 正在校正画面" : "已进入浏览器全屏";
+      const status = "已进入浏览器全屏";
       setPlayerStatus(status);
       art.notice.show = status;
-      // 悬浮秒开时片源尺寸可能还未知：preferLandscapeFallback 强制先横屏
       requestScreenOrientation(playerOrientationMode, playerVideoLandscape, {
-        preferLandscapeFallback: fromFloating || !playerVideoPortrait
+        preferLandscapeFallback: !playerVideoPortrait
       }).then((message) => {
         if (artRef.current && message) artRef.current.notice.show = message;
       });
       scheduleFullscreenDiagnosticRefresh();
-      consumeFloatingPlaybackIntent();
       return true;
     }
 
@@ -1831,7 +1807,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     });
 
     const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape, {
-      preferLandscapeFallback: fromFloating || !playerVideoPortrait
+      preferLandscapeFallback: !playerVideoPortrait
     });
     setBrowserFullscreenActive(result.real);
     setPlayerImmersive(true);
@@ -1839,12 +1815,9 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     // 关键：全屏状态落地后强制把 video 画出来
     fixFullscreenVideoPaint();
     revealPlayerControls(true);
-    consumeFloatingPlaybackIntent();
 
     if (result.ok && result.real) {
-      const status = fromFloating
-        ? `悬浮全屏就绪 · ${result.message}`
-        : `已进入浏览器全屏 · ${result.message}`;
+      const status = `已进入浏览器全屏 · ${result.message}`;
       setPlayerStatus(status);
       setPlayerError("");
       art.notice.show = orientationMessage ? `${status} · ${orientationMessage}` : status;
@@ -1852,8 +1825,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       setPlayerStatus(result.message);
       art.notice.show = result.message;
     } else {
-      // 系统全屏失败也保持沉浸铺满，悬浮入口必须能看片
-      setPlayerStatus(fromFloating ? "悬浮沉浸全屏（系统全屏受限）" : "浏览器全屏受限，已页面内铺满");
+      setPlayerStatus("浏览器全屏受限，已页面内铺满");
       setPlayerError(result.message);
       art.notice.show = orientationMessage ? `铺满兜底 · ${orientationMessage}` : "铺满兜底";
     }
@@ -1905,7 +1877,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     }
   };
 
-  // 全屏后根据片源尺寸反复请求横屏（元数据晚到时补锁；悬浮入口必横屏）
+  // 全屏后根据片源尺寸反复请求横屏（元数据晚到时补锁）
   useEffect(() => {
     if (!playerFullscreenActive || !wantFullscreenRef.current) return undefined;
     if (playerOrientationMode === "portrait") return undefined;
@@ -1939,64 +1911,6 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     playerOrientationMode,
     browserFullscreenActive
   ]);
-
-  // 悬浮视频按钮 / 外部自动全屏信号：立刻沉浸，再等播放器就绪后真正接好全屏。
-  useEffect(() => {
-    if (!autoFullscreenSignal) return;
-
-    // 立刻锁住意图，防止挂载瞬间 restore 清掉宿主全屏类（这是悬浮按钮 bug 的核心）。
-    wantFullscreenRef.current = true;
-    fullscreenIntentRef.current = autoFullscreenSignal;
-    setPlayerImmersive(true);
-    prepareHostForBrowserFullscreen(fullscreenHostElement());
-    setPlayerStatus(previewUrl ? "正在进入全屏播放…" : "正在准备播放资源…");
-
-    if (!previewUrl) return undefined;
-
-    let cancelled = false;
-    let attempts = 0;
-    const maxAttempts = 50;
-
-    const openFullscreen = async () => {
-      if (cancelled || fullscreenIntentRef.current !== autoFullscreenSignal) return;
-      const art = artRef.current;
-      const shell = playerShellRef.current;
-      if (!art || !shell) {
-        attempts += 1;
-        if (attempts < maxAttempts) {
-          window.setTimeout(openFullscreen, 160);
-        } else {
-          // 播放器迟迟不就绪：至少保持沉浸壳，提示用户点播放
-          setPlayerStatus("播放器加载较慢，请点播放后重试全屏");
-          setPlayerError("自动全屏等待超时，可点击播放器上的全屏按钮重试。");
-          prepareHostForBrowserFullscreen(fullscreenHostElement());
-          setPlayerImmersive(true);
-          fixFullscreenVideoPaint();
-        }
-        return;
-      }
-      fullscreenIntentRef.current = 0;
-      try {
-        await art.play();
-      } catch {
-        // 自动播放可能被浏览器拦截，全屏入口仍然继续打开，用户点一下播放即可。
-      }
-      if (cancelled) return;
-      const ok = await enterPlayerFullscreen();
-      if (!ok && !cancelled) {
-        // enter 因竞态失败时再试一次
-        window.setTimeout(() => {
-          if (!cancelled) enterPlayerFullscreen().catch(() => {});
-        }, 200);
-      }
-    };
-
-    const timer = window.setTimeout(openFullscreen, 50);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [autoFullscreenSignal, previewUrl]);
 
   const seekPlayer = (seconds: number) => {
     const art = artRef.current;

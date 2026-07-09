@@ -757,7 +757,184 @@
     }
   };
 
+  /**
+   * 视频详情页：阻止网站自动播放，默认暂停。
+   * 用户主动点击播放器区域后才允许 play()。
+   */
+  function isMovieDetailPath(pathname = location.pathname) {
+    return /^\/movie\/detail\/\d+\/?$/.test(String(pathname || ""));
+  }
+
+  function installDetailPageAutoplayBlocker() {
+    if (window.__txzzDetailAutoplayBlocker) return;
+    window.__txzzDetailAutoplayBlocker = true;
+
+    let userAllowedPlay = false;
+    let lastDetailKey = "";
+    let pauseSweepTimer = 0;
+
+    const detailKey = () => `${location.pathname}${location.search}`;
+
+    const resetForDetail = (reason = "enter") => {
+      if (!isMovieDetailPath()) {
+        userAllowedPlay = false;
+        lastDetailKey = "";
+        return;
+      }
+      const key = detailKey();
+      if (key !== lastDetailKey) {
+        userAllowedPlay = false;
+        lastDetailKey = key;
+        emit("fullplay-status", {
+          message: "详情页已阻止自动播放，默认暂停（点击播放器后可播）",
+          movieId: getMovieId(null, location.href),
+          background: true,
+          reason
+        });
+      }
+      pauseAllMedia("detail-enter");
+      // 首屏几秒内反复清 autoplay，覆盖晚挂载的播放器
+      [0, 200, 500, 1000, 2000, 4000, 7000].forEach((delay) => {
+        window.setTimeout(() => {
+          if (isMovieDetailPath() && !userAllowedPlay && detailKey() === lastDetailKey) {
+            pauseAllMedia(`detail-sweep:${delay}`);
+          }
+        }, delay);
+      });
+    };
+
+    const pauseAllMedia = (via = "pause") => {
+      if (!isMovieDetailPath() || userAllowedPlay) return 0;
+      let count = 0;
+      document.querySelectorAll("video,audio").forEach((media) => {
+        try {
+          media.autoplay = false;
+          media.removeAttribute("autoplay");
+          // 去掉可能触发自动播的属性
+          if (media.hasAttribute("muted") && media.dataset.txzzKeepMuted !== "1") {
+            // 不强制取消静音，只停播
+          }
+          if (!media.paused) {
+            media.pause();
+            count += 1;
+          }
+          // 部分播放器靠 currentTime/play 连环触发，标记一下便于排查
+          media.dataset.txzzAutoplayBlocked = "1";
+        } catch (_) {}
+      });
+      if (count > 0) {
+        emit("fullplay-status", {
+          message: `详情页已暂停 ${count} 个自动播放媒体`,
+          movieId: getMovieId(null, location.href),
+          background: true,
+          via
+        });
+      }
+      return count;
+    };
+
+    // 拦截 play：详情页且用户未点播放器前，直接暂停并吞掉自动 play
+    try {
+      const proto = window.HTMLMediaElement && window.HTMLMediaElement.prototype;
+      if (proto && !proto.__txzzPlayBlocked) {
+        const rawPlay = proto.play;
+        if (typeof rawPlay === "function") {
+          proto.play = function txzzGuardedPlay() {
+            if (isMovieDetailPath() && !userAllowedPlay) {
+              try {
+                this.autoplay = false;
+                this.removeAttribute("autoplay");
+                this.pause();
+              } catch (_) {}
+              // 返回 resolved Promise，避免网站播放器卡在 unhandled rejection
+              return Promise.resolve();
+            }
+            return rawPlay.apply(this, arguments);
+          };
+          proto.__txzzPlayBlocked = true;
+        }
+      }
+    } catch (_) {}
+
+    // 用户点到播放器相关区域后放行（含控制栏按钮）
+    const markUserPlayIntent = (event) => {
+      if (!isMovieDetailPath()) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (
+        target.closest(
+          "video,audio,button,[role='button'],.art-video-player,.art-video,.xgplayer,.dplayer,.vjs-control-bar,[class*='player'],[class*='Player'],[class*='control'],[class*='Control']"
+        )
+      ) {
+        userAllowedPlay = true;
+      }
+    };
+    document.addEventListener("pointerdown", markUserPlayIntent, true);
+    document.addEventListener("click", markUserPlayIntent, true);
+    document.addEventListener("touchstart", markUserPlayIntent, true);
+
+    // 新挂载的 video/audio 立刻去掉 autoplay 并暂停
+    try {
+      const observer = new MutationObserver((mutations) => {
+        if (!isMovieDetailPath() || userAllowedPlay) return;
+        let hit = false;
+        for (const mutation of mutations) {
+          mutation.addedNodes.forEach((node) => {
+            if (!(node instanceof Element)) return;
+            if (node.matches?.("video,audio") || node.querySelector?.("video,audio")) hit = true;
+          });
+        }
+        if (hit) pauseAllMedia("mutation");
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+    } catch (_) {}
+
+    // SPA 路由切换监听
+    const onRouteMaybeChanged = () => {
+      window.setTimeout(() => resetForDetail("route"), 0);
+    };
+    try {
+      const rawPush = history.pushState;
+      const rawReplace = history.replaceState;
+      history.pushState = function () {
+        const ret = rawPush.apply(this, arguments);
+        onRouteMaybeChanged();
+        return ret;
+      };
+      history.replaceState = function () {
+        const ret = rawReplace.apply(this, arguments);
+        onRouteMaybeChanged();
+        return ret;
+      };
+      window.addEventListener("popstate", onRouteMaybeChanged);
+      window.addEventListener("hashchange", onRouteMaybeChanged);
+    } catch (_) {}
+
+    // 轻量轮询路径（部分 Nuxt 路由不走 history 包装）
+    window.setInterval(() => {
+      if (!isMovieDetailPath()) {
+        if (lastDetailKey) {
+          lastDetailKey = "";
+          userAllowedPlay = false;
+        }
+        return;
+      }
+      if (detailKey() !== lastDetailKey) resetForDetail("poll");
+      else if (!userAllowedPlay && !pauseSweepTimer) {
+        // 空闲时偶尔扫一次，防止晚启动的 autoplay
+        pauseSweepTimer = window.setTimeout(() => {
+          pauseSweepTimer = 0;
+          pauseAllMedia("idle-sweep");
+        }, 1500);
+      }
+    }, 800);
+
+    resetForDetail("install");
+    emit("hook", { target: "detail-autoplay-block", status: "installed" });
+  }
+
   installSameDetailNavigationGuard();
+  installDetailPageAutoplayBlocker();
   repatchNuxtRequests("install");
   emit("hook", { target: "fetch/xhr/media/hls/fullplay", status: "installed" });
 })();

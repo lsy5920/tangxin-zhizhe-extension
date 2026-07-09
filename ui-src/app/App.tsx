@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Download, Info, LayoutDashboard, Play, Settings, Users, Video, X, Zap } from "lucide-react";
+import { Bell, Download, Info, LayoutDashboard, Play, Settings, Users, X, Zap } from "lucide-react";
 import { listenBridgeState, notifyUiReady, sendUiAction } from "./bridge";
 import type { AccountsPageIntent, BridgeState, Page } from "./types";
 import { OverviewPage } from "./components/OverviewPage";
@@ -9,13 +9,9 @@ import { DownloadsPage } from "./components/DownloadsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
 import { APP_VERSION_LABEL } from "./constants";
-import { absoluteUrl, flowItemText, latestFullDetail } from "./helpers";
+import { flowItemText } from "./helpers";
 import {
-  clearFloatingPlaybackIntent,
   getPluginHost,
-  markFloatingPlaybackIntent,
-  prepareFullscreenChrome,
-  requestElementFullscreen,
   restoreFullscreenChrome,
   PLAYER_FULLSCREEN_HOST_CLASS
 } from "./components/player/browserFullscreen";
@@ -46,29 +42,7 @@ function action(actionName: string, payload: Record<string, unknown> = {}) {
   sendUiAction(actionName, payload);
 }
 
-/**
- * 悬浮视频按钮：在用户手势栈内立刻申请系统全屏。
- * 失败时不 restore（保留 CSS 沉浸类），交给播放页做沉浸全屏兜底。
- */
-function requestHostFullscreenFromGesture() {
-  const host = getPluginHost();
-  if (!host) return;
-  prepareFullscreenChrome(host);
-  requestElementFullscreen(host)
-    .then(() => {
-      prepareFullscreenChrome(host);
-    })
-    .catch(() => {
-      // 手势全屏被拒：仍保持宿主沉浸样式，播放页会继续 CSS 铺满
-      prepareFullscreenChrome(host);
-    });
-  // 部分 Android 内核 fullscreenchange 稍晚，再补一帧宿主样式
-  window.setTimeout(() => prepareFullscreenChrome(host), 80);
-  window.setTimeout(() => prepareFullscreenChrome(host), 240);
-}
-
 function disableHostPlaybackFullscreenMode() {
-  clearFloatingPlaybackIntent();
   restoreFullscreenChrome(getPluginHost());
   // 兼容旧类名清理
   getPluginHost()?.classList.remove(PLAYER_FULLSCREEN_HOST_CLASS);
@@ -98,7 +72,6 @@ export default function App() {
   const [showUpdateBanner, setShowUpdateBanner] = useState(true);
   const [bridgeState, setBridgeState] = useState<BridgeState>({});
   const [accountsIntent, setAccountsIntent] = useState<AccountsPageIntent>({});
-  const [playbackAutofullscreenSignal, setPlaybackAutofullscreenSignal] = useState(0);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [dismissedUpdateId, setDismissedUpdateId] = useState("");
   const dragging = useRef(false);
@@ -146,19 +119,6 @@ export default function App() {
     setOpen(false);
     action("close");
   };
-  const openFloatingPlayback = () => {
-    // 网页原生视频先暂停，避免插件播放器全屏后出现双声道或后台继续播放。
-    action("pause-page-video");
-    // 1) 标记悬浮全屏意图，防止播放页挂载时误清宿主全屏类
-    markFloatingPlaybackIntent();
-    // 2) 用户手势内立刻系统全屏（此时播放器可能还没挂载）
-    requestHostFullscreenFromGesture();
-    // 3) 打开播放页并触发自动全屏衔接（等 ArtPlayer 就绪后校正画面/播起）
-    setOpen(true);
-    setPage("playback");
-    action("toggle", { force: true });
-    setPlaybackAutofullscreenSignal((value) => value + 1);
-  };
 
   const onBallPointerDown = (e: React.PointerEvent) => {
     dragging.current = true; moved.current = false;
@@ -186,7 +146,7 @@ export default function App() {
       : page === "accounts"
         ? <AccountsPage state={bridgeState} onAction={action} intent={accountsIntent} />
         : page === "playback"
-          ? <PlaybackPage state={bridgeState} onAction={action} onPage={setPage} autoFullscreenSignal={playbackAutofullscreenSignal} />
+          ? <PlaybackPage state={bridgeState} onAction={action} onPage={setPage} />
           : page === "downloads"
             ? <DownloadsPage state={bridgeState} onAction={action} />
             : <SettingsPage state={bridgeState} onAction={action} onPage={goPage} />;
@@ -209,8 +169,6 @@ export default function App() {
     remoteUpdate?.releasedAt ? `发布 ${remoteUpdate.releasedAt}` : "",
     remoteUpdate?.detectionSource ? `来源 ${remoteUpdate.detectionSource}` : bridgeState.repositoryUpdate?.source ? `来源 ${bridgeState.repositoryUpdate.source}` : ""
   ].filter(Boolean).join(" · ");
-  const latestVideo = latestFullDetail(bridgeState);
-  const latestVideoUrl = absoluteUrl(latestVideo?.playLink || latestVideo?.backupLink || "");
   const activeDownloads = Object.values(bridgeState.downloadTasks || {})
     .filter((t) => t && ["queued", "playlist", "segments", "segment", "ready"].includes(
       String((t as { stage?: string }).stage || "")
@@ -263,22 +221,6 @@ export default function App() {
             </div>
           )}
         </div>
-      )}
-
-      {!open && latestVideoUrl && (
-        <button
-          type="button"
-          onClick={openFloatingPlayback}
-          className="txzz-candy-interactive fixed z-50 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 via-cyan-400 to-emerald-500 text-white shadow-xl shadow-cyan-500/35 ring-2 ring-white/40 transition-transform active:scale-95"
-          style={{
-            right: "max(1.25rem, env(safe-area-inset-right))",
-            bottom: "max(10rem, calc(env(safe-area-inset-bottom) + 9rem))"
-          }}
-          title="使用插件播放器全屏播放，并暂停网页原视频"
-        >
-          <Video size={20} className="drop-shadow-sm" />
-          <span className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400 animate-pulse shadow-sm" />
-        </button>
       )}
 
       {open && (

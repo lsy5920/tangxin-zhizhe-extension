@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2245";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2305";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 22:45 【优化】升级版本到 v3.1.9，缩小中央手势提示块；悬浮全屏横屏片强制请求系统横屏并 CSS 兜底。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 23:05 【删除】升级版本到 v3.2.0，移除悬浮视频图标全屏入口；进入详情页阻止自动播放默认暂停。";
 
 const DEFAULT_STATE = {
   role: "guest",
