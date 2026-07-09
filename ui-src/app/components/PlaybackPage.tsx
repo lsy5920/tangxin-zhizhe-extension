@@ -1710,18 +1710,21 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     const shell = playerShellRef.current;
     const container = playerContainerRef.current;
     const video = videoRef.current || artRef.current?.video || null;
-    // 全屏后连续多帧校正，覆盖 Kiwi/Chrome 切换全屏时的尺寸抖动
+    // 全屏后连续多帧校正 + 强制重绘，覆盖 Kiwi/Chrome「进度在走画面全黑」
     const run = () => forceFullscreenVideoVisible({
       shell,
       container,
-      video,
+      video: videoRef.current || artRef.current?.video || video,
       fill: playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain"
     });
     run();
     window.requestAnimationFrame(run);
-    window.setTimeout(run, 50);
-    window.setTimeout(run, 180);
-    window.setTimeout(run, 400);
+    window.setTimeout(run, 32);
+    window.setTimeout(run, 80);
+    window.setTimeout(run, 160);
+    window.setTimeout(run, 320);
+    window.setTimeout(run, 600);
+    window.setTimeout(run, 1000);
   };
 
   const enterPlayerFullscreen = async () => {
@@ -2196,23 +2199,24 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             className="txzz-player-orientation-stage"
             data-orientation-mode={playerOrientationMode}
             data-video-orientation={playerVideoLandscape ? "landscape" : playerVideoSize.height > playerVideoSize.width ? "portrait" : "unknown"}
-            style={playerFullscreenActive ? ({ position: "absolute", inset: 0, width: "100%", height: "100%", background: "#000" } as CSSProperties) : playerStageStyle}
+            style={playerFullscreenActive ? ({ position: "absolute", inset: 0, width: "100%", height: "100%", background: "transparent" } as CSSProperties) : playerStageStyle}
           >
           <div
             key={`${activePreviewKey}-${playerReloadKey}`}
             ref={playerContainerRef}
-            className={`txzz-player-clean txzz-player-fill-${playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain"} ${playerFullscreenActive ? "txzz-player-fullscreen-clean" : "h-full"} txzz-player-card-body w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full`}
+            className={`txzz-player-clean txzz-player-fill-${playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain"} ${playerFullscreenActive ? "txzz-player-fullscreen-clean" : "h-full"} txzz-player-card-body w-full ${playerFullscreenActive ? "" : "bg-black"} [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full`}
             style={
               playerFullscreenActive
-                ? ({ position: "absolute", inset: 0, width: "100%", height: "100%", minHeight: 0, background: "#000" } as CSSProperties)
+                ? ({ position: "absolute", inset: 0, width: "100%", height: "100%", minHeight: 0, background: "transparent" } as CSSProperties)
                 : ({ background: "#000" } as CSSProperties)
             }
           />
-          {/* 亮度遮罩：替代 video 上的 CSS filter，避免 Android 黑屏只剩声音 */}
+          {/* 亮度遮罩：替代 video 上的 CSS filter，避免 Android 黑屏只剩声音；100% 时 display:none 少造合成层 */}
           <div
             className="txzz-player-brightness-mask"
             data-mode={playerBrightness > 100 ? "boost" : "dim"}
             style={{
+              display: playerBrightness === 100 ? "none" : "block",
               opacity: playerBrightness === 100
                 ? 0
                 : playerBrightness < 100

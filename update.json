@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.1.6",
-  "build": "2026-07-10-0040",
-  "releasedAt": "2026-07-10 00:40",
+  "version": "3.1.7",
+  "build": "2026-07-09-2225",
+  "releasedAt": "2026-07-09 22:25",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2225",
+      "type": "修复",
+      "title": "修复全屏仍无画面 · 合成层与多层黑底",
+      "detail": "Kiwi 复测：全屏进度条/控制栏正常、声音有，画面仍全黑；缩小后有画面。v3.1.6 仅透明手势层不够。本次：1) 全屏只让外壳 fixed 黑底，播放器内部改 absolute 且含 video 容器背景透明；2) 隐藏 art-poster/mask 等遮罩；3) 进入全屏后多帧 forceFullscreenVideoVisible + kickVideoPaint 强制重绘硬件解码层。"
+    },
     {
       "id": "2026-07-10-0040",
       "type": "修复",

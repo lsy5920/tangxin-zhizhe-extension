@@ -578,3 +578,4 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 2026-07-10 00:10 【修复】升级版本到 v3.1.4，修复有声音无画面：Android/Kiwi 禁止对 video 使用 CSS filter:brightness，亮度改为独立遮罩层，起播强制 filter:none。
 2026-07-10 00:25 【修复】升级版本到 v3.1.5，修复点缩小无法回到插件面板：退出全屏时清理强制内联样式与宿主全屏类，系统全屏结束自动回面板播放页，不再卡在竖排假全屏。
 2026-07-10 00:40 【修复】升级版本到 v3.1.6，修复全屏黑屏只有声音：全屏 CSS 误给手势层 background:#000 且层级高于 video，盖住画面；退出后规则失效故又能看见。现全屏手势层强制透明。
+2026-07-09 22:25 【修复】升级版本到 v3.1.7，修复全屏仍只有声音无画面：取消播放器内部层层 position:fixed 黑底叠层，含 video 的容器改为透明 absolute；强制隐藏 ArtPlayer 海报/遮罩；进入全屏后多帧强制校正尺寸并 kickVideoPaint 重绘 Android 硬件解码合成层。

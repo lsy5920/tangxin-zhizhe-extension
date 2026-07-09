@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0040";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2225";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 00:40 【修复】升级版本到 v3.1.6，修复全屏黑屏只有声音：手势层误设黑色背景盖住 video，全屏时强制透明。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 22:25 【修复】升级版本到 v3.1.7，修复全屏仍无画面：取消层层 fixed 黑底、video 容器透明、强制重绘合成层。";
 
 const DEFAULT_STATE = {
   role: "guest",

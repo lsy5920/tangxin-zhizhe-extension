@@ -98,17 +98,20 @@
   display: none !important;
 }
 
+/*
+ * 全屏层级铁律（Android / Kiwi 黑屏根治）：
+ * 1. 只让「外壳」链用 fixed + 黑底；播放器内部用 absolute 铺满，禁止层层 fixed 叠黑。
+ * 2. 含 video 的容器背景必须透明，黑底只放在最外层，避免盖住硬件解码合成层。
+ * 3. video 全屏时提到 z-index:1 的独立层；手势/亮度/控制栏在其上且背景透明。
+ */
 :host(.txzz-player-fullscreen-mode) .txzz-playback-root,
-:host(.txzz-player-fullscreen-mode) .txzz-player-card,
-:host(.txzz-player-fullscreen-mode) .txzz-player-shell,
-:host(.txzz-player-fullscreen-mode) .txzz-player-card-body,
-:host(.txzz-player-fullscreen-mode) .txzz-player-orientation-stage {
-  position: fixed !important;
+:host(.txzz-player-fullscreen-mode) .txzz-player-card {
+  position: absolute !important;
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
-  min-width: 100% !important;
-  min-height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
   max-width: none !important;
   max-height: none !important;
   margin: 0 !important;
@@ -121,20 +124,67 @@
   overflow: hidden !important;
 }
 
-/*
- * 手势层全屏时也要铺满，但背景必须透明！
- * 之前误写 background:#000，手势层 z-index 高于 video，导致全屏只闻其声不见其画；
- * 退出全屏后规则失效，画面又恢复 —— 与用户描述完全一致。
- */
-:host(.txzz-player-fullscreen-mode) .txzz-player-gesture-surface,
-:host(:fullscreen) .txzz-player-gesture-surface,
-:host(:-webkit-full-screen) .txzz-player-gesture-surface {
-  position: fixed !important;
+:host(.txzz-player-fullscreen-mode) .txzz-player-shell {
+  position: absolute !important;
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
-  min-width: 100% !important;
-  min-height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  overflow: hidden !important;
+  z-index: 1 !important;
+}
+
+/* 舞台 / ArtPlayer 容器：透明底，只负责尺寸，绝不盖黑 */
+:host(.txzz-player-fullscreen-mode) .txzz-player-orientation-stage,
+:host(.txzz-player-fullscreen-mode) .txzz-player-card-body,
+:host(.txzz-player-fullscreen-mode) .txzz-player-clean,
+:host(.txzz-player-fullscreen-mode) .art-video-player,
+:host(:fullscreen) .txzz-player-orientation-stage,
+:host(:-webkit-full-screen) .txzz-player-orientation-stage,
+:host(:fullscreen) .txzz-player-card-body,
+:host(:-webkit-full-screen) .txzz-player-card-body,
+:host(:fullscreen) .art-video-player,
+:host(:-webkit-full-screen) .art-video-player {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+  overflow: hidden !important;
+  z-index: 1 !important;
+}
+
+/* 手势层：铺满 + 必须透明，z 高于 video，低于控制栏 */
+:host(.txzz-player-fullscreen-mode) .txzz-player-gesture-surface,
+:host(:fullscreen) .txzz-player-gesture-surface,
+:host(:-webkit-full-screen) .txzz-player-gesture-surface {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
   max-width: none !important;
   max-height: none !important;
   margin: 0 !important;
@@ -147,18 +197,20 @@
   transform: none !important;
   overflow: hidden !important;
   z-index: 12 !important;
+  pointer-events: auto !important;
 }
 
-/* 亮度遮罩全屏时同样禁止被写成实心黑底（opacity 由 inline 控制） */
+/* 亮度遮罩：opacity 由 inline 控制；为 0 时用 display:none 避免多造合成层 */
 :host(.txzz-player-fullscreen-mode) .txzz-player-brightness-mask,
 :host(:fullscreen) .txzz-player-brightness-mask,
 :host(:-webkit-full-screen) .txzz-player-brightness-mask {
-  position: fixed !important;
+  position: absolute !important;
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
   pointer-events: none !important;
   z-index: 8 !important;
+  transform: none !important;
 }
 
 :host(.txzz-player-fullscreen-mode) .txzz-player-card-title,
@@ -333,7 +385,31 @@
  * 该变量在横屏/全屏切换时可能变成 0 或错误值，直接导致「全屏后黑屏无画面」。
  * 统一用 inset:0 + 100% 吃满全屏容器（与网站 video:fullscreen 一致）。
  */
-.txzz-player-fullscreen-shell,
+.txzz-player-fullscreen-shell {
+  position: absolute !important;
+  inset: 0 !important;
+  left: 0 !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+  overflow: hidden !important;
+  background: #000 !important;
+  transform: none !important;
+}
+
+/* 内层 clean / art 容器透明，只 shell 黑底 */
 .txzz-player-fullscreen-clean,
 .txzz-player-fullscreen-shell .txzz-player-orientation-stage,
 .txzz-player-fullscreen-shell .txzz-player-card-body,
@@ -358,13 +434,9 @@
   box-shadow: none !important;
   outline: 0 !important;
   overflow: hidden !important;
-  background: #000 !important;
+  background: transparent !important;
+  background-color: transparent !important;
   transform: none !important;
-}
-
-.txzz-player-fullscreen-shell,
-.txzz-player-fullscreen-clean {
-  background: #000 !important;
 }
 
 .txzz-player-fullscreen-clean .art-danmuku,
@@ -375,7 +447,11 @@
   background: transparent !important;
 }
 
-/* 全屏 video：绝对铺满 + contain 自适应，保证有宽高可显示 */
+/*
+ * 全屏 video：铺满容器 + contain。
+ * Android/Kiwi 在 Shadow DOM + 宿主 :fullscreen 时，若 video 被多层 fixed 黑底夹住会「只出声」。
+ * 这里强制 video / art-video 可见，父级 .art-video-player 透明，并抬高合成优先级。
+ */
 .txzz-player-fullscreen-shell video,
 .txzz-player-fullscreen-shell .art-video,
 .txzz-player-fullscreen-clean video,
@@ -401,15 +477,47 @@
   margin: 0 !important;
   padding: 0 !important;
   border: 0 !important;
+  border-radius: 0 !important;
   transform: none !important;
+  -webkit-transform: none !important;
   object-fit: contain !important;
   object-position: center center !important;
-  background: #000 !important;
+  background: transparent !important;
+  background-color: transparent !important;
   opacity: 1 !important;
   visibility: visible !important;
-  z-index: 1 !important;
+  display: block !important;
+  z-index: 2 !important;
   filter: none !important;
   -webkit-filter: none !important;
+  /* 避免被上层遮罩错误裁切 */
+  clip: auto !important;
+  clip-path: none !important;
+  -webkit-clip-path: none !important;
+}
+
+/* ArtPlayer 遮罩/海报在全屏时必须彻底隐藏，防止黑块盖住画面 */
+:host(.txzz-player-fullscreen-mode) .art-poster,
+:host(.txzz-player-fullscreen-mode) .art-mask,
+:host(.txzz-player-fullscreen-mode) .art-loading,
+:host(.txzz-player-fullscreen-mode) .art-state,
+:host(:fullscreen) .art-poster,
+:host(:fullscreen) .art-mask,
+:host(:fullscreen) .art-loading,
+:host(:fullscreen) .art-state,
+:host(:-webkit-full-screen) .art-poster,
+:host(:-webkit-full-screen) .art-mask,
+:host(:-webkit-full-screen) .art-loading,
+:host(:-webkit-full-screen) .art-state,
+.txzz-player-fullscreen-clean .art-poster,
+.txzz-player-fullscreen-clean .art-mask,
+.txzz-player-fullscreen-clean .art-loading,
+.txzz-player-fullscreen-clean .art-state {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  background: transparent !important;
 }
 
 /* 亮度遮罩：叠在视频上，绝不给 video 本身加 filter */

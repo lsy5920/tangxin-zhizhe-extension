@@ -238,11 +238,12 @@ export function applyAdaptiveVideoLayout(video: HTMLVideoElement | null, fill: "
     "-webkit-filter:none",
     `object-fit:${fit}`,
     "object-position:50% 50%",
-    "background:#000",
+    // 透明底：letterbox 黑边由外壳提供，避免 video 黑底在 Android 全屏合成时整层黑死
+    "background:transparent",
     "opacity:1",
     "visibility:visible",
     "display:block",
-    "z-index:1"
+    "z-index:2"
   ].join(";");
   // 移动端内联播放，避免非全屏时被系统播放器抢走
   video.setAttribute("playsinline", "true");
@@ -253,7 +254,51 @@ export function applyAdaptiveVideoLayout(video: HTMLVideoElement | null, fill: "
   (video as HTMLVideoElement & { playsInline?: boolean }).playsInline = true;
 }
 
-/** 全屏后强制校正播放器容器与 video 尺寸，防止 0 高/被盖住。 */
+/**
+ * 强制 video 重新参与合成（Android/Kiwi 全屏后常见「只出声不画面」）。
+ * 用 visibility 闪一下 + 尺寸重算，避免 filter/transform 类副作用。
+ */
+export function kickVideoPaint(video: HTMLVideoElement | null) {
+  if (!video) return;
+  try {
+    video.style.setProperty("visibility", "hidden", "important");
+    // 强制 reflow
+    void video.offsetWidth;
+    video.style.setProperty("visibility", "visible", "important");
+    video.style.setProperty("opacity", "1", "important");
+    video.style.setProperty("display", "block", "important");
+  } catch {
+    // 忽略
+  }
+}
+
+/** 隐藏 ArtPlayer 可能盖住画面的海报/遮罩层 */
+function hideArtCoverLayers(container: HTMLElement | null, video: HTMLVideoElement | null) {
+  const roots: Element[] = [];
+  if (container) roots.push(container);
+  if (video?.parentElement) roots.push(video.parentElement);
+  const player = video?.closest?.(".art-video-player") as HTMLElement | null;
+  if (player) roots.push(player);
+  const seen = new Set<Element>();
+  roots.forEach((root) => {
+    if (seen.has(root)) return;
+    seen.add(root);
+    root.querySelectorAll?.(".art-poster, .art-mask, .art-loading, .art-state").forEach((node) => {
+      const el = node as HTMLElement;
+      el.style.setProperty("display", "none", "important");
+      el.style.setProperty("opacity", "0", "important");
+      el.style.setProperty("visibility", "hidden", "important");
+      el.style.setProperty("pointer-events", "none", "important");
+      el.style.setProperty("background", "transparent", "important");
+    });
+    if (root instanceof HTMLElement && root.classList.contains("art-video-player")) {
+      root.style.setProperty("background", "transparent", "important");
+      root.style.setProperty("background-color", "transparent", "important");
+    }
+  });
+}
+
+/** 全屏后强制校正播放器容器与 video 尺寸，防止 0 高/被盖住/合成层丢失。 */
 export function forceFullscreenVideoVisible(params: {
   shell: HTMLElement | null;
   container: HTMLElement | null;
@@ -263,7 +308,7 @@ export function forceFullscreenVideoVisible(params: {
   const { shell, container, video, fill = "contain" } = params;
   // 只改必要属性，并打标记，退出全屏时必须 clearForcedFullscreenStyles 清掉，
   // 否则会卡在「竖排假全屏 + 浏览器导航栏」无法回面板。
-  const applyBox = (el: HTMLElement | null) => {
+  const applyOuterBox = (el: HTMLElement | null, black: boolean) => {
     if (!el) return;
     el.dataset.txzzFsForced = "1";
     el.style.setProperty("position", "absolute", "important");
@@ -282,14 +327,35 @@ export function forceFullscreenVideoVisible(params: {
     el.style.setProperty("padding", "0", "important");
     el.style.setProperty("border", "0", "important");
     el.style.setProperty("border-radius", "0", "important");
-    el.style.setProperty("background", "#000", "important");
+    // 外层壳可黑底；含 video 的容器必须透明，否则 Android 合成层只出声
+    el.style.setProperty("background", black ? "#000" : "transparent", "important");
+    el.style.setProperty("background-color", black ? "#000" : "transparent", "important");
     el.style.setProperty("overflow", "hidden", "important");
     el.style.setProperty("transform", "none", "important");
     el.style.setProperty("z-index", "1", "important");
   };
-  applyBox(shell);
-  applyBox(container);
+  applyOuterBox(shell, true);
+  applyOuterBox(container, false);
+  const stage = shell?.querySelector?.(".txzz-player-orientation-stage") as HTMLElement | null;
+  applyOuterBox(stage, false);
+  const artPlayer = (container?.querySelector?.(".art-video-player") || video?.closest?.(".art-video-player")) as HTMLElement | null;
+  applyOuterBox(artPlayer, false);
+
   applyAdaptiveVideoLayout(video, fill);
+  if (video) {
+    // video 本身背景透明，让画面层露出来
+    video.style.setProperty("background", "transparent", "important");
+    video.style.setProperty("background-color", "transparent", "important");
+    video.style.setProperty("z-index", "2", "important");
+    video.style.setProperty("opacity", "1", "important");
+    video.style.setProperty("visibility", "visible", "important");
+    video.style.setProperty("display", "block", "important");
+    video.style.setProperty("filter", "none", "important");
+    video.style.setProperty("-webkit-filter", "none", "important");
+  }
+  hideArtCoverLayers(container, video);
+  kickVideoPaint(video);
+
   if (video && video.paused === false) {
     try {
       const p = video.play();

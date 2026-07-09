@@ -75,17 +75,7 @@ function createHost() {
 :host(:fullscreen) .txzz-app-panel-frame,
 :host(:-webkit-full-screen) .txzz-app-panel-frame,
 :host(:fullscreen) .txzz-app-main,
-:host(:-webkit-full-screen) .txzz-app-main,
-:host(:fullscreen) .txzz-playback-root,
-:host(:-webkit-full-screen) .txzz-playback-root,
-:host(:fullscreen) .txzz-player-card,
-:host(:-webkit-full-screen) .txzz-player-card,
-:host(:fullscreen) .txzz-player-shell,
-:host(:-webkit-full-screen) .txzz-player-shell,
-:host(:fullscreen) .txzz-player-orientation-stage,
-:host(:-webkit-full-screen) .txzz-player-orientation-stage,
-:host(:fullscreen) .txzz-player-card-body,
-:host(:-webkit-full-screen) .txzz-player-card-body {
+:host(:-webkit-full-screen) .txzz-app-main {
   position: fixed !important;
   inset: 0 !important;
   width: 100% !important;
@@ -102,11 +92,43 @@ function createHost() {
   box-shadow: none !important;
   overflow: hidden !important;
   pointer-events: auto !important;
+  transform: none !important;
+}
+/* 播放器内部：absolute + 透明底，禁止层层 fixed 黑底盖住 video */
+:host(:fullscreen) .txzz-playback-root,
+:host(:-webkit-full-screen) .txzz-playback-root,
+:host(:fullscreen) .txzz-player-card,
+:host(:-webkit-full-screen) .txzz-player-card,
+:host(:fullscreen) .txzz-player-shell,
+:host(:-webkit-full-screen) .txzz-player-shell {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: #000 !important;
+  overflow: hidden !important;
+  transform: none !important;
+}
+:host(:fullscreen) .txzz-player-orientation-stage,
+:host(:-webkit-full-screen) .txzz-player-orientation-stage,
+:host(:fullscreen) .txzz-player-card-body,
+:host(:-webkit-full-screen) .txzz-player-card-body,
+:host(:fullscreen) .art-video-player,
+:host(:-webkit-full-screen) .art-video-player {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden !important;
+  transform: none !important;
+  z-index: 1 !important;
 }
 /* 手势层：全屏铺满但背景必须透明，否则会盖住 video */
 :host(:fullscreen) .txzz-player-gesture-surface,
 :host(:-webkit-full-screen) .txzz-player-gesture-surface {
-  position: fixed !important;
+  position: absolute !important;
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
@@ -117,7 +139,7 @@ function createHost() {
 }
 :host(:fullscreen) .txzz-player-brightness-mask,
 :host(:-webkit-full-screen) .txzz-player-brightness-mask {
-  position: fixed !important;
+  position: absolute !important;
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
@@ -138,8 +160,24 @@ function createHost() {
   -webkit-filter: none !important;
   opacity: 1 !important;
   visibility: visible !important;
-  z-index: 1 !important;
-  background: #000 !important;
+  display: block !important;
+  z-index: 2 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  transform: none !important;
+}
+:host(:fullscreen) .art-poster,
+:host(:-webkit-full-screen) .art-poster,
+:host(:fullscreen) .art-mask,
+:host(:-webkit-full-screen) .art-mask,
+:host(:fullscreen) .art-loading,
+:host(:-webkit-full-screen) .art-loading,
+:host(:fullscreen) .art-state,
+:host(:-webkit-full-screen) .art-state {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 :host(:fullscreen) .txzz-app-panel-backdrop,
 :host(:-webkit-full-screen) .txzz-app-panel-backdrop,
