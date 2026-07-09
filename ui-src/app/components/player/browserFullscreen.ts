@@ -261,15 +261,35 @@ export function forceFullscreenVideoVisible(params: {
   fill?: "contain" | "cover" | "fill";
 }) {
   const { shell, container, video, fill = "contain" } = params;
-  const box = "position:absolute;inset:0;left:0;top:0;right:0;bottom:0;width:100%;height:100%;min-width:0;min-height:0;max-width:none;max-height:none;margin:0;padding:0;border:0;background:#000;overflow:hidden;transform:none;";
-  if (shell) {
-    shell.style.cssText = `${box}z-index:1;`;
-  }
-  if (container) {
-    container.style.cssText = `${box}z-index:1;`;
-  }
+  // 只改必要属性，并打标记，退出全屏时必须 clearForcedFullscreenStyles 清掉，
+  // 否则会卡在「竖排假全屏 + 浏览器导航栏」无法回面板。
+  const applyBox = (el: HTMLElement | null) => {
+    if (!el) return;
+    el.dataset.txzzFsForced = "1";
+    el.style.setProperty("position", "absolute", "important");
+    el.style.setProperty("inset", "0", "important");
+    el.style.setProperty("left", "0", "important");
+    el.style.setProperty("top", "0", "important");
+    el.style.setProperty("right", "0", "important");
+    el.style.setProperty("bottom", "0", "important");
+    el.style.setProperty("width", "100%", "important");
+    el.style.setProperty("height", "100%", "important");
+    el.style.setProperty("min-width", "0", "important");
+    el.style.setProperty("min-height", "0", "important");
+    el.style.setProperty("max-width", "none", "important");
+    el.style.setProperty("max-height", "none", "important");
+    el.style.setProperty("margin", "0", "important");
+    el.style.setProperty("padding", "0", "important");
+    el.style.setProperty("border", "0", "important");
+    el.style.setProperty("border-radius", "0", "important");
+    el.style.setProperty("background", "#000", "important");
+    el.style.setProperty("overflow", "hidden", "important");
+    el.style.setProperty("transform", "none", "important");
+    el.style.setProperty("z-index", "1", "important");
+  };
+  applyBox(shell);
+  applyBox(container);
   applyAdaptiveVideoLayout(video, fill);
-  // 尝试继续播放，防止全屏切换后卡在暂停/黑帧
   if (video && video.paused === false) {
     try {
       const p = video.play();
@@ -277,7 +297,48 @@ export function forceFullscreenVideoVisible(params: {
         (p as Promise<void>).catch(() => {});
       }
     } catch {
-      // 忽略自动播放限制
+      // 忽略
     }
+  }
+}
+
+/**
+ * 退出全屏时清掉 forceFullscreenVideoVisible 留下的内联样式，
+ * 让 React className/style 重新接管，回到插件面板内嵌播放器。
+ */
+export function clearForcedFullscreenStyles(params: {
+  shell: HTMLElement | null;
+  container: HTMLElement | null;
+  stage?: HTMLElement | null;
+  video: HTMLVideoElement | null;
+  fill?: "contain" | "cover" | "fill";
+}) {
+  const { shell, container, stage, video, fill = "contain" } = params;
+  const clearEl = (el: HTMLElement | null) => {
+    if (!el) return;
+    // 逐个移除全屏强制属性，避免 cssText 清空把 React 正在管的属性搞乱后再残留
+    [
+      "position", "inset", "left", "top", "right", "bottom",
+      "width", "height", "min-width", "min-height", "max-width", "max-height",
+      "margin", "padding", "border", "border-radius", "background",
+      "overflow", "transform", "z-index", "box-shadow", "outline"
+    ].forEach((name) => {
+      el.style.removeProperty(name);
+    });
+    delete el.dataset.txzzFsForced;
+  };
+  clearEl(shell);
+  clearEl(container);
+  clearEl(stage || null);
+  // video 只恢复自适应，不要保留 absolute 全屏盒模型以外的脏样式
+  if (video) {
+    [
+      "position", "inset", "left", "top", "right", "bottom",
+      "width", "height", "min-width", "min-height", "max-width", "max-height",
+      "margin", "padding", "border", "transform", "filter", "-webkit-filter",
+      "object-fit", "object-position", "background", "opacity", "visibility",
+      "display", "z-index"
+    ].forEach((name) => video.style.removeProperty(name));
+    applyAdaptiveVideoLayout(video, fill);
   }
 }

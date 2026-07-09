@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.1.4",
-  "build": "2026-07-10-0010",
-  "releasedAt": "2026-07-10 00:10",
+  "version": "3.1.5",
+  "build": "2026-07-10-0025",
+  "releasedAt": "2026-07-10 00:25",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0025",
+      "type": "修复",
+      "title": "修复退出全屏无法回到插件面板",
+      "detail": "点缩小后只剩竖排假全屏（仍有浏览器导航栏）的问题：退出时原先未清理 forceFullscreen 写入的 position:absolute/100% 内联样式，界面卡在沉浸壳。现 exit 时完整 exitFullscreen + 恢复宿主 + clearForcedFullscreenStyles，系统全屏结束也自动回面板，不再保留 CSS 假全屏。"
+    },
     {
       "id": "2026-07-10-0010",
       "type": "修复",

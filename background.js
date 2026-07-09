@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0010";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0025";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 00:10 【修复】升级版本到 v3.1.4，修复有声音无画面：Android/Kiwi 禁止对 video 使用 CSS filter，亮度改为遮罩层。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 00:25 【修复】升级版本到 v3.1.5，修复退出全屏卡住竖排假全屏：点缩小完整退出并清内联样式，回到插件面板播放页。";
 
 const DEFAULT_STATE = {
   role: "guest",

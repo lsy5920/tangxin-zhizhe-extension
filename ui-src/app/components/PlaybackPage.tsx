@@ -8,6 +8,7 @@ import { PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerMorePanelKey
 import { PlayerGestureHudOverlay, PlayerGestureSurface, type GestureHudState } from "./player/PlayerGestureSystem";
 import {
   applyAdaptiveVideoLayout,
+  clearForcedFullscreenStyles,
   enterPlayerBrowserFullscreen,
   exitBrowserFullscreen,
   forceFullscreenVideoVisible,
@@ -1007,6 +1008,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       const fullscreenNode = fullscreenElement();
       const shell = playerShellRef.current;
       const host = fullscreenHostElement();
+      const container = playerContainerRef.current;
+      const stage = shell?.querySelector(".txzz-player-orientation-stage") as HTMLElement | null;
       const active = Boolean(fullscreenNode);
       const ours = isPlayerFullscreenElement(fullscreenNode, shell, host);
       if (active && ours && wantFullscreenRef.current) {
@@ -1014,26 +1017,26 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         setBrowserFullscreenActive(true);
         setPlayerImmersive(true);
       } else if (!active) {
-        // 用户按 Esc / 系统手势退出真实全屏时，同步清本地状态。
+        // 系统全屏结束（点缩小 / Esc / 手势）：必须完整回到插件面板，禁止卡在「竖排假全屏」。
         setBrowserFullscreenActive(false);
-        if (wantFullscreenRef.current) {
-          // 仍保留沉浸铺满，直到用户点退出；若本就不想全屏则彻底清理。
-          if (!playerImmersive) {
-            wantFullscreenRef.current = false;
-            restoreHostAfterBrowserFullscreen(host);
-          }
-        } else {
-          setPlayerImmersive(false);
-          restoreHostAfterBrowserFullscreen(host);
-        }
+        wantFullscreenRef.current = false;
+        setPlayerImmersive(false);
+        restoreHostAfterBrowserFullscreen(host);
+        clearForcedFullscreenStyles({
+          shell,
+          container,
+          stage,
+          video: videoRef.current,
+          fill: playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain"
+        });
+        releaseScreenOrientation();
       }
       setPlayerFullscreenDiagnostic(
-        measureFullscreenDiagnostic(shell, host, (playerImmersive || active) && wantFullscreenRef.current, videoRef.current)
+        measureFullscreenDiagnostic(shell, host, false, videoRef.current)
       );
     };
     document.addEventListener("fullscreenchange", syncFullscreen);
     document.addEventListener("webkitfullscreenchange", syncFullscreen);
-    // iOS 视频全屏进出
     document.addEventListener("webkitbeginfullscreen", syncFullscreen as EventListener);
     document.addEventListener("webkitendfullscreen", syncFullscreen as EventListener);
     syncFullscreen();
@@ -1043,7 +1046,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       document.removeEventListener("webkitbeginfullscreen", syncFullscreen as EventListener);
       document.removeEventListener("webkitendfullscreen", syncFullscreen as EventListener);
     };
-  }, [playerImmersive]);
+  }, [playerFillMode]);
 
   useEffect(() => {
     refreshFullscreenDiagnostic();
@@ -1635,28 +1638,72 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   }, [previewUrl, playerReloadKey]);
 
   const exitPlayerFullscreen = async () => {
+    // 完整退出：系统全屏 + CSS 沉浸态 + 内联强制样式，必须全部清掉才能回到插件面板。
     const art = artRef.current;
+    const shell = playerShellRef.current;
+    const container = playerContainerRef.current;
+    const stage = shell?.querySelector(".txzz-player-orientation-stage") as HTMLElement | null;
+    const host = fullscreenHostElement();
+    const video = videoRef.current || art?.video || null;
+    const fill = playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain";
+
     wantFullscreenRef.current = false;
-    releaseScreenOrientation();
     setPlayerUiLocked(false);
     setPlayerImmersive(false);
+    setBrowserFullscreenActive(false);
+
     if (art?.fullscreenWeb) art.fullscreenWeb = false;
     try {
       if (art?.fullscreen) art.fullscreen = false;
     } catch {
-      // 忽略 ArtPlayer 退出全屏失败。
+      // 忽略
     }
-    const host = fullscreenHostElement();
-    // 网站通用：document.exitFullscreen()
-    if (isRealBrowserFullscreen()) await exitFullscreen();
+
+    // 无论当前是否判定为系统全屏，都尝试 exit，避免状态不同步
+    try {
+      await exitFullscreen();
+    } catch {
+      // 忽略
+    }
+    // 再试一次：部分机型第一次 exit 无效
+    window.setTimeout(() => {
+      if (isRealBrowserFullscreen()) {
+        exitFullscreen().catch(() => {});
+      }
+    }, 50);
+
     restoreHostAfterBrowserFullscreen(host);
-    setBrowserFullscreenActive(false);
+    clearForcedFullscreenStyles({ shell, container, stage, video, fill });
+    releaseScreenOrientation();
+
     setPlayerFullscreenDiagnostic(emptyFullscreenDiagnostic);
     setPlayerFullscreenTune(emptyFullscreenTune);
-    // 退出后仍保持自适应布局，避免尺寸错乱
-    applyAdaptiveVideoLayout(videoRef.current, playerFillMode);
     revealPlayerControls(true);
-    setPlayerStatus("已退出全屏");
+    setPlayerStatus("已退出全屏，回到面板播放");
+    setPlayerError("");
+
+    // 下一帧再清一次，覆盖 fullscreenchange 竞态又写回的样式
+    window.requestAnimationFrame(() => {
+      clearForcedFullscreenStyles({
+        shell: playerShellRef.current,
+        container: playerContainerRef.current,
+        stage: playerShellRef.current?.querySelector(".txzz-player-orientation-stage") as HTMLElement | null,
+        video: videoRef.current,
+        fill
+      });
+      restoreHostAfterBrowserFullscreen(fullscreenHostElement());
+    });
+    window.setTimeout(() => {
+      clearForcedFullscreenStyles({
+        shell: playerShellRef.current,
+        container: playerContainerRef.current,
+        stage: playerShellRef.current?.querySelector(".txzz-player-orientation-stage") as HTMLElement | null,
+        video: videoRef.current,
+        fill
+      });
+      restoreHostAfterBrowserFullscreen(fullscreenHostElement());
+      applyAdaptiveVideoLayout(videoRef.current, fill);
+    }, 120);
   };
 
   const fixFullscreenVideoPaint = () => {
@@ -1739,7 +1786,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
 
   const togglePlayerFullscreen = async () => {
     markControlAction();
-    if (playerFullscreenActive && wantFullscreenRef.current) {
+    // 只要处于全屏/沉浸态，点缩小一律完整退出回面板，不要半退出卡在假全屏
+    if (playerFullscreenActive || wantFullscreenRef.current || isRealBrowserFullscreen()) {
       await exitPlayerFullscreen();
       return;
     }

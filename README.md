@@ -576,3 +576,4 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 2026-07-09 23:45 【优化】升级版本到 v3.1.2，全屏改为网站同款 Fullscreen API（playerRoot.requestFullscreen + navigationUI:hide，兼容宿主/video/iOS），视频 object-fit:contain 自适应铺满容器。
 2026-07-09 23:55 【修复】升级版本到 v3.1.3，修复全屏后视频黑屏：去掉错误 viewport 像素尺寸，全屏强制 100% 铺满，进入全屏后多帧校正 video 绘制，Android 不再优先 video 单独全屏。
 2026-07-10 00:10 【修复】升级版本到 v3.1.4，修复有声音无画面：Android/Kiwi 禁止对 video 使用 CSS filter:brightness，亮度改为独立遮罩层，起播强制 filter:none。
+2026-07-10 00:25 【修复】升级版本到 v3.1.5，修复点缩小无法回到插件面板：退出全屏时清理强制内联样式与宿主全屏类，系统全屏结束自动回面板播放页，不再卡在竖排假全屏。
