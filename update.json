@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.1.1",
-  "build": "2026-07-09-2325",
-  "releasedAt": "2026-07-09 23:25",
+  "version": "3.1.2",
+  "build": "2026-07-09-2345",
+  "releasedAt": "2026-07-09 23:45",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2345",
+      "type": "优化",
+      "title": "全屏改为网站同款 Fullscreen API · 视频自适应铺满",
+      "detail": "新增 browserFullscreen 模块，按网站标准写法调用：playerRoot.requestFullscreen({navigationUI:'hide'})，失败再试宿主/video/页面根/iOS webkitEnterFullscreen；退出用 document.exitFullscreen()。视频层统一 object-fit:contain、宽高100%、居中自适应，全屏与面板内随容器伸缩不变形。"
+    },
     {
       "id": "2026-07-09-2325",
       "type": "修复",

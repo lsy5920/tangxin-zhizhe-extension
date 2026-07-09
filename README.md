@@ -573,3 +573,4 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 2026-07-09 22:40 【新增】升级版本到 v3.0.9，落地完整专业手势系统 `PlayerGestureSystem`：单击显隐控制、三区双击（含同侧连点累计秒数）、长按左快退/右 3x 倍速、横滑进度、左右竖滑亮度音量、滚轮音量、Shift+滚轮亮度；双击区域闪烁与侧边音量/亮度竖条 HUD；锁屏下仍可双击左右跳进度。
 2026-07-09 23:05 【优化】升级版本到 v3.1.0，强化浏览器沉浸全屏：优先对 light DOM 插件宿主申请 Fullscreen API 并使用 navigationUI:hide，失败再尝试页面根节点、video、壳层；系统全屏成功后样式强制铺满并隐藏面板壳；仅 API 被拒时才铺满兜底，更接近网站原生视频全屏。
 2026-07-09 23:25 【修复】升级版本到 v3.1.1，根据 Kiwi 横屏截图修复控制栏变形：去掉中间状态空白区，横屏矮屏紧凑贴底控制层，隐藏快捷条，按钮左右贴边，进度条文案简化。
+2026-07-09 23:45 【优化】升级版本到 v3.1.2，全屏改为网站同款 Fullscreen API（playerRoot.requestFullscreen + navigationUI:hide，兼容宿主/video/iOS），视频 object-fit:contain 自适应铺满容器。

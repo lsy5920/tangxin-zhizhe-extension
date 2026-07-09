@@ -252,23 +252,50 @@
   }
 }
 
-.txzz-player-clean .art-video {
+/* 视频自适应：完整显示、居中、随容器伸缩（网站常见 object-fit: contain） */
+.txzz-player-clean .art-video,
+.txzz-player-clean video,
+.txzz-player-shell video {
   width: 100% !important;
   height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
   filter: brightness(var(--txzz-player-brightness, 100%)) !important;
-  object-position: 50% 50% !important;
+  object-position: var(--txzz-player-video-position-x, 50%) 50% !important;
+  background: #000 !important;
 }
 
-.txzz-player-fill-contain .art-video {
+.txzz-player-fill-contain .art-video,
+.txzz-player-fill-contain video {
   object-fit: contain !important;
 }
 
-.txzz-player-fill-cover .art-video {
+.txzz-player-fill-cover .art-video,
+.txzz-player-fill-cover video {
   object-fit: cover !important;
 }
 
-.txzz-player-fill-fill .art-video {
+.txzz-player-fill-fill .art-video,
+.txzz-player-fill-fill video {
   object-fit: fill !important;
+}
+
+/* 全屏 / 系统 Fullscreen 时：播放器与视频吃满可视区域 */
+.txzz-player-fullscreen-shell .art-video-player,
+.txzz-player-fullscreen-shell .art-video,
+.txzz-player-fullscreen-shell video,
+:host(:fullscreen) .art-video-player,
+:host(:fullscreen) .art-video,
+:host(:fullscreen) video,
+:host(:-webkit-full-screen) .art-video-player,
+:host(:-webkit-full-screen) .art-video,
+:host(:-webkit-full-screen) video {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: contain !important;
+  object-position: center center !important;
 }
 
 /* 全屏播放时只保留一层播放器画面，清掉普通卡片模式留下的边框感和内层尺寸限制。 */

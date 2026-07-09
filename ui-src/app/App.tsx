@@ -10,6 +10,7 @@ import { SettingsPage } from "./components/SettingsPage";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
 import { APP_VERSION_LABEL } from "./constants";
 import { absoluteUrl, flowItemText, latestFullDetail } from "./helpers";
+import { getPluginHost, prepareFullscreenChrome, requestElementFullscreen, restoreFullscreenChrome, PLAYER_FULLSCREEN_HOST_CLASS } from "./components/player/browserFullscreen";
 
 const navItems: { id: Page; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "总览", icon: LayoutDashboard },
@@ -33,48 +34,27 @@ const flowLevelColors: Record<string, string> = {
   info: "from-pink-500 to-purple-600",
   running: "from-amber-400 to-orange-500"
 };
-const playerFullscreenHostClass = "txzz-player-fullscreen-mode";
-
 function action(actionName: string, payload: Record<string, unknown> = {}) {
   sendUiAction(actionName, payload);
 }
 
-type FullscreenTarget = HTMLElement & {
-  requestFullscreen?: (options?: { navigationUI?: "auto" | "hide" | "show" }) => Promise<void>;
-  webkitRequestFullscreen?: (options?: { navigationUI?: "auto" | "hide" | "show" } | unknown) => Promise<void> | void;
-  msRequestFullscreen?: () => Promise<void> | void;
-};
-
+/** 悬浮视频按钮：与网站一致，直接 requestFullscreen（navigationUI: hide）。 */
 function requestHostFullscreen() {
-  const host = document.getElementById("txzz-candy-ui-root") as FullscreenTarget | null;
+  const host = getPluginHost();
   if (!host) return;
-  // 悬浮视频按钮：优先对 light DOM 宿主申请真正浏览器全屏（隐藏导航 UI）。
-  const request = host.requestFullscreen || host.webkitRequestFullscreen || host.msRequestFullscreen;
-  if (!request) return;
-  const markIfFullscreen = () => {
-    const doc = document as Document & { webkitFullscreenElement?: Element | null };
-    if (document.fullscreenElement === host || doc.webkitFullscreenElement === host) {
-      host.classList.add(playerFullscreenHostClass);
-      host.style.setProperty("background", "#000", "important");
-      host.style.setProperty("pointer-events", "auto", "important");
-    }
-  };
-  try {
-    const result = request.length
-      ? (request as (options?: { navigationUI?: string }) => Promise<void>).call(host, { navigationUI: "hide" })
-      : request.call(host);
-    Promise.resolve(result).then(markIfFullscreen).catch(() => {
-      host.classList.remove(playerFullscreenHostClass);
-    });
-  } catch {
-    host.classList.remove(playerFullscreenHostClass);
-  }
-  window.setTimeout(markIfFullscreen, 80);
-  window.setTimeout(markIfFullscreen, 240);
+  prepareFullscreenChrome(host);
+  requestElementFullscreen(host)
+    .then(() => prepareFullscreenChrome(host))
+    .catch(() => restoreFullscreenChrome(host));
+  window.setTimeout(() => {
+    if (document.fullscreenElement === host) prepareFullscreenChrome(host);
+  }, 100);
 }
 
 function disableHostPlaybackFullscreenMode() {
-  document.getElementById("txzz-candy-ui-root")?.classList.remove(playerFullscreenHostClass);
+  restoreFullscreenChrome(getPluginHost());
+  // 兼容旧类名清理
+  getPluginHost()?.classList.remove(PLAYER_FULLSCREEN_HOST_CLASS);
 }
 
 function flowMessage(state: BridgeState, index: number): { text: string; level: string } {
