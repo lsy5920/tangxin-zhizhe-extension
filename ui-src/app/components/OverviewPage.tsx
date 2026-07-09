@@ -120,10 +120,10 @@ export function OverviewPage({ state, onAction, onPage }: Props) {
       <SectionCard title="快捷操作" icon={Sparkles} hint="常用动作一键完成">
         <QuickActionGrid
           items={[
-            { icon: Sparkles, label: "应用覆盖", color: "from-pink-400 to-rose-500", onClick: () => onAction("apply") },
-            { icon: RefreshCw, label: "同步账号", color: "from-purple-400 to-violet-500", onClick: () => onAction("sync-remote") },
-            { icon: Play, label: "查看播放", color: "from-sky-400 to-blue-500", onClick: () => onPage("playback") },
-            { icon: Download, label: "下载管理", color: "from-amber-400 to-orange-500", onClick: () => onPage("downloads") }
+            { icon: Sparkles, label: "应用覆盖", tone: "pink", onClick: () => onAction("apply") },
+            { icon: RefreshCw, label: "同步账号", tone: "purple", onClick: () => onAction("sync-remote") },
+            { icon: Play, label: "查看播放", tone: "sky", onClick: () => onPage("playback") },
+            { icon: Download, label: "下载管理", tone: "amber", onClick: () => onPage("downloads") }
           ]}
         />
       </SectionCard>

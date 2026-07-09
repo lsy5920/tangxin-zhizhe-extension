@@ -10,8 +10,7 @@ import {
   SectionCard,
   SegmentedControl,
   SoftButton,
-  SoftInput,
-  StatGrid
+  SoftInput
 } from "./ui/primitives";
 
 type Props = {
@@ -111,16 +110,14 @@ export function DownloadsPage({ state, onAction }: Props) {
 
   return (
     <PageShell>
-      <StatGrid
-        items={[
-          { label: "总任务", value: stats.total, tone: "purple" },
-          { label: "进行中", value: stats.running, tone: "amber" },
-          { label: "已完成", value: stats.completed, tone: "emerald" },
-          { label: "失败", value: stats.failed, tone: "rose" }
-        ]}
-      />
-
-      <SegmentedControl items={filterItems} value={filter} onChange={setFilter} />
+      {/* 顶部只保留分段筛选（含数量），避免与统计瓷砖重复。 */}
+      <SectionCard
+        title="任务筛选"
+        icon={Download}
+        hint={`共 ${stats.total} 个任务 · 已完成 ${stats.completed} · 当前列表 ${filteredTasks.length}`}
+      >
+        <SegmentedControl items={filterItems} value={filter} onChange={setFilter} />
+      </SectionCard>
 
       <SectionCard title="查找与排序" icon={Search} hint={`当前显示 ${filteredTasks.length} / ${statusFilteredTasks.length}`}>
         <div className="space-y-2.5">

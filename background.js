@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0200";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0215";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 02:00 【优化】升级版本到 v3.4.0，完全重构插件面板 UI：统一设计系统、五页布局、外壳导航与视觉交互全面升级。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 02:15 【修复】升级版本到 v3.4.1，修复总览快捷操作仅同步账号有背景色、其余按钮不可见；下载页去掉重复的顶部数量统计。";
 
 const DEFAULT_STATE = {
   role: "guest",

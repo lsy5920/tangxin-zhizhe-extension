@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.4.0",
-  "build": "2026-07-10-0200",
-  "releasedAt": "2026-07-10 02:00",
+  "version": "3.4.1",
+  "build": "2026-07-10-0215",
+  "releasedAt": "2026-07-10 02:15",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0215",
+      "type": "修复",
+      "title": "修复快捷操作背景缺失 · 下载页统计重复",
+      "detail": "1) 总览快捷操作：动态拼接 Tailwind 渐变 class 导致粉/蓝/橙按钮背景未进构建，只剩「同步账号」紫色可见；改为 tone 映射完整静态 class。2) 下载页去掉顶部 StatGrid，只保留分段筛选（全部/进行中/可保存/失败）作为唯一数量入口，避免与统计瓷砖重复。"
+    },
     {
       "id": "2026-07-10-0200",
       "type": "优化",

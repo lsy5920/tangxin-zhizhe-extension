@@ -312,25 +312,42 @@ export function ModalSheet({
   );
 }
 
-/** 快捷操作宫格。 */
+/**
+ * 快捷操作宫格。
+ * 注意：渐变 class 必须写完整静态字符串，不能靠变量拼接，否则 Tailwind 扫不到、移动端会只剩白底白字。
+ */
+const QUICK_ACTION_TONE: Record<string, string> = {
+  pink: "bg-gradient-to-br from-pink-400 to-rose-500 shadow-pink-400/30",
+  purple: "bg-gradient-to-br from-purple-400 to-violet-500 shadow-purple-400/30",
+  sky: "bg-gradient-to-br from-sky-400 to-blue-500 shadow-sky-400/30",
+  amber: "bg-gradient-to-br from-amber-400 to-orange-500 shadow-amber-400/30",
+  emerald: "bg-gradient-to-br from-emerald-400 to-teal-500 shadow-emerald-400/30",
+  rose: "bg-gradient-to-br from-rose-400 to-pink-500 shadow-rose-400/30"
+};
+
 export function QuickActionGrid({
   items
 }: {
-  items: Array<{ label: string; icon: LucideIcon; color: string; onClick: () => void }>;
+  items: Array<{ label: string; icon: LucideIcon; tone?: keyof typeof QUICK_ACTION_TONE; color?: string; onClick: () => void }>;
 }) {
   return (
     <div className="grid grid-cols-4 gap-2">
-      {items.map((item) => (
-        <button
-          key={item.label}
-          type="button"
-          onClick={item.onClick}
-          className={`flex flex-col items-center gap-1.5 rounded-2xl bg-gradient-to-br ${item.color} p-3 text-white shadow-md transition-transform active:scale-95`}
-        >
-          <item.icon size={18} strokeWidth={2.2} />
-          <span className="text-center text-[10px] font-semibold leading-tight">{item.label}</span>
-        </button>
-      ))}
+      {items.map((item) => {
+        // 优先用 tone 映射完整 class；兼容旧 color 字段时回落到 purple。
+        const toneKey = (item.tone || "purple") as keyof typeof QUICK_ACTION_TONE;
+        const toneClass = QUICK_ACTION_TONE[toneKey] || QUICK_ACTION_TONE.purple;
+        return (
+          <button
+            key={item.label}
+            type="button"
+            onClick={item.onClick}
+            className={`flex min-h-[4.5rem] flex-col items-center justify-center gap-1.5 rounded-2xl p-2.5 text-white shadow-md transition-transform active:scale-95 ${toneClass}`}
+          >
+            <item.icon size={18} strokeWidth={2.2} className="text-white" />
+            <span className="text-center text-[10px] font-semibold leading-tight text-white">{item.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
