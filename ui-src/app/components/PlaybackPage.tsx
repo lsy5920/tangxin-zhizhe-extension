@@ -758,7 +758,24 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const [progressPreviewTime, setProgressPreviewTime] = useState<number | null>(null);
   const progressDragRef = useRef<{ active: boolean; startX: number; startTime: number }>({ active: false, startX: 0, startTime: 0 });
   const latest = latestFullDetail(state);
-  const records = (state.fullDetails || []).slice(-24).reverse();
+  // 同一 movieId 只保留最新一条展示，避免刷新/下载/主备链路重复写入造成「一视频两条记录」。
+  const records = (() => {
+    const raw = Array.isArray(state.fullDetails) ? state.fullDetails : [];
+    const seen = new Set<string>();
+    const deduped: FullDetail[] = [];
+    for (let i = raw.length - 1; i >= 0; i -= 1) {
+      const item = raw[i];
+      if (!item) continue;
+      const movieId = String(item.movieId || "").trim();
+      const key = movieId
+        || `${String(item.playLink || "").trim()}|${String(item.backupLink || "").trim()}`;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(item);
+      if (deduped.length >= 24) break;
+    }
+    return deduped;
+  })();
   const lines: PlaybackLine[] = [
     { key: "play", label: "主线路", url: latest?.playLink, stat: latest?.fullStat, copyAction: "copy-play-link", openAction: "open-playback-url" },
     { key: "backup", label: "备用线路", url: latest?.backupLink, stat: latest?.backupStat, copyAction: "copy-backup-link", openAction: "open-playback-url" }
@@ -2191,19 +2208,40 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     { key: "records", label: "记录", icon: Film, badge: recordStats.total ? `${recordStats.total}` : undefined }
   ];
 
+  // 信息头按钮：内联底色，避免 Shadow DOM 下 Tailwind 半透明白底失效。
+  const heroActionStyle = {
+    background: "rgba(255,255,255,0.24)",
+    color: "#ffffff",
+    border: "1px solid rgba(255,255,255,0.28)",
+    boxShadow: "0 4px 12px rgba(88, 28, 135, 0.18)"
+  } as CSSProperties;
+  const heroPrimaryStyle = {
+    background: "#ffffff",
+    color: "#7c3aed",
+    border: "1px solid #ffffff",
+    boxShadow: "0 4px 12px rgba(88, 28, 135, 0.18)"
+  } as CSSProperties;
+
   return (
     <div className="txzz-playback-root txzz-page space-y-3 p-3 sm:p-3.5" style={playerStageStyle}>
       {/* 紧凑信息头：标题 + 关键状态 + 主操作，把视觉重心留给播放器 */}
-      <div className="txzz-playback-hidden-during-fullscreen relative overflow-hidden rounded-2xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-pink-500 p-3.5 text-white shadow-[0_12px_32px_rgba(168,85,247,0.26)]">
+      <div
+        className="txzz-playback-hidden-during-fullscreen txzz-playback-hero relative overflow-hidden rounded-2xl p-3.5 text-white"
+        style={{
+          background: "linear-gradient(145deg, #7c3aed 0%, #c026d3 46%, #ec4899 100%)",
+          boxShadow: "0 12px 32px rgba(168, 85, 247, 0.28)",
+          color: "#ffffff"
+        }}
+      >
         <div className="pointer-events-none absolute -right-3 -top-4 select-none text-5xl opacity-[0.12]">🎬</div>
         <div className="relative flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-medium tracking-wide text-white/70">当前视频</p>
-            <h3 className="mt-0.5 line-clamp-2 text-[13px] font-bold leading-snug">
+            <p className="text-[10px] font-medium tracking-wide" style={{ color: "rgba(255,255,255,0.72)" }}>当前视频</p>
+            <h3 className="mt-0.5 line-clamp-2 text-[13px] font-bold leading-snug" style={{ color: "#ffffff" }}>
               {latest?.movieTitle || latest?.title || latest?.movieId || "等待播放详情"}
             </h3>
-            <p className="mt-1 flex items-center gap-1 text-[10px] text-white/80">
-              {latest ? <CheckCircle size={11} className="shrink-0 text-emerald-200" /> : <AlertCircle size={11} className="shrink-0 text-amber-200" />}
+            <p className="mt-1 flex items-center gap-1 text-[10px]" style={{ color: "rgba(255,255,255,0.88)" }}>
+              {latest ? <CheckCircle size={11} className="shrink-0" color="#a7f3d0" /> : <AlertCircle size={11} className="shrink-0" color="#fde68a" />}
               <span className="truncate">
                 {latest
                   ? `${readyCount} 条线路 · ${segmentTotal || "?"} 分片${duration ? ` · ${formatDuration(duration)}` : ""} · 体检 ${health.score}`
@@ -2212,27 +2250,43 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             </p>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
-            <Pill className="bg-white/20 text-white backdrop-blur">{health.label}</Pill>
-            {fetchedAt && <span className="text-[9px] text-white/65">{shortTime(fetchedAt)}</span>}
+            <span
+              className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold"
+              style={{ background: "rgba(255,255,255,0.22)", color: "#ffffff" }}
+            >
+              {health.label}
+            </span>
+            {fetchedAt && <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.68)" }}>{shortTime(fetchedAt)}</span>}
           </div>
         </div>
         <div className="relative mt-2.5 flex flex-wrap gap-1">
-          <Pill className="bg-black/15 text-white">M3U8</Pill>
-          <Pill className="bg-black/15 text-white">{latest?.accountLabel || latest?.accountUser || "自动账号"}</Pill>
-          <Pill className="bg-black/15 text-white">{localizeFlowText(latest?.action || "full_detail")}</Pill>
+          {["M3U8", latest?.accountLabel || latest?.accountUser || "自动账号", localizeFlowText(latest?.action || "full_detail")].map((text) => (
+            <span
+              key={text}
+              className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium"
+              style={{ background: "rgba(0,0,0,0.18)", color: "#ffffff" }}
+            >
+              {text}
+            </span>
+          ))}
           {preferredLineUrl && (
-            <Pill className="max-w-full bg-black/15 font-mono text-white">
-              <Link size={9} /> <span className="truncate">{preferredLine?.label} · {maskUrl(preferredLineUrl)}</span>
-            </Pill>
+            <span
+              className="inline-flex max-w-full items-center gap-1 truncate rounded-full px-2.5 py-0.5 font-mono text-[10px] font-medium"
+              style={{ background: "rgba(0,0,0,0.18)", color: "#ffffff" }}
+            >
+              <Link size={9} color="#ffffff" />
+              <span className="truncate">{preferredLine?.label} · {maskUrl(preferredLineUrl)}</span>
+            </span>
           )}
         </div>
         <div className="relative mt-2.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
           <button
             type="button"
             onClick={() => onAction("refresh-full-detail", { movieId: latest?.movieId || "" })}
-            className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-white/20 px-2 text-[11px] font-semibold text-white backdrop-blur transition active:scale-95 hover:bg-white/30"
+            className="txzz-playback-hero-btn flex min-h-8 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-semibold transition active:scale-95"
+            style={heroActionStyle}
           >
-            <RefreshCw size={12} /> 刷新
+            <RefreshCw size={12} color="#ffffff" /> 刷新
           </button>
           <button
             type="button"
@@ -2240,25 +2294,28 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               onAction("download-full-video", { movieId: latest?.movieId || "" });
               setPanelTab("download");
             }}
-            className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-white/20 px-2 text-[11px] font-semibold text-white backdrop-blur transition active:scale-95 hover:bg-white/30"
+            className="txzz-playback-hero-btn flex min-h-8 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-semibold transition active:scale-95"
+            style={heroActionStyle}
           >
-            <Download size={12} /> 下载
+            <Download size={12} color="#ffffff" /> 下载
           </button>
           <button
             type="button"
             disabled={!preferredLine?.url}
             onClick={() => preferredLine && onAction(preferredLine.copyAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}
-            className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-white/20 px-2 text-[11px] font-semibold text-white backdrop-blur transition active:scale-95 hover:bg-white/30 disabled:opacity-40"
+            className="txzz-playback-hero-btn flex min-h-8 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-semibold transition active:scale-95 disabled:opacity-40"
+            style={heroActionStyle}
           >
-            <Copy size={12} /> 复制
+            <Copy size={12} color="#ffffff" /> 复制
           </button>
           <button
             type="button"
             disabled={!preferredLine?.url}
             onClick={() => preferredLine && onAction(preferredLine.openAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}
-            className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-white px-2 text-[11px] font-semibold text-purple-600 shadow-sm transition active:scale-95 disabled:opacity-40"
+            className="txzz-playback-hero-btn flex min-h-8 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-semibold transition active:scale-95 disabled:opacity-40"
+            style={heroPrimaryStyle}
           >
-            <ExternalLink size={12} /> 打开
+            <ExternalLink size={12} color="#7c3aed" /> 打开
           </button>
         </div>
       </div>

@@ -25,6 +25,30 @@
 
   const STORAGE_KEY_TOKEN = "fuck";
   const STORAGE_KEY_DEVICE = "sun";
+
+  /** 同一 movieId 只保留一条最新播放详情，主备链路合并进同一记录。 */
+  function upsertFullDetailList(list, summary) {
+    const movieId = String(summary?.movieId || "").trim();
+    const prev = Array.isArray(list) ? list.slice() : [];
+    if (!movieId) return [...prev, summary].slice(-80);
+    const index = prev.findIndex((item) => String(item?.movieId || "").trim() === movieId);
+    if (index >= 0) {
+      const old = prev[index] || {};
+      prev[index] = {
+        ...old,
+        ...summary,
+        movieId,
+        playLink: summary.playLink || old.playLink || "",
+        backupLink: summary.backupLink || old.backupLink || "",
+        fullStat: summary.fullStat || old.fullStat || null,
+        backupStat: summary.backupStat || old.backupStat || null,
+        movieTitle: summary.movieTitle || old.movieTitle || summary.title || old.title || "",
+        title: summary.title || old.title || summary.movieTitle || old.movieTitle || ""
+      };
+      return prev.slice(-80);
+    }
+    return [...prev, summary].slice(-80);
+  }
   const CATEGORY_LABELS = {
     "m3u8": "M3U8",
     "mp4": "MP4",
@@ -1850,12 +1874,11 @@
       showToast(`${mode}任务已创建`, "ok");
       if (response.summary) {
         emitCloudAccountFlow(response.summary, id);
-        state.fullDetails.push({
+        state.fullDetails = upsertFullDetailList(state.fullDetails, {
           ...response.summary,
           movieId: response.summary.movieId || id,
           playLink: response.summary.playLink || response.url || ""
         });
-        state.fullDetails = state.fullDetails.slice(-80);
         renderFullDetails();
       }
       return response;
@@ -2485,8 +2508,7 @@
           playLink: response.summary.playLink || fullDetail.play_link || fullDetail.playLink || fullDetail.play_url || fullDetail.playUrl || fullDetail.m3u8_url || fullDetail.m3u8 || "",
           backupLink: response.summary.backupLink || fullDetail.backup_link || fullDetail.backupLink || fullDetail.backup_url || fullDetail.backupUrl || ""
         };
-        state.fullDetails.push(summary);
-        state.fullDetails = state.fullDetails.slice(-80);
+        state.fullDetails = upsertFullDetailList(state.fullDetails, summary);
         renderFullDetails();
         addObservation({
           kind: "fullplay",
@@ -2496,8 +2518,9 @@
           flags: [summary.action || "full_detail", `movie:${summary.movieId}`],
           bodyHead: JSON.stringify(summary)
         });
+        // 媒体观察只记主线路；备用不另开播放记录，避免「一个视频两条」。
         if (summary.playLink) addPlayback({ kind: "media", via: "fullplay.play_link", url: summary.playLink, category: "m3u8" });
-        if (summary.backupLink) addPlayback({ kind: "media", via: "fullplay.backup_link", url: summary.backupLink, category: "m3u8" });
+        else if (summary.backupLink) addPlayback({ kind: "media", via: "fullplay.backup_link", url: summary.backupLink, category: "m3u8" });
         emitCloudAccountFlow(summary, payload.movieId);
         emitFlow(
           summary.playLink || summary.backupLink ? "播放资源" : "播放资源缺少链接",

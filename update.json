@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.4.3",
-  "build": "2026-07-10-0300",
-  "releasedAt": "2026-07-10 03:00",
+  "version": "3.4.4",
+  "build": "2026-07-10-0315",
+  "releasedAt": "2026-07-10 03:15",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0315",
+      "type": "修复",
+      "title": "播放页信息头底色 · 记录按视频去重",
+      "detail": "1) 播放页顶部信息头与刷新/下载/复制按钮改内联背景色，修复 Shadow DOM 下无底色。2) fullDetails 写入改为按 movieId 合并；界面展示再去重；备用链路不再单独记一条媒体观察，避免一个视频显示两条记录。"
+    },
     {
       "id": "2026-07-10-0300",
       "type": "优化",

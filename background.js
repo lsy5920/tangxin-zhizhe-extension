@@ -47,9 +47,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0300";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0315";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 03:00 【优化】升级版本到 v3.4.3，重构播放页布局：紧凑信息头、播放器优先、资源/下载/记录分段切换，交互更清晰。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 03:15 【修复】升级版本到 v3.4.4，播放页信息头按钮改内联底色；播放记录按 movieId 合并去重，避免同一视频重复两条。";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1015,7 +1015,7 @@ async function getFullDetail(message = {}) {
       const fresh = await getStateInternal();
       if (response.state?.accountPool) fresh.accountPool = response.state.accountPool.map(normalizeAccount);
       if (response.state?.selectedFullAccountId) fresh.selectedFullAccountId = response.state.selectedFullAccountId;
-      if (response.summary) fresh.fullDetails = [...(fresh.fullDetails || []), response.summary].slice(-80);
+      if (response.summary) fresh.fullDetails = upsertFullDetailList(fresh.fullDetails, response.summary);
       fresh.remote = { ...normalizeRemoteConfig(fresh.remote), lastFullDetailAt: nowIso(), lastError: "" };
       await saveState(fresh);
       return { ...response, state: sanitizeState(fresh) };
@@ -1104,6 +1104,31 @@ async function getFullDetail(message = {}) {
   throw new Error(messageText);
 }
 
+/** 同一 movieId 合并为一条最新记录，避免刷新/下载重复堆叠。 */
+function upsertFullDetailList(list = [], summary = {}) {
+  const movieId = String(summary?.movieId || "").trim();
+  const prev = Array.isArray(list) ? list.slice() : [];
+  if (!movieId) return [...prev, summary].slice(-80);
+  const index = prev.findIndex((item) => String(item?.movieId || "").trim() === movieId);
+  if (index >= 0) {
+    const old = prev[index] || {};
+    prev[index] = {
+      ...old,
+      ...summary,
+      movieId,
+      // 合并主备链接，防止后一次只带主线时冲掉备用。
+      playLink: summary.playLink || old.playLink || "",
+      backupLink: summary.backupLink || old.backupLink || "",
+      fullStat: summary.fullStat || old.fullStat || null,
+      backupStat: summary.backupStat || old.backupStat || null,
+      movieTitle: summary.movieTitle || old.movieTitle || summary.title || old.title || "",
+      title: summary.title || old.title || summary.movieTitle || old.movieTitle || ""
+    };
+    return prev.slice(-80);
+  }
+  return [...prev, summary].slice(-80);
+}
+
 async function finishLocalFullDetail(options = {}) {
   const { state, movieId, detail, account, session, action, cacheKey, errors = [], checkedAccountIds = new Set(), purchaseMeta = {} } = options;
   const [fullStat, backupStat] = [
@@ -1136,7 +1161,7 @@ async function finishLocalFullDetail(options = {}) {
   };
   const fresh = await getStateInternal();
   fresh.selectedFullAccountId = account.id || fresh.selectedFullAccountId;
-  fresh.fullDetails = [...(fresh.fullDetails || []), summary].slice(-80);
+  fresh.fullDetails = upsertFullDetailList(fresh.fullDetails, summary);
   fresh.fullDetailCache = {
     ...(fresh.fullDetailCache || {}),
     [cacheKey || `${account.id || "default"}:${movieId}`]: {

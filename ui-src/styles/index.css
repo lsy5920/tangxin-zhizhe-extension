@@ -78,6 +78,22 @@
   outline: none;
 }
 
+/* 播放页信息头按钮：强制可见底色与文字 */
+.txzz-playback-hero-btn {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  cursor: pointer;
+  outline: none;
+}
+
+.txzz-playback-hero-btn:disabled {
+  opacity: 0.4;
+}
+
+.txzz-playback-hero {
+  color: #fff;
+}
+
 .txzz-quick-action-btn svg {
   color: #fff !important;
   stroke: #fff !important;
