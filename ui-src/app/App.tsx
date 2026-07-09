@@ -7,6 +7,7 @@ import { AccountsPage } from "./components/AccountsPage";
 import { PlaybackPage } from "./components/PlaybackPage";
 import { DownloadsPage } from "./components/DownloadsPage";
 import { SettingsPage } from "./components/SettingsPage";
+import { PageErrorBoundary } from "./components/PageErrorBoundary";
 import { APP_VERSION_LABEL } from "./constants";
 import { absoluteUrl, flowItemText, latestFullDetail } from "./helpers";
 
@@ -172,11 +173,21 @@ export default function App() {
   };
 
   const renderPage = () => {
-    if (page === "overview") return <OverviewPage state={bridgeState} onAction={action} onPage={setPage} />;
-    if (page === "accounts") return <AccountsPage state={bridgeState} onAction={action} intent={accountsIntent} />;
-    if (page === "playback") return <PlaybackPage state={bridgeState} onAction={action} onPage={setPage} autoFullscreenSignal={playbackAutofullscreenSignal} />;
-    if (page === "downloads") return <DownloadsPage state={bridgeState} onAction={action} />;
-    return <SettingsPage state={bridgeState} onAction={action} onPage={goPage} />;
+    // 每个业务页包一层错误边界：单页崩溃时保留悬浮球与面板外壳，避免整站 UI 消失。
+    const body = page === "overview"
+      ? <OverviewPage state={bridgeState} onAction={action} onPage={setPage} />
+      : page === "accounts"
+        ? <AccountsPage state={bridgeState} onAction={action} intent={accountsIntent} />
+        : page === "playback"
+          ? <PlaybackPage state={bridgeState} onAction={action} onPage={setPage} autoFullscreenSignal={playbackAutofullscreenSignal} />
+          : page === "downloads"
+            ? <DownloadsPage state={bridgeState} onAction={action} />
+            : <SettingsPage state={bridgeState} onAction={action} onPage={goPage} />;
+    return (
+      <PageErrorBoundary key={page} title={`${pageTitles[page]}页加载失败`} onReset={() => setPage(page)}>
+        {body}
+      </PageErrorBoundary>
+    );
   };
 
   const updateAvailable = Boolean(bridgeState.repositoryUpdate?.updateAvailable);

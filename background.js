@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2145";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2200";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 21:45 【修复】升级版本到 v3.0.6，修复点击播放后插件面板消失且无法正常播放：关闭 ArtPlayer 内置单击/双击全屏冲突，禁止非主动全屏误进沉浸黑屏，恢复面板内正常播放。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 22:00 【修复】升级版本到 v3.0.7，修复点击底部「播放」导航后整页崩溃：补回 Layers 图标导入，并增加页面错误边界，避免单页异常拖垮悬浮球和面板。";
 
 const DEFAULT_STATE = {
   role: "guest",
