@@ -10,6 +10,7 @@ import {
   applyAdaptiveVideoLayout,
   enterPlayerBrowserFullscreen,
   exitBrowserFullscreen,
+  forceFullscreenVideoVisible,
   getFullscreenElement,
   getPluginHost,
   isBrowserFullscreen,
@@ -1651,6 +1652,24 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     setPlayerStatus("已退出全屏");
   };
 
+  const fixFullscreenVideoPaint = () => {
+    const shell = playerShellRef.current;
+    const container = playerContainerRef.current;
+    const video = videoRef.current || artRef.current?.video || null;
+    // 全屏后连续多帧校正，覆盖 Kiwi/Chrome 切换全屏时的尺寸抖动
+    const run = () => forceFullscreenVideoVisible({
+      shell,
+      container,
+      video,
+      fill: playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain"
+    });
+    run();
+    window.requestAnimationFrame(run);
+    window.setTimeout(run, 50);
+    window.setTimeout(run, 180);
+    window.setTimeout(run, 400);
+  };
+
   const enterPlayerFullscreen = async () => {
     const art = artRef.current;
     const shell = playerShellRef.current;
@@ -1660,17 +1679,16 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     const host = fullscreenHostElement();
     const video = (art.video || videoRef.current) as HTMLVideoElement | null;
 
-    // 全屏前：画面先按网站常见方式铺满容器（contain 完整显示、居中、不变形）
-    applyAdaptiveVideoLayout(video, playerFillMode);
-    // 再挂插件壳全屏样式，避免闪一下侧栏
+    // 全屏前：画面按 contain 铺满；不要用错误像素变量
+    applyAdaptiveVideoLayout(video, playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain");
     prepareHostForBrowserFullscreen(host);
     setPlayerError("");
 
-    // 已在系统全屏中：只校正布局
+    // 已在系统全屏中：只校正画面
     if (isRealBrowserFullscreen() && isPlayerFullscreenElement(fullscreenElement(), shell, host)) {
       setBrowserFullscreenActive(true);
       setPlayerImmersive(true);
-      applyAdaptiveVideoLayout(video, playerFillMode);
+      fixFullscreenVideoPaint();
       revealPlayerControls(true);
       setPlayerStatus("已进入浏览器全屏");
       art.notice.show = "已进入浏览器全屏";
@@ -1681,7 +1699,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       return;
     }
 
-    // 网站同款调用链：播放器容器 → 宿主 → video → 页面根
+    // 网站同款：优先宿主/播放器容器 requestFullscreen（不要优先 video 单独全屏）
     const result = await enterPlayerBrowserFullscreen({
       playerRoot: shell,
       video,
@@ -1689,10 +1707,11 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     });
 
     const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape);
-    applyAdaptiveVideoLayout(video, playerFillMode);
     setBrowserFullscreenActive(result.real);
     setPlayerImmersive(true);
     prepareHostForBrowserFullscreen(host);
+    // 关键：全屏状态落地后强制把 video 画出来
+    fixFullscreenVideoPaint();
     revealPlayerControls(true);
 
     if (result.ok && result.real) {
@@ -2109,19 +2128,31 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         <div
           ref={playerShellRef}
           className={`txzz-player-shell txzz-candy-interactive select-none ${playerCursorHidden ? "cursor-none" : ""} ${playerFullscreenActive ? "txzz-player-fullscreen-shell txzz-fullscreen-active fixed inset-0 z-[2147483647] overflow-hidden rounded-none bg-black" : "relative overflow-hidden rounded-2xl bg-black shadow-inner ring-1 ring-black/20"}`}
-          style={playerShellAspect ? { ...playerStageStyle, aspectRatio: playerShellAspect } : playerStageStyle}
+          style={
+            playerFullscreenActive
+              // 全屏时不要注入可能为 0 的 viewport 像素变量，避免 video 被压成 0×0
+              ? ({ background: "#000" } as CSSProperties)
+              : playerShellAspect
+                ? { ...playerStageStyle, aspectRatio: playerShellAspect }
+                : playerStageStyle
+          }
         >
           <div
             className="txzz-player-orientation-stage"
             data-orientation-mode={playerOrientationMode}
             data-video-orientation={playerVideoLandscape ? "landscape" : playerVideoSize.height > playerVideoSize.width ? "portrait" : "unknown"}
-            style={playerStageStyle}
+            style={playerFullscreenActive ? ({ position: "absolute", inset: 0, width: "100%", height: "100%", background: "#000" } as CSSProperties) : playerStageStyle}
           >
           <div
             key={`${activePreviewKey}-${playerReloadKey}`}
             ref={playerContainerRef}
-            className={`txzz-player-clean txzz-player-fill-${playerFillMode} ${playerFullscreenActive ? "txzz-player-fullscreen-clean h-screen min-h-screen" : "h-full"} txzz-player-card-body w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full`}
-            style={{ "--txzz-player-brightness": `${playerBrightness}%` } as CSSProperties}
+            className={`txzz-player-clean txzz-player-fill-${playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain"} ${playerFullscreenActive ? "txzz-player-fullscreen-clean" : "h-full"} txzz-player-card-body w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full`}
+            style={{
+              "--txzz-player-brightness": `${playerBrightness}%`,
+              ...(playerFullscreenActive
+                ? { position: "absolute", inset: 0, width: "100%", height: "100%", minHeight: 0, background: "#000" }
+                : {})
+            } as CSSProperties}
           />
           {/* 专业手势层：单击显隐、三区双击、长按倍速/快退、横滑进度、左右竖滑音量亮度、滚轮音量。 */}
           <PlayerGestureSurface

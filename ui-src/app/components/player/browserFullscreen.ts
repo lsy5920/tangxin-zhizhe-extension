@@ -110,14 +110,22 @@ export type EnterFullscreenResult = {
   message: string;
 };
 
+function isIOSLike() {
+  const ua = navigator.userAgent || "";
+  return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
 /**
  * 播放器进入浏览器全屏（对齐网站自定义播放器）。
  *
- * 顺序：
- * 1. playerRoot（播放器壳，含画面+控件，等同 Video.js / Plyr 的 player.el_）
- * 2. pluginHost（扩展 light DOM 宿主，Shadow 失败时的主兼容路径）
- * 3. video（等同 <video>.requestFullscreen / iOS webkitEnterFullscreen）
- * 4. documentElement（少数浏览器只允许根节点）
+ * 顺序（扩展场景优化，避免 video 单独全屏导致自定义壳黑屏）：
+ * 1. pluginHost（light DOM 宿主，扩展最稳）
+ * 2. playerRoot（播放器壳，等同 Video.js player.el_）
+ * 3. documentElement
+ * 4. 仅 iOS：video.webkitEnterFullscreen()
+ *
+ * 注意：Android/桌面不要优先 video 单独全屏——video 进系统层后，
+ * 插件壳仍在下面铺黑，用户会感觉「全屏后没画面」。
  */
 export async function enterPlayerBrowserFullscreen(params: {
   playerRoot: HTMLElement | null;
@@ -127,22 +135,20 @@ export async function enterPlayerBrowserFullscreen(params: {
   const { playerRoot, video, pluginHost = getPluginHost() } = params;
   const candidates: Array<{ el: HTMLElement; via: EnterFullscreenResult["via"] }> = [];
 
-  // 1) 播放器根：网站自定义播放器首选（画面+自绘控件一起进全屏）
-  if (playerRoot) candidates.push({ el: playerRoot, via: "player" });
-  // 2) 扩展宿主 light DOM
   if (pluginHost) candidates.push({ el: pluginHost, via: "host" });
-  // 3) video 节点：网站原生 <video> 写法 / iOS
-  if (video) candidates.push({ el: video, via: "video" });
-  // 4) 页面根
+  if (playerRoot) candidates.push({ el: playerRoot, via: "player" });
   if (document.documentElement) candidates.push({ el: document.documentElement, via: "document" });
+  // iOS 才把 video 作为候选（webkitEnterFullscreen）
+  if (video && isIOSLike()) candidates.push({ el: video, via: "video" });
 
   let lastError: unknown = null;
   for (const item of candidates) {
     try {
       await requestElementFullscreen(item.el);
-      // 部分浏览器 resolve 时 fullscreenElement 尚未更新，稍等一帧再确认
-      await new Promise((r) => window.setTimeout(r, 0));
-      const real = isBrowserFullscreen();
+      await new Promise((r) => window.setTimeout(r, 16));
+      const fsEl = getFullscreenElement();
+      const real = Boolean(fsEl);
+      // video 单独 webkit 全屏时 document.fullscreenElement 可能仍为空
       if (real || item.via === "video") {
         return {
           ok: true,
@@ -150,7 +156,7 @@ export async function enterPlayerBrowserFullscreen(params: {
           real: real || item.via === "video",
           message: real
             ? `已调用浏览器全屏（${viaLabel(item.via)}）`
-            : `已调用 iOS/内核视频全屏（${viaLabel(item.via)}）`
+            : `已调用 iOS 视频全屏（${viaLabel(item.via)}）`
         };
       }
     } catch (err) {
@@ -205,25 +211,66 @@ export function restoreFullscreenChrome(host: HTMLElement | null) {
 /**
  * 让 video 在容器内自适应：完整显示、居中、不变形。
  * 对应网站常见：object-fit: contain; width/height: 100%
+ * 注意：不要写死像素宽高，避免全屏后变成 0×0 黑屏。
  */
 export function applyAdaptiveVideoLayout(video: HTMLVideoElement | null, fill: "contain" | "cover" | "fill" = "contain") {
   if (!video) return;
-  video.style.position = "absolute";
-  video.style.inset = "0";
-  video.style.left = "0";
-  video.style.top = "0";
-  video.style.width = "100%";
-  video.style.height = "100%";
-  video.style.maxWidth = "100%";
-  video.style.maxHeight = "100%";
-  video.style.margin = "0";
-  video.style.padding = "0";
-  video.style.border = "0";
-  video.style.objectFit = fill;
-  video.style.objectPosition = "50% 50%";
-  video.style.background = "#000";
-  // 移动端内联播放，避免一播放就强制系统播放器（非用户点全屏时）
+  const fit = fill || "contain";
+  video.style.cssText = [
+    "position:absolute",
+    "inset:0",
+    "left:0",
+    "top:0",
+    "right:0",
+    "bottom:0",
+    "width:100%",
+    "height:100%",
+    "min-width:0",
+    "min-height:0",
+    "max-width:none",
+    "max-height:none",
+    "margin:0",
+    "padding:0",
+    "border:0",
+    "transform:none",
+    `object-fit:${fit}`,
+    "object-position:50% 50%",
+    "background:#000",
+    "opacity:1",
+    "visibility:visible",
+    "z-index:1"
+  ].join(";");
+  // 移动端内联播放，避免非全屏时被系统播放器抢走
   video.setAttribute("playsinline", "true");
   video.setAttribute("webkit-playsinline", "true");
   (video as HTMLVideoElement & { playsInline?: boolean }).playsInline = true;
+}
+
+/** 全屏后强制校正播放器容器与 video 尺寸，防止 0 高/被盖住。 */
+export function forceFullscreenVideoVisible(params: {
+  shell: HTMLElement | null;
+  container: HTMLElement | null;
+  video: HTMLVideoElement | null;
+  fill?: "contain" | "cover" | "fill";
+}) {
+  const { shell, container, video, fill = "contain" } = params;
+  const box = "position:absolute;inset:0;left:0;top:0;right:0;bottom:0;width:100%;height:100%;min-width:0;min-height:0;max-width:none;max-height:none;margin:0;padding:0;border:0;background:#000;overflow:hidden;transform:none;";
+  if (shell) {
+    shell.style.cssText = `${box}z-index:1;`;
+  }
+  if (container) {
+    container.style.cssText = `${box}z-index:1;`;
+  }
+  applyAdaptiveVideoLayout(video, fill);
+  // 尝试继续播放，防止全屏切换后卡在暂停/黑帧
+  if (video && video.paused === false) {
+    try {
+      const p = video.play();
+      if (p && typeof (p as Promise<void>).catch === "function") {
+        (p as Promise<void>).catch(() => {});
+      }
+    } catch {
+      // 忽略自动播放限制
+    }
+  }
 }

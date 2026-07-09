@@ -574,3 +574,4 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 2026-07-09 23:05 【优化】升级版本到 v3.1.0，强化浏览器沉浸全屏：优先对 light DOM 插件宿主申请 Fullscreen API 并使用 navigationUI:hide，失败再尝试页面根节点、video、壳层；系统全屏成功后样式强制铺满并隐藏面板壳；仅 API 被拒时才铺满兜底，更接近网站原生视频全屏。
 2026-07-09 23:25 【修复】升级版本到 v3.1.1，根据 Kiwi 横屏截图修复控制栏变形：去掉中间状态空白区，横屏矮屏紧凑贴底控制层，隐藏快捷条，按钮左右贴边，进度条文案简化。
 2026-07-09 23:45 【优化】升级版本到 v3.1.2，全屏改为网站同款 Fullscreen API（playerRoot.requestFullscreen + navigationUI:hide，兼容宿主/video/iOS），视频 object-fit:contain 自适应铺满容器。
+2026-07-09 23:55 【修复】升级版本到 v3.1.3，修复全屏后视频黑屏：去掉错误 viewport 像素尺寸，全屏强制 100% 铺满，进入全屏后多帧校正 video 绘制，Android 不再优先 video 单独全屏。

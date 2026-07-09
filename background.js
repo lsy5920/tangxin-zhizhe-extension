@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2345";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2355";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 23:45 【优化】升级版本到 v3.1.2，全屏改为网站同款 Fullscreen API 调用链，视频 object-fit contain 自适应铺满。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 23:55 【修复】升级版本到 v3.1.3，修复全屏后视频黑屏不显示：去掉错误 viewport 像素尺寸，全屏强制 100% 铺满并校正 video 绘制。";
 
 const DEFAULT_STATE = {
   role: "guest",
