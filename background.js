@@ -47,9 +47,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0415";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0430";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 04:15 【修复】升级版本到 v3.5.1，广告清理补杀开屏倒计时结束后的右上角进入/跳过残留按钮。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 04:30 【修复】升级版本到 v3.5.2，修复 background.js 中 ?? 与 || 混用导致 Service Worker 无法启动、同步账号与检测更新全部失效。";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1402,10 +1402,11 @@ async function recordDownloadProgress(message = {}) {
       url: String(message.url || state.downloadTasks?.[taskId]?.url || ""),
       error: String(message.error || ""),
       downloadId: message.downloadId || state.downloadTasks?.[taskId]?.downloadId || null,
-      bytes: Number(message.bytes ?? state.downloadTasks?.[taskId]?.bytes || 0),
-      totalBytes: Number(message.totalBytes ?? state.downloadTasks?.[taskId]?.totalBytes || 0),
-      speedBps: Number(message.speedBps ?? state.downloadTasks?.[taskId]?.speedBps || 0),
-      percent: Number(message.percent ?? state.downloadTasks?.[taskId]?.percent || 0),
+      // 注意：?? 与 || 不能直接混用，否则 Service Worker 语法错误直接无法联网。
+      bytes: Number(message.bytes ?? state.downloadTasks?.[taskId]?.bytes ?? 0),
+      totalBytes: Number(message.totalBytes ?? state.downloadTasks?.[taskId]?.totalBytes ?? 0),
+      speedBps: Number(message.speedBps ?? state.downloadTasks?.[taskId]?.speedBps ?? 0),
+      percent: Number(message.percent ?? state.downloadTasks?.[taskId]?.percent ?? 0),
       lineKey: String(message.lineKey || state.downloadTasks?.[taskId]?.lineKey || ""),
       objectReady: message.stage === "ready" || Boolean(message.objectReady || state.downloadTasks?.[taskId]?.objectReady),
       saveVia: String(message.saveVia || state.downloadTasks?.[taskId]?.saveVia || ""),

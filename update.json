@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.5.1",
-  "build": "2026-07-10-0415",
-  "releasedAt": "2026-07-10 04:15",
+  "version": "3.5.2",
+  "build": "2026-07-10-0430",
+  "releasedAt": "2026-07-10 04:30",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0430",
+      "type": "修复",
+      "title": "修复插件无法联网 · Service Worker 语法错误",
+      "detail": "下载进度字段写入时混用 ?? 与 ||，导致 background.js 语法错误、Service Worker 无法启动，同步账号、检测更新、播放详情等所有后台联网请求全部失败。已改为安全的空值合并写法。"
+    },
     {
       "id": "2026-07-10-0415",
       "type": "修复",
