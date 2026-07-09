@@ -4,7 +4,8 @@ import Hls from "hls.js";
 import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SortDesc, Timer, Wifi, Zap } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
-import { PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerGestureHudView, type PlayerMorePanelKey } from "./player/PlayerChrome";
+import { PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerMorePanelKey } from "./player/PlayerChrome";
+import { PlayerGestureHudOverlay, PlayerGestureSurface, type GestureHudState } from "./player/PlayerGestureSystem";
 
 type Props = {
   state: BridgeState;
@@ -68,21 +69,7 @@ type PlayerFullscreenTune = {
   label: string;
 };
 
-// 全屏手势提示层：音量、亮度、快进快退、倍速统一用同一套视觉反馈，减少画面遮挡。
-type PlayerGestureHud = PlayerGestureHudView;
 
-type PlayerSwipeGesture = {
-  active: boolean;
-  mode: "none" | "volume" | "brightness" | "seek";
-  startX: number;
-  startY: number;
-  width: number;
-  height: number;
-  startVolume: number;
-  startBrightness: number;
-  startTime: number;
-  seekSeconds: number;
-};
 
 type FullscreenTarget = HTMLElement & {
   webkitRequestFullscreen?: () => Promise<void> | void;
@@ -682,7 +669,6 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const [playerResumeTip, setPlayerResumeTip] = useState("");
   const [playerImmersive, setPlayerImmersive] = useState(false);
   const [browserFullscreenActive, setBrowserFullscreenActive] = useState(false);
-  const [holdSeekHint, setHoldSeekHint] = useState("");
   const [playerFitMode, setPlayerFitMode] = useState<PlayerFitMode>("auto");
   const [detectedFitMode, setDetectedFitMode] = useState<Exclude<PlayerFitMode, "auto">>("wide");
   const [playerStats, setPlayerStats] = useState<PlayerSnapshot>({ currentTime: 0, duration: 0, bufferedEnd: 0, paused: true, rate: 1 });
@@ -709,30 +695,14 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const [playerUiLocked, setPlayerUiLocked] = useState(false);
   // 全屏顶部诊断徽标默认短时显示，随后收起，减少观影干扰。
   const [playerFullscreenMetaVisible, setPlayerFullscreenMetaVisible] = useState(true);
-  const [playerGestureHud, setPlayerGestureHud] = useState<PlayerGestureHud>({ kind: "", text: "" });
+  const [playerGestureHud, setPlayerGestureHud] = useState<GestureHudState>({ kind: "", text: "" });
+  const [holdSeekHint, setHoldSeekHint] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerShellRef = useRef<HTMLDivElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
   const artRef = useRef<Artplayer | null>(null);
-  const holdSeekRef = useRef<{ delay?: number; interval?: number; active: boolean; seconds: number }>({ active: false, seconds: 0 });
   const holdRateRef = useRef<{ active: boolean; prevRate: number }>({ active: false, prevRate: 1 });
-  const swipeGestureRef = useRef<PlayerSwipeGesture>({
-    active: false,
-    mode: "none",
-    startX: 0,
-    startY: 0,
-    width: 0,
-    height: 0,
-    startVolume: 0.8,
-    startBrightness: 100,
-    startTime: 0,
-    seekSeconds: 0
-  });
-  const suppressClickRef = useRef(false);
-  const lastPointerTypeRef = useRef("mouse");
-  const clickSeekRef = useRef<{ timer?: number; count: number; clientX: number }>({ count: 0, clientX: 0 });
   const controlsPinnedByClickRef = useRef(false);
-  const controlsVisibleBeforePointerRef = useRef(true);
   const controlsRevealSuppressedUntilRef = useRef(0);
   const controlsTimerRef = useRef<number | undefined>();
   const cursorTimerRef = useRef<number | undefined>();
@@ -861,7 +831,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     }
   };
 
-  const showPlayerGestureHud = (next: PlayerGestureHud, duration = 900) => {
+  const showPlayerGestureHud = (next: GestureHudState, duration = 900) => {
     if (gestureHudTimerRef.current) window.clearTimeout(gestureHudTimerRef.current);
     setPlayerGestureHud(next);
     if (!next.kind) return;
@@ -1275,25 +1245,20 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     };
   }, [activePreviewKey, latest?.accountLabel, latest?.accountUser, playerSeekStep, previewTitle, previewUrl]);
 
-  const stopHoldSeek = () => {
-    const state = holdSeekRef.current;
-    if (state.delay) window.clearTimeout(state.delay);
-    if (state.interval) window.clearInterval(state.interval);
-    holdSeekRef.current = { active: false, seconds: 0 };
+  const endHoldRateBoost = () => {
     // 长按倍速结束后恢复原倍速，保证松手即回到用户原来的播放速度。
-    if (holdRateRef.current.active) {
-      const art = artRef.current;
-      if (art) {
-        art.playbackRate = holdRateRef.current.prevRate;
-        art.notice.show = `已恢复 ${holdRateRef.current.prevRate}x 倍速`;
-        setPlayerStats(playerSnapshot(art.video));
-      }
-      holdRateRef.current = { active: false, prevRate: 1 };
+    if (!holdRateRef.current.active) return;
+    const art = artRef.current;
+    if (art) {
+      art.playbackRate = holdRateRef.current.prevRate || 1;
+      art.notice.show = `已恢复 ${holdRateRef.current.prevRate || 1}x 倍速`;
+      setPlayerStats(playerSnapshot(art.video));
     }
+    holdRateRef.current = { active: false, prevRate: 1 };
     setHoldSeekHint("");
   };
 
-  useEffect(() => stopHoldSeek, []);
+  useEffect(() => () => endHoldRateBoost(), []);
 
   useEffect(() => {
     // 完整播放器体验交给 ArtPlayer，HLS/m3u8 内核由 hls.js 接管，避免回退到功能过少的原生控件。
@@ -1791,9 +1756,21 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     showPlayerGestureHud({
       kind: seconds < 0 ? "seek-back" : "seek-forward",
       text: label,
-      percent: percent(art.currentTime || 0, art.duration || 0)
+      percent: percent(art.currentTime || 0, art.duration || 0),
+      zone: seconds < 0 ? "left" : "right"
     }, 780);
     setPlayerStats(playerSnapshot(art.video));
+  };
+
+  const seekPlayerTo = (time: number) => {
+    const art = artRef.current;
+    if (!art) return;
+    const total = Number.isFinite(art.duration) ? art.duration : 0;
+    const next = Math.max(0, total ? Math.min(total, time) : time);
+    art.currentTime = next;
+    art.notice.show = `跳转到 ${formatDuration(next)}`;
+    setPlayerStats(playerSnapshot(art.video));
+    setProgressPreviewTime(null);
   };
 
   const markControlAction = () => {
@@ -1842,207 +1819,6 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     setPlayerQualityLevel(nextLevel);
     const label = nextLevel < 0 ? "自动清晰度" : playerQualities.find((item) => item.level === nextLevel)?.label || `档位 ${nextLevel + 1}`;
     art.notice.show = `清晰度：${label}`;
-  };
-
-  const handlePlayerClick = (event: ReactMouseEvent<HTMLDivElement>) => {
-    // 手势层专用：单击显示/隐藏悬浮控制，双击中间暂停/播放，双击左右快退/快进。
-    event.stopPropagation();
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
-    // 刚点过主控按钮时，忽略紧随其后的 surface 点击。
-    if (Date.now() - controlActionStampRef.current < 450) return;
-    if (!previewUrl) return;
-
-    // 锁屏后单击不展开控制层；双击左右仍可跳进度。
-    if (playerUiLocked) {
-      const state = clickSeekRef.current;
-      state.count += 1;
-      state.clientX = event.clientX;
-      if (state.timer) window.clearTimeout(state.timer);
-      state.timer = window.setTimeout(() => {
-        const count = state.count;
-        const clientX = state.clientX;
-        clickSeekRef.current = { count: 0, clientX: 0 };
-        if (count < 2) {
-          showPlayerGestureHud({ kind: "lock", text: "控制层已锁定", percent: 100 }, 900);
-          return;
-        }
-        const rect = event.currentTarget.getBoundingClientRect();
-        const zone = (clientX - rect.left) / Math.max(1, rect.width);
-        if (zone < 0.33) seekPlayer(-playerSeekStep);
-        else if (zone > 0.67) seekPlayer(playerSeekStep);
-        else showPlayerGestureHud({ kind: "lock", text: "点击右下角解锁", percent: 100 }, 1000);
-      }, 240);
-      return;
-    }
-
-    const state = clickSeekRef.current;
-    state.count += 1;
-    state.clientX = event.clientX;
-    if (state.timer) window.clearTimeout(state.timer);
-    state.timer = window.setTimeout(() => {
-      const count = state.count;
-      const clientX = state.clientX;
-      clickSeekRef.current = { count: 0, clientX: 0 };
-      const rect = event.currentTarget.getBoundingClientRect();
-      if (count >= 2) {
-        controlsPinnedByClickRef.current = false;
-        // 三区域双击：左 1/3 快退，右 1/3 快进，中间切换播放/暂停（手机与电脑一致）。
-        const zone = (clientX - rect.left) / Math.max(1, rect.width);
-        if (zone < 0.33) {
-          seekPlayer(-playerSeekStep);
-        } else if (zone > 0.67) {
-          seekPlayer(playerSeekStep);
-        } else {
-          togglePlayerPlay();
-        }
-        revealPlayerControls(true);
-        return;
-      }
-      // 单击：显示或隐藏悬浮控制层。
-      if (controlsVisibleBeforePointerRef.current || playerControlsVisible) {
-        hidePlayerControlsBySurfaceClick();
-      } else {
-        revealPlayerControlsBySurfaceClick();
-      }
-    }, 240);
-  };
-
-  const startHoldSeek = (event: ReactPointerEvent<HTMLDivElement>) => {
-    // 手势层 pointer 入口：记录单击前的控制层可见状态，并准备长按/滑动。
-    lastPointerTypeRef.current = event.pointerType || "mouse";
-    controlsVisibleBeforePointerRef.current = playerControlsVisible;
-    if (playerUiLocked) return;
-    if (!previewUrl) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const pressLeft = event.clientX < rect.left + rect.width / 2;
-    const seconds = pressLeft ? -playerSeekStep : playerSeekStep;
-    stopHoldSeek();
-    holdSeekRef.current = { active: false, seconds };
-    // 触摸：横向滑动快进快退，左半屏竖滑亮度，右半屏竖滑音量。
-    if (event.pointerType === "touch") {
-      swipeGestureRef.current = {
-        active: false,
-        mode: "none",
-        startX: event.clientX,
-        startY: event.clientY,
-        width: rect.width,
-        height: rect.height,
-        startVolume: playerMuted ? 0 : playerVolume,
-        startBrightness: playerBrightness,
-        startTime: artRef.current?.currentTime || playerStats.currentTime || 0,
-        seekSeconds: 0
-      };
-    }
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // 不支持捕获也不影响后续 pointerup 清理。
-    }
-    holdSeekRef.current.delay = window.setTimeout(() => {
-      if (swipeGestureRef.current.active) return;
-      const art = artRef.current;
-      if (pressLeft || !art) {
-        holdSeekRef.current.active = true;
-        setHoldSeekHint("长按左侧：持续快退");
-        seekPlayer(seconds);
-        holdSeekRef.current.interval = window.setInterval(() => seekPlayer(seconds), 520);
-        return;
-      }
-      holdSeekRef.current.active = true;
-      holdRateRef.current = { active: true, prevRate: art.playbackRate || 1 };
-      art.playbackRate = 3;
-      setPlayerStats(playerSnapshot(art.video));
-      setHoldSeekHint("3x 倍速快进中 · 松开恢复");
-      showPlayerGestureHud({ kind: "rate", text: "3x 快进中", percent: 100 }, 1200);
-    }, 420);
-  };
-
-  const handleShellPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    // 控制层已显示时，鼠标移动只续期显示时间，不强制打断用户主动隐藏。
-    if (playerControlsVisible && !playerUiLocked) maybeRevealPlayerControls();
-    if (event.pointerType !== "touch" || !previewUrl) return;
-    const gesture = swipeGestureRef.current;
-    if (!gesture.height) return;
-    const deltaX = event.clientX - gesture.startX;
-    const deltaY = event.clientY - gesture.startY;
-    if (!gesture.active) {
-      const absX = Math.abs(deltaX);
-      const absY = Math.abs(deltaY);
-      if ((absX < 18 && absY < 18) || holdSeekRef.current.active) return;
-      const holdState = holdSeekRef.current;
-      if (holdState.delay) window.clearTimeout(holdState.delay);
-      gesture.active = true;
-      suppressClickRef.current = true;
-      if (absX >= absY * 1.15) {
-        gesture.mode = "seek";
-      } else {
-        const midX = event.currentTarget.getBoundingClientRect().left + gesture.width / 2;
-        gesture.mode = gesture.startX < midX ? "brightness" : "volume";
-      }
-    }
-
-    if (gesture.mode === "seek") {
-      const art = artRef.current;
-      const total = art?.duration || playerStats.duration || 0;
-      if (!art || !total) return;
-      const seekSeconds = Math.round((deltaX / Math.max(220, gesture.width)) * 90);
-      gesture.seekSeconds = seekSeconds;
-      const nextTime = Math.max(0, Math.min(total, gesture.startTime + seekSeconds));
-      setProgressPreviewTime(nextTime);
-      showPlayerGestureHud({
-        kind: seekSeconds < 0 ? "seek-back" : "seek-forward",
-        text: `${seekSeconds >= 0 ? "+" : ""}${seekSeconds} 秒 · ${formatDuration(nextTime)}`,
-        percent: percent(nextTime, total)
-      }, 1200);
-      return;
-    }
-
-    const ratio = -deltaY / Math.max(160, gesture.height * 0.8);
-    if (gesture.mode === "volume") {
-      const nextVolume = Math.max(0, Math.min(1, gesture.startVolume + ratio));
-      applyPlayerVolume(nextVolume, nextVolume <= 0.001);
-      setHoldSeekHint("");
-      return;
-    }
-    if (gesture.mode === "brightness") {
-      const nextBrightness = Math.max(60, Math.min(140, Math.round(gesture.startBrightness + ratio * 80)));
-      applyPlayerBrightness(nextBrightness);
-      setHoldSeekHint("");
-    }
-  };
-
-  const finishHoldSeek = () => {
-    // 长按倍速或滑动手势期间松手会派生 click，先标记抑制，再统一清理状态。
-    const gesture = swipeGestureRef.current;
-    const gestureHandled = holdSeekRef.current.active || gesture.active;
-    if (gestureHandled) suppressClickRef.current = true;
-    if (gesture.active && gesture.mode === "seek" && artRef.current) {
-      const duration = artRef.current.duration || playerStats.duration || 0;
-      if (duration > 0 && gesture.seekSeconds !== 0) {
-        const nextTime = Math.max(0, Math.min(duration, gesture.startTime + gesture.seekSeconds));
-        artRef.current.currentTime = nextTime;
-        artRef.current.notice.show = `跳转到 ${formatDuration(nextTime)}`;
-        setPlayerStats(playerSnapshot(artRef.current.video));
-      }
-      setProgressPreviewTime(null);
-    }
-    stopHoldSeek();
-    swipeGestureRef.current = {
-      active: false,
-      mode: "none",
-      startX: 0,
-      startY: 0,
-      width: 0,
-      height: 0,
-      startVolume: playerVolume,
-      startBrightness: playerBrightness,
-      startTime: 0,
-      seekSeconds: 0
-    };
-    if (gestureHandled || controlsShouldStayVisible || playerControlsVisible) revealPlayerControls();
   };
 
   const applyPlayerRate = (nextRate: number) => {
@@ -2298,7 +2074,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
               <Film size={14} className="text-sky-400" /> 完整播放器
             </h3>
-            <p className="mt-1 truncate text-xs text-purple-400">{previewTitle} · 单击显隐控制 · 双击暂停 · 左右双击快进快退</p>
+            <p className="mt-1 truncate text-xs text-purple-400">{previewTitle} · 完整手势：单击/双击/长按/滑动/滚轮</p>
           </div>
         </div>
         <div
@@ -2318,25 +2094,51 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             className={`txzz-player-clean txzz-player-fill-${playerFillMode} ${playerFullscreenActive ? "txzz-player-fullscreen-clean h-screen min-h-screen" : "h-full"} txzz-player-card-body w-full bg-black [&_.art-fullscreen-web]:z-[1] [&_.art-video-player]:h-full [&_.art-video-player]:w-full`}
             style={{ "--txzz-player-brightness": `${playerBrightness}%` } as CSSProperties}
           />
-          {/* 手势承接层：盖在视频上、控制层下，专门处理单击/双击/滑动，避免 ArtPlayer 抢事件。 */}
-          <div
-            className="txzz-player-gesture-surface"
-            role="presentation"
-            aria-label="视频手势区域"
-            onPointerDown={startHoldSeek}
-            onPointerMove={handleShellPointerMove}
-            onPointerUp={finishHoldSeek}
-            onPointerCancel={finishHoldSeek}
-            onPointerLeave={finishHoldSeek}
-            onLostPointerCapture={finishHoldSeek}
-            onMouseMove={() => {
-              if (playerControlsVisible && !playerUiLocked) maybeRevealPlayerControls();
+          {/* 专业手势层：单击显隐、三区双击、长按倍速/快退、横滑进度、左右竖滑音量亮度、滚轮音量。 */}
+          <PlayerGestureSurface
+            enabled={Boolean(previewUrl)}
+            locked={playerUiLocked}
+            controlsVisible={playerControlsVisible}
+            seekStep={playerSeekStep}
+            volume={playerVolume}
+            muted={playerMuted}
+            brightness={playerBrightness}
+            currentTime={playerStats.currentTime}
+            duration={playerStats.duration}
+            playing={!playerStats.paused}
+            holdRate={3}
+            onShowHud={(hud, durationMs) => {
+              // 主控按钮刚点完的短窗口，忽略手势 HUD 误触发（由 surface 内部 click 仍可能竞争）。
+              if (Date.now() - controlActionStampRef.current < 280 && (hud.kind === "play" || hud.kind === "pause")) return;
+              showPlayerGestureHud(hud, durationMs);
             }}
-            onClick={handlePlayerClick}
+            onToggleControls={(show) => {
+              if (Date.now() - controlActionStampRef.current < 280) return;
+              if (show) revealPlayerControlsBySurfaceClick();
+              else hidePlayerControlsBySurfaceClick();
+            }}
+            onTogglePlay={() => {
+              togglePlayerPlay();
+            }}
+            onSeekBy={seekPlayer}
+            onSeekTo={seekPlayerTo}
+            onVolume={(volume, muted) => applyPlayerVolume(volume, muted ?? volume <= 0.001)}
+            onBrightness={applyPlayerBrightness}
+            onHoldRateStart={(rate) => {
+              const art = artRef.current;
+              if (!art) return;
+              holdRateRef.current = { active: true, prevRate: art.playbackRate || 1 };
+              art.playbackRate = rate;
+              setPlayerStats(playerSnapshot(art.video));
+              setHoldSeekHint(`${rate}x 倍速快进中 · 松开恢复`);
+            }}
+            onHoldRateEnd={endHoldRateBoost}
+            onLockHint={() => setPlayerStatus("控制层已锁定，点击右下角解锁")}
           />
+          <PlayerGestureHudOverlay hud={playerGestureHud} holdHint={holdSeekHint} />
           <PlayerOverlays
-            holdSeekHint={holdSeekHint}
-            gestureHud={playerGestureHud}
+            holdSeekHint=""
+            gestureHud={{ kind: "", text: "" }}
             buffering={playerBuffering}
             hasUrl={Boolean(previewUrl)}
             error={playerError}

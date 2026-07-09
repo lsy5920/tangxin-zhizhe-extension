@@ -32,8 +32,6 @@ import {
 import { formatDuration } from "../../helpers";
 
 export type PlayerMorePanelKey = "line" | "display" | "sound" | "tools";
-export type PlayerGestureKind = "volume" | "brightness" | "seek-back" | "seek-forward" | "lock" | "unlock" | "rate" | "";
-
 export type PlayerPreviewOption = {
   key: string;
   label: string;
@@ -41,8 +39,9 @@ export type PlayerPreviewOption = {
   hint: string;
 };
 
+/** 兼容旧 HUD 字段；完整手势反馈已迁移到 PlayerGestureSystem。 */
 export type PlayerGestureHudView = {
-  kind: PlayerGestureKind;
+  kind: string;
   text: string;
   percent?: number;
 };
@@ -830,7 +829,9 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
               <p className="text-[9px] leading-relaxed text-white/55">
                 快捷键：空格/K 播放 · ←/→ 快退快进 · ↑/↓ 音量 · M 静音 · F 全屏 · L 锁屏
                 <br />
-                手势：左半屏竖滑亮度 · 右半屏竖滑音量 · 横向滑动快进快退 · 双击左右跳转
+                手势：单击显隐控制 · 中双击播放暂停 · 左/右双击快退快进 · 长按左快退/右倍速
+                <br />
+                滑动：横向调进度 · 左半屏竖滑亮度 · 右半屏竖滑音量 · 滚轮音量 · Shift+滚轮亮度
               </p>
             </div>
           )}

@@ -157,6 +157,87 @@
   pointer-events: auto;
 }
 
+/* 双击区域闪烁（主流 App 左右快进视觉） */
+.txzz-gesture-zone-flash {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  animation: txzz-zone-flash 0.45s ease-out forwards;
+}
+
+.txzz-gesture-zone-left {
+  left: 0;
+  width: 33.33%;
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.28), transparent);
+}
+
+.txzz-gesture-zone-right {
+  right: 0;
+  width: 33.33%;
+  background: linear-gradient(270deg, rgba(52, 211, 153, 0.28), transparent);
+}
+
+.txzz-gesture-zone-center {
+  left: 33.33%;
+  width: 33.34%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.16), transparent 70%);
+}
+
+@keyframes txzz-zone-flash {
+  0% { opacity: 0.95; }
+  100% { opacity: 0; }
+}
+
+/* 侧边音量/亮度竖条 */
+.txzz-gesture-side-bar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 12px 10px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  animation: txzz-gesture-pop 0.16s ease-out;
+}
+
+.txzz-gesture-side-bar-left {
+  left: max(12px, env(safe-area-inset-left));
+}
+
+.txzz-gesture-side-bar-right {
+  right: max(12px, env(safe-area-inset-right));
+}
+
+.txzz-gesture-side-track {
+  width: 6px;
+  height: 120px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: flex-end;
+}
+
+.txzz-gesture-side-fill {
+  width: 100%;
+  border-radius: 999px;
+  transition: height 0.06s linear;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .txzz-gesture-side-track {
+    height: 88px;
+  }
+  .txzz-gesture-side-bar {
+    padding: 8px 8px;
+  }
+}
+
 .txzz-player-clean .art-video {
   width: 100% !important;
   height: 100% !important;

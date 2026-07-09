@@ -1,0 +1,525 @@
+import { useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { ChevronLeft, ChevronRight, Lock, Pause, Play, Sun, Unlock, Volume2, VolumeX, Zap } from "lucide-react";
+import { formatDuration } from "../../helpers";
+
+/** 手势 HUD 类型：覆盖主流播放器全部视觉反馈。 */
+export type GestureHudKind =
+  | ""
+  | "volume"
+  | "brightness"
+  | "seek-back"
+  | "seek-forward"
+  | "seek-scrub"
+  | "play"
+  | "pause"
+  | "lock"
+  | "unlock"
+  | "rate"
+  | "double-left"
+  | "double-right";
+
+export type GestureHudState = {
+  kind: GestureHudKind;
+  text: string;
+  percent?: number;
+  /** 双击区域闪烁：left | center | right */
+  zone?: "left" | "center" | "right" | "";
+  /** 侧边竖条：音量靠右，亮度靠左 */
+  sideBar?: "left" | "right" | "";
+};
+
+export type GestureSurfaceProps = {
+  enabled: boolean;
+  locked: boolean;
+  controlsVisible: boolean;
+  seekStep: number;
+  volume: number;
+  muted: boolean;
+  brightness: number;
+  currentTime: number;
+  duration: number;
+  playing: boolean;
+  /** 长按倍速，默认 3 */
+  holdRate?: number;
+  onShowHud: (hud: GestureHudState, durationMs?: number) => void;
+  onClearHud?: () => void;
+  onToggleControls: (show: boolean) => void;
+  onTogglePlay: () => void;
+  onSeekBy: (seconds: number) => void;
+  onSeekTo: (time: number) => void;
+  onVolume: (volume: number, muted?: boolean) => void;
+  onBrightness: (brightness: number) => void;
+  onHoldRateStart: (rate: number) => void;
+  onHoldRateEnd: () => void;
+  onLockHint?: () => void;
+};
+
+type SwipeMode = "none" | "seek" | "volume" | "brightness";
+
+type SwipeState = {
+  active: boolean;
+  mode: SwipeMode;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  width: number;
+  height: number;
+  startVolume: number;
+  startBrightness: number;
+  startTime: number;
+  seekSeconds: number;
+  /** 鼠标是否允许拖动手势（按下后移动） */
+  allowMouseDrag: boolean;
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function percent(value: number, total: number) {
+  if (!total) return 0;
+  return clamp(Math.round((value / total) * 100), 0, 100);
+}
+
+function zoneOf(x: number, left: number, width: number): "left" | "center" | "right" {
+  const ratio = (x - left) / Math.max(1, width);
+  if (ratio < 0.33) return "left";
+  if (ratio > 0.67) return "right";
+  return "center";
+}
+
+/**
+ * 专业级播放器手势承接层。
+ * 覆盖：单击显隐控制、三区双击、长按倍速/快退、横滑进度、左右竖滑音量亮度、滚轮音量、鼠标拖拽调节。
+ */
+export function PlayerGestureSurface({
+  enabled,
+  locked,
+  controlsVisible,
+  seekStep,
+  volume,
+  muted,
+  brightness,
+  currentTime,
+  duration,
+  playing,
+  holdRate = 3,
+  onShowHud,
+  onToggleControls,
+  onTogglePlay,
+  onSeekBy,
+  onSeekTo,
+  onVolume,
+  onBrightness,
+  onHoldRateStart,
+  onHoldRateEnd,
+  onLockHint
+}: GestureSurfaceProps) {
+  const clickRef = useRef<{ count: number; x: number; timer?: number; lastDoubleAt: number; lastDoubleZone: "left" | "center" | "right" | "" }>({
+    count: 0,
+    x: 0,
+    lastDoubleAt: 0,
+    lastDoubleZone: ""
+  });
+  const suppressClickRef = useRef(false);
+  const controlsVisibleOnDownRef = useRef(controlsVisible);
+  const holdRef = useRef<{ delay?: number; interval?: number; active: boolean; side: "left" | "right" | "" }>({ active: false, side: "" });
+  const swipeRef = useRef<SwipeState>({
+    active: false,
+    mode: "none",
+    pointerId: -1,
+    startX: 0,
+    startY: 0,
+    width: 0,
+    height: 0,
+    startVolume: 0.8,
+    startBrightness: 100,
+    startTime: 0,
+    seekSeconds: 0,
+    allowMouseDrag: false
+  });
+  const cumulativeSeekRef = useRef(0);
+
+  const clearHoldTimers = () => {
+    const hold = holdRef.current;
+    if (hold.delay) window.clearTimeout(hold.delay);
+    if (hold.interval) window.clearInterval(hold.interval);
+    hold.delay = undefined;
+    hold.interval = undefined;
+  };
+
+  const stopHold = () => {
+    const wasHold = holdRef.current.active;
+    clearHoldTimers();
+    if (holdRef.current.active && holdRef.current.side === "right") {
+      onHoldRateEnd();
+    }
+    holdRef.current = { active: false, side: "" };
+    return wasHold;
+  };
+
+  const finishSwipe = () => {
+    const swipe = swipeRef.current;
+    const wasActive = swipe.active;
+    if (wasActive && swipe.mode === "seek" && swipe.seekSeconds !== 0 && duration > 0) {
+      const next = clamp(swipe.startTime + swipe.seekSeconds, 0, duration);
+      onSeekTo(next);
+      onShowHud({
+        kind: swipe.seekSeconds < 0 ? "seek-back" : "seek-forward",
+        text: `跳到 ${formatDuration(next)}`,
+        percent: percent(next, duration),
+        zone: swipe.seekSeconds < 0 ? "left" : "right"
+      }, 700);
+    }
+    swipeRef.current = {
+      active: false,
+      mode: "none",
+      pointerId: -1,
+      startX: 0,
+      startY: 0,
+      width: 0,
+      height: 0,
+      startVolume: volume,
+      startBrightness: brightness,
+      startTime: 0,
+      seekSeconds: 0,
+      allowMouseDrag: false
+    };
+    return wasActive;
+  };
+
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    if (!enabled) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX;
+    const state = clickRef.current;
+    state.count += 1;
+    state.x = x;
+    if (state.timer) window.clearTimeout(state.timer);
+
+    state.timer = window.setTimeout(() => {
+      const count = state.count;
+      const clickX = state.x;
+      state.count = 0;
+      state.timer = undefined;
+      const zone = zoneOf(clickX, rect.left, rect.width);
+
+      if (locked) {
+        if (count < 2) {
+          onShowHud({ kind: "lock", text: "控制层已锁定", percent: 100 }, 900);
+          onLockHint?.();
+          return;
+        }
+        if (zone === "left") {
+          onSeekBy(-seekStep);
+          onShowHud({ kind: "double-left", text: `-${seekStep}s`, zone: "left", percent: 35 }, 650);
+        } else if (zone === "right") {
+          onSeekBy(seekStep);
+          onShowHud({ kind: "double-right", text: `+${seekStep}s`, zone: "right", percent: 65 }, 650);
+        } else {
+          onShowHud({ kind: "lock", text: "点击右下角解锁", percent: 100, zone: "center" }, 1000);
+        }
+        return;
+      }
+
+      if (count >= 2) {
+        // 连点累计：1 秒内同侧再次双击，叠加更多秒数（主流 App 体验）。
+        const now = Date.now();
+        const sameZone = state.lastDoubleZone === zone && now - state.lastDoubleAt < 1000;
+        if (zone === "left" || zone === "right") {
+          if (!sameZone || zone !== state.lastDoubleZone) cumulativeSeekRef.current = 0;
+          cumulativeSeekRef.current += seekStep;
+          const totalDelta = cumulativeSeekRef.current;
+          const signed = zone === "left" ? -totalDelta : totalDelta;
+          onSeekBy(zone === "left" ? -seekStep : seekStep);
+          onShowHud({
+            kind: zone === "left" ? "double-left" : "double-right",
+            text: `${signed >= 0 ? "+" : ""}${signed}s`,
+            zone,
+            percent: zone === "left" ? 30 : 70
+          }, 700);
+          state.lastDoubleAt = now;
+          state.lastDoubleZone = zone;
+        } else {
+          cumulativeSeekRef.current = 0;
+          state.lastDoubleZone = "center";
+          state.lastDoubleAt = now;
+          onTogglePlay();
+          onShowHud({
+            kind: playing ? "pause" : "play",
+            text: playing ? "已暂停" : "继续播放",
+            zone: "center",
+            percent: 50
+          }, 650);
+        }
+        onToggleControls(true);
+        return;
+      }
+
+      // 单击：显隐悬浮控制
+      cumulativeSeekRef.current = 0;
+      const wasVisible = controlsVisibleOnDownRef.current || controlsVisible;
+      onToggleControls(!wasVisible);
+    }, 220);
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!enabled) return;
+    controlsVisibleOnDownRef.current = controlsVisible;
+    if (locked) return;
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const isTouch = event.pointerType === "touch";
+    const isMouse = event.pointerType === "mouse" || event.pointerType === "";
+    // 仅鼠标左键参与拖拽手势；右键留给浏览器/菜单。
+    if (isMouse && event.button !== 0) return;
+
+    const side = event.clientX < rect.left + rect.width / 2 ? "left" : "right";
+    clearHoldTimers();
+    holdRef.current = { active: false, side };
+    swipeRef.current = {
+      active: false,
+      mode: "none",
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      width: rect.width,
+      height: rect.height,
+      startVolume: muted ? 0 : volume,
+      startBrightness: brightness,
+      startTime: currentTime,
+      seekSeconds: 0,
+      allowMouseDrag: isMouse || isTouch
+    };
+
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // 忽略
+    }
+
+    // 长按：左侧连续快退，右侧临时倍速快进（主流长视频 App 交互）。
+    holdRef.current.delay = window.setTimeout(() => {
+      if (swipeRef.current.active) return;
+      holdRef.current.active = true;
+      suppressClickRef.current = true;
+      if (side === "left") {
+        onSeekBy(-seekStep);
+        onShowHud({ kind: "seek-back", text: `长按快退 -${seekStep}s`, zone: "left", percent: 25 }, 900);
+        holdRef.current.interval = window.setInterval(() => {
+          onSeekBy(-seekStep);
+          onShowHud({ kind: "seek-back", text: `长按快退 -${seekStep}s`, zone: "left", percent: 25 }, 500);
+        }, 480);
+      } else {
+        onHoldRateStart(holdRate);
+        onShowHud({ kind: "rate", text: `${holdRate}x 快进中`, percent: 100, zone: "right" }, 1500);
+      }
+    }, 380);
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!enabled || locked) return;
+    const swipe = swipeRef.current;
+    if (swipe.pointerId !== event.pointerId || !swipe.allowMouseDrag) return;
+    if (holdRef.current.active) return;
+
+    const deltaX = event.clientX - swipe.startX;
+    const deltaY = event.clientY - swipe.startY;
+    const absX = Math.abs(deltaX);
+    const absY = Math.abs(deltaY);
+
+    if (!swipe.active) {
+      // 阈值：触摸略敏感，鼠标略钝，减少误触。
+      const threshold = event.pointerType === "touch" ? 14 : 22;
+      if (absX < threshold && absY < threshold) return;
+      clearHoldTimers();
+      holdRef.current = { active: false, side: "" };
+      swipe.active = true;
+      suppressClickRef.current = true;
+      if (absX >= absY * 1.05) {
+        swipe.mode = "seek";
+      } else {
+        const mid = event.currentTarget.getBoundingClientRect().left + swipe.width / 2;
+        swipe.mode = swipe.startX < mid ? "brightness" : "volume";
+      }
+    }
+
+    if (swipe.mode === "seek") {
+      // 满宽约对应 90 秒；长视频时按时长再放宽上限。
+      const span = Math.max(90, Math.min(240, duration * 0.12 || 90));
+      const seekSeconds = Math.round((deltaX / Math.max(200, swipe.width)) * span);
+      swipe.seekSeconds = seekSeconds;
+      const next = clamp(swipe.startTime + seekSeconds, 0, duration || swipe.startTime + seekSeconds);
+      onShowHud({
+        kind: "seek-scrub",
+        text: `${seekSeconds >= 0 ? "+" : ""}${seekSeconds}s · ${formatDuration(next)}${duration ? ` / ${formatDuration(duration)}` : ""}`,
+        percent: duration ? percent(next, duration) : 50,
+        zone: seekSeconds < 0 ? "left" : "right"
+      }, 1200);
+      return;
+    }
+
+    const travel = Math.max(140, swipe.height * 0.75);
+    const ratio = -deltaY / travel;
+    if (swipe.mode === "volume") {
+      const nextVolume = clamp(swipe.startVolume + ratio, 0, 1);
+      onVolume(nextVolume, nextVolume <= 0.001);
+      onShowHud({
+        kind: "volume",
+        text: nextVolume <= 0.001 ? "静音" : `音量 ${Math.round(nextVolume * 100)}%`,
+        percent: Math.round(nextVolume * 100),
+        sideBar: "right"
+      }, 900);
+      return;
+    }
+    if (swipe.mode === "brightness") {
+      // 亮度 60%~140%，映射为 0~100 进度条。
+      const nextBrightness = clamp(Math.round(swipe.startBrightness + ratio * 80), 60, 140);
+      onBrightness(nextBrightness);
+      onShowHud({
+        kind: "brightness",
+        text: `亮度 ${nextBrightness}%`,
+        percent: Math.round(((nextBrightness - 60) / 80) * 100),
+        sideBar: "left"
+      }, 900);
+    }
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (swipeRef.current.pointerId !== -1 && swipeRef.current.pointerId !== event.pointerId) return;
+    const held = stopHold();
+    const swiped = finishSwipe();
+    if (held || swiped) suppressClickRef.current = true;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // 忽略
+    }
+  };
+
+  const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!enabled || locked) return;
+    event.preventDefault();
+    event.stopPropagation();
+    // 滚轮调音量：向上增大，向下减小；按住 Shift 时改为微调亮度。
+    if (event.shiftKey) {
+      const next = clamp(brightness + (event.deltaY < 0 ? 5 : -5), 60, 140);
+      onBrightness(next);
+      onShowHud({
+        kind: "brightness",
+        text: `亮度 ${next}%`,
+        percent: Math.round(((next - 60) / 80) * 100),
+        sideBar: "left"
+      }, 700);
+      return;
+    }
+    const next = clamp((muted ? 0 : volume) + (event.deltaY < 0 ? 0.05 : -0.05), 0, 1);
+    onVolume(next, next <= 0.001);
+    onShowHud({
+      kind: "volume",
+      text: next <= 0.001 ? "静音" : `音量 ${Math.round(next * 100)}%`,
+      percent: Math.round(next * 100),
+      sideBar: "right"
+    }, 700);
+  };
+
+  return (
+    <div
+      className="txzz-player-gesture-surface"
+      role="presentation"
+      aria-label="视频手势操作区域"
+      onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onLostPointerCapture={handlePointerUp}
+      onWheel={handleWheel}
+    />
+  );
+}
+
+type GestureHudOverlayProps = {
+  hud: GestureHudState;
+  holdHint?: string;
+};
+
+/** 专业手势 HUD：中央大提示 + 左右区域双击闪 + 侧边音量/亮度竖条。 */
+export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProps) {
+  if (holdHint) {
+    return (
+      <div className="pointer-events-none absolute inset-0 z-[26] flex items-center justify-center">
+        <div className="txzz-player-gesture-chip rounded-2xl bg-black/80 px-5 py-2.5 text-sm font-semibold text-white shadow-xl ring-1 ring-white/10 backdrop-blur">
+          {holdHint}
+        </div>
+      </div>
+    );
+  }
+  if (!hud.kind) return null;
+
+  const showCenter = !hud.sideBar || hud.kind === "seek-scrub" || hud.kind === "rate" || hud.kind === "play" || hud.kind === "pause" || hud.kind === "lock" || hud.kind === "unlock";
+  const barPercent = typeof hud.percent === "number" ? clamp(hud.percent, 0, 100) : 0;
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[26]">
+      {/* 双击区域闪烁 */}
+      {hud.zone === "left" && <div className="txzz-gesture-zone-flash txzz-gesture-zone-left" />}
+      {hud.zone === "right" && <div className="txzz-gesture-zone-flash txzz-gesture-zone-right" />}
+      {hud.zone === "center" && <div className="txzz-gesture-zone-flash txzz-gesture-zone-center" />}
+
+      {/* 左侧亮度竖条 */}
+      {hud.sideBar === "left" && (
+        <div className="txzz-gesture-side-bar txzz-gesture-side-bar-left">
+          <Sun size={16} className="mb-2 text-amber-200" />
+          <div className="txzz-gesture-side-track">
+            <div className="txzz-gesture-side-fill bg-amber-300" style={{ height: `${barPercent}%` }} />
+          </div>
+          <span className="mt-2 text-[10px] font-semibold text-white/90">{Math.round(60 + (barPercent / 100) * 80)}%</span>
+        </div>
+      )}
+
+      {/* 右侧音量竖条 */}
+      {hud.sideBar === "right" && (
+        <div className="txzz-gesture-side-bar txzz-gesture-side-bar-right">
+          {barPercent <= 0 ? <VolumeX size={16} className="mb-2 text-sky-200" /> : <Volume2 size={16} className="mb-2 text-sky-200" />}
+          <div className="txzz-gesture-side-track">
+            <div className="txzz-gesture-side-fill bg-sky-400" style={{ height: `${barPercent}%` }} />
+          </div>
+          <span className="mt-2 text-[10px] font-semibold text-white/90">{barPercent}%</span>
+        </div>
+      )}
+
+      {/* 中央 HUD */}
+      {showCenter && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="txzz-player-gesture-hud flex min-w-[8.5rem] max-w-[80%] flex-col items-center gap-2 rounded-3xl bg-black/75 px-5 py-4 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/12">
+              {(hud.kind === "volume" || hud.sideBar === "right") && (barPercent <= 0 ? <VolumeX size={22} /> : <Volume2 size={22} />)}
+              {(hud.kind === "brightness" || hud.sideBar === "left") && hud.kind !== "volume" && <Sun size={22} />}
+              {(hud.kind === "seek-back" || hud.kind === "double-left") && <ChevronLeft size={26} />}
+              {(hud.kind === "seek-forward" || hud.kind === "double-right") && <ChevronRight size={26} />}
+              {hud.kind === "seek-scrub" && (barPercent < 50 ? <ChevronLeft size={24} /> : <ChevronRight size={24} />)}
+              {hud.kind === "play" && <Play size={22} className="ml-0.5 fill-white" />}
+              {hud.kind === "pause" && <Pause size={22} className="fill-white" />}
+              {hud.kind === "lock" && <Lock size={20} />}
+              {hud.kind === "unlock" && <Unlock size={20} />}
+              {hud.kind === "rate" && <Zap size={22} />}
+            </div>
+            <span className="text-center text-xs font-semibold tracking-wide">{hud.text}</span>
+            {typeof hud.percent === "number" && !hud.sideBar && (hud.kind === "seek-scrub" || hud.kind === "seek-back" || hud.kind === "seek-forward") && (
+              <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/20">
+                <div className="h-full rounded-full bg-emerald-300 transition-all duration-100" style={{ width: `${barPercent}%` }} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

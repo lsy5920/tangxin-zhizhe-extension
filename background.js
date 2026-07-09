@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2215";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2240";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 22:15 【修复】升级版本到 v3.0.8，恢复视频画面手势：新增手势承接层，单击显隐控制、双击中间暂停/播放、左右双击快进快退，滑动调节可正常使用。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 22:40 【新增】升级版本到 v3.0.9，完整专业手势系统：单击/三区双击/长按倍速快退/横滑进度/左右竖滑音量亮度/滚轮音量/Shift滚轮亮度，双击区域闪烁与侧边 HUD。";
 
 const DEFAULT_STATE = {
   role: "guest",

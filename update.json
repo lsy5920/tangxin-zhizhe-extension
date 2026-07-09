@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.0.8",
-  "build": "2026-07-09-2215",
-  "releasedAt": "2026-07-09 22:15",
+  "version": "3.0.9",
+  "build": "2026-07-09-2240",
+  "releasedAt": "2026-07-09 22:40",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2240",
+      "type": "新增",
+      "title": "完整专业手势系统 · 单击双击长按滑动滚轮全覆盖",
+      "detail": "新增 PlayerGestureSystem 专业手势模块：单击显隐控制层；三区双击（左快退/中播放暂停/右快进，同侧连点可累计秒数）；长按左侧连续快退、长按右侧 3x 倍速；横向滑动 scrub 进度；左半屏竖滑亮度、右半屏竖滑音量（触摸与鼠标拖拽均支持）；滚轮调音量、Shift+滚轮调亮度；锁屏下仍可双击左右跳进度。配套区域闪烁、侧边音量/亮度竖条与中央 HUD，对齐主流视频 App 体验。"
+    },
     {
       "id": "2026-07-09-2215",
       "type": "修复",
