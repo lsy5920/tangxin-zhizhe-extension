@@ -38,7 +38,8 @@ export function UpdateCenter({ state, onAction }: Props) {
   const checkUpdate = () => {
     setChecking(true);
     onAction("check-update");
-    window.setTimeout(() => setChecking(false), 1800);
+    // 多源并发最长约 8 秒，本地「检测中」状态需覆盖完整探测时间
+    window.setTimeout(() => setChecking(false), 10000);
   };
 
   const downloadLatest = () => {
@@ -74,7 +75,7 @@ export function UpdateCenter({ state, onAction }: Props) {
             <Rocket size={14} className="text-sky-400" /> 升级中心
           </h3>
           <p className="mt-0.5 text-[10px] leading-relaxed text-purple-400">
-            实时清单 · 版本/构建比对 · 多候选下载 · 更新日志
+            多源并发取最新 · 版本/构建比对 · 多候选下载 · 更新日志
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ${tone.badge}`}>

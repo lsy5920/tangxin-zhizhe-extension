@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "糖心志者",
-  "version": "3.5.3",
+  "version": "3.5.4",
   "description": "账号池、播放、下载、设置与专业升级系统的糖果风控制台。",
   "permissions": ["storage", "downloads", "offscreen"],
   "host_permissions": ["https://txh068.com/*", "https://*/*", "http://*/*"],

@@ -85,14 +85,15 @@ export function buildUpdateViewModel(
   const attemptUrls = uniqueUrls(update?.downloadAttemptUrls || []);
   const changelog = Array.isArray(remote?.changelog) ? remote.changelog.slice(0, 8) : [];
   const compareHint = update?.compareHint || remote?.compareHint || "";
+  const probeSummary = String(remote?.probeSummary || update?.probe?.summary || "").trim();
   const summary = status === "error"
-    ? `更新检测失败：${update?.error || "请稍后重试"}（已尝试主源与 CDN 镜像）`
+    ? `更新检测失败：${update?.error || "请稍后重试"}（已并发尝试全部清单镜像）`
     : status === "available"
       ? (remote?.detail || remote?.notes || remote?.text || remote?.line || remote?.title || "远程已发布新版本，建议立即更新。")
       : status === "latest"
         ? (remote?.detail || (compareHint ? `当前已是最新版本（${compareHint}）` : "当前已是最新版本，可继续使用。"))
         : status === "checking"
-          ? "正在实时读取远程版本清单（主源 + CDN 镜像），请稍候…"
+          ? "正在并发探测 GitHub 主源与各镜像，自动取最新 version/build…"
           : status === "downloading"
             ? "正在提交最新版压缩包下载，请留意浏览器下载栏。"
             : status === "downloaded"
@@ -126,9 +127,11 @@ export function buildUpdateViewModel(
     releasedAt: remote?.releasedAt || "",
     checkedAt: update?.checkedAt || "",
     checkedRelative: update?.checkedAt ? formatRelativeTime(update.checkedAt) : "未检测",
-    sourceLabel: remote?.detectionSource || (update?.source === "update.json" ? "远程版本清单" : update?.source || "未检测"),
+    sourceLabel: remote?.detectionSource || (update?.source === "update.json" ? "远程版本清单（多源最新）" : update?.source || "未检测"),
     checkMode: update?.checkMode || "实时检测",
-    summary,
+    summary: probeSummary && (status === "latest" || status === "available")
+      ? `${summary}\n探测：${probeSummary}`
+      : summary,
     title: remote?.title || STATUS_LABEL[status],
     downloadUrl,
     candidates,

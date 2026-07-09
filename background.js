@@ -8,7 +8,8 @@ const API_CONFIG = {
 };
 
 const STORAGE_SCHEMA_VERSION = "2026-07-08-upgrade-system-v3";
-const UPDATE_STATE_SCHEMA_VERSION = "2026-07-10-update-system-v4";
+// v5：多源并发探测 + 取 version/build 最新清单，避免 jsDelivr 强缓存导致云端显示旧版。
+const UPDATE_STATE_SCHEMA_VERSION = "2026-07-10-update-system-v5";
 const LEGACY_REMOTE_BASE_URLS = [
   "https://txzz.lsy20.top",
   "https://txzz-secure-pool.3199912548.workers.dev"
@@ -29,27 +30,36 @@ const REPOSITORY_CONFIG = {
     "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
-  // 主源 + CDN 镜像，国内 raw.githubusercontent 经常失败时自动切换。
+  /*
+    更新清单多源策略（升级系统 v5）：
+    1) 并发请求全部候选源，不要「第一个成功就返回」——jsDelivr @main 常强缓存旧版。
+    2) 在所有成功响应中，按 version → build 取最新；同版本优先 GitHub raw / gitmirror。
+    3) 国内 raw.githubusercontent 可能失败，gitmirror / jsDelivr 作兜底。
+  */
   updateManifestUrls: [
     "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/update.json",
-    "https://cdn.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/update.json",
+    "https://raw.gitmirror.com/lsy5920/tangxin-zhizhe-extension/main/update.json",
+    "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/update.json",
     "https://fastly.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/update.json",
-    "https://gcore.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/update.json"
+    "https://cdn.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/update.json",
+    "https://gcore.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/update.json",
+    "https://cdn.jsdmirror.com/gh/lsy5920/tangxin-zhizhe-extension@main/update.json"
   ],
   updateManifestUrl: "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/update.json",
   readmeUrls: [
     "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/README.md",
+    "https://raw.gitmirror.com/lsy5920/tangxin-zhizhe-extension/main/README.md",
     "https://cdn.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/README.md",
     "https://fastly.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/README.md",
     "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/master/README.md"
   ],
   checkIntervalMs: 0,
-  timeoutMs: 9000
+  timeoutMs: 8000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0445";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0505";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 04:45 【优化】升级版本到 v3.5.3，线路探测改为后台延迟静默执行不打断播放；体检/诊断报告仅面板内查看，不写剪贴板。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 05:05 【修复】升级版本到 v3.5.4，更新检测改为多源并发并取最新 version/build，修复 jsDelivr 缓存导致云端显示旧版、检测不到更新。";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1777,6 +1787,34 @@ function normalizeChangelogItems(list = []) {
   }));
 }
 
+function manifestSourceHost(url = "") {
+  try {
+    return new URL(String(url || "").split("?")[0]).hostname || "";
+  } catch (_) {
+    return "";
+  }
+}
+
+/** 同 version/build 时优先可信源（raw 最新），jsDelivr 缓存风险最高排最后。 */
+function manifestSourcePriority(url = "") {
+  const host = manifestSourceHost(url).toLowerCase();
+  if (host === "raw.githubusercontent.com") return 100;
+  if (host.includes("gitmirror")) return 90;
+  if (host.includes("ghproxy")) return 80;
+  if (host.includes("jsdmirror")) return 45;
+  if (host.includes("jsdelivr")) return 40;
+  return 50;
+}
+
+/** 比较两份清单新鲜度：version 优先，其次 build，再比源可信度。返回值 >0 表示 a 更新。 */
+function compareManifestFreshness(a = {}, b = {}) {
+  const versionDiff = compareVersions(String(a.version || ""), String(b.version || ""));
+  if (versionDiff !== 0) return versionDiff;
+  const buildDiff = compareBuilds(String(a.build || ""), String(b.build || ""));
+  if (buildDiff !== 0) return buildDiff;
+  return manifestSourcePriority(a.manifestUrl || a.manifestFetchUrl) - manifestSourcePriority(b.manifestUrl || b.manifestFetchUrl);
+}
+
 function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
   const localVersion = localExtensionVersion();
   const localBuild = LOCAL_UPDATE_BUILD;
@@ -1788,9 +1826,13 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
   const downloadCandidates = repositoryArchiveCandidates(remoteManifest);
   const downloadUrl = downloadCandidates[0] || currentArchiveUrl(remoteManifest);
   const changelog = normalizeChangelogItems(remoteManifest.changelog || []);
+  const probe = remoteManifest.probe || options.probe || null;
   const compareHint = versionUpdate
     ? `远程 v${remoteManifest.version}/${remoteManifest.build} 新于本地 v${localVersion}/${localBuild}`
     : `本地 v${localVersion}/${localBuild} · 远程 v${remoteManifest.version || "?"}/${remoteManifest.build || "?"}`;
+  const probeLabel = probe
+    ? `多源最新 ${probe.pickedHost || "update.json"}（${probe.okCount || 0}/${probe.totalCount || 0} 源成功）`
+    : (options.manifestSourceLabel || "update.json");
   const remote = {
     id: updateId,
     line: readmeFallback?.line || `${remoteManifest.releasedAt || remoteManifest.build} 【${latest.type || "更新"}】${latest.title || "发现新版本"}`,
@@ -1806,10 +1848,10 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
     releasedAt: readmeFallback?.releasedAt || remoteManifest.releasedAt,
     archiveUrl: downloadUrl,
     downloadCandidates,
-    detectionSource: readmeFallback
-      ? "README 更新日志兜底"
-      : (options.manifestSourceLabel || "update.json"),
+    detectionSource: readmeFallback ? "README 更新日志兜底" : probeLabel,
     compareHint,
+    probeSummary: probe?.summary || "",
+    probeSources: Array.isArray(probe?.sources) ? probe.sources : [],
     changelog: changelog.length
       ? changelog
       : (readmeFallback
@@ -1834,12 +1876,13 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
     updateManifest: remoteManifest,
     readmeFallback,
     compareHint,
+    probe,
     updateSystem: {
       schemaVersion: UPDATE_STATE_SCHEMA_VERSION,
       engine: "upgrade-system-v5",
       cacheTtlMs: REPOSITORY_CONFIG.checkIntervalMs,
       ignoredLegacyCache: Boolean(options.ignoredLegacyCache),
-      cachePolicy: "升级系统 v5：实时拉取，主源失败自动切换 jsDelivr 等镜像。",
+      cachePolicy: "升级系统 v5：并发探测全部镜像，按 version/build 取最新清单，忽略过期 CDN 缓存。",
       downloadPolicy: "下载前重新检测清单；地址追加时间戳；自动尝试 GitHub 多候选源。",
       mirrorCount: (REPOSITORY_CONFIG.updateManifestUrls || []).length
     },
@@ -1854,32 +1897,93 @@ function updateManifestCandidateUrls(options = {}) {
     REPOSITORY_CONFIG.updateManifestUrl
   ]);
   if (!shouldBypassCache) return baseList;
+  // 注意：jsDelivr 对 query 防缓存几乎无效，真正靠「多源取最新」；query 只对 raw/代理有帮助。
   return baseList.map((base) => {
+    const lower = base.toLowerCase();
+    if (lower.includes("jsdelivr.net") || lower.includes("jsdmirror.com")) return base;
     const sep = base.includes("?") ? "&" : "?";
     return `${base}${sep}txzz_update=${Date.now()}_${Math.random().toString(16).slice(2)}`;
   });
 }
 
+async function fetchOneUpdateManifest(url, timeoutMs = REPOSITORY_CONFIG.timeoutMs) {
+  const text = await fetchTextWithTimeout(url, timeoutMs);
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (_) {
+    throw new Error("JSON 解析失败");
+  }
+  const manifest = normalizeRemoteUpdateManifest(parsed);
+  if (!manifest.version || !manifest.build) {
+    throw new Error("缺少 version 或 build");
+  }
+  const cleanUrl = String(url || "").split("?")[0];
+  manifest.manifestUrl = cleanUrl;
+  manifest.manifestFetchUrl = url;
+  manifest.manifestHost = manifestSourceHost(cleanUrl);
+  return manifest;
+}
+
+/**
+ * 升级系统 v5 核心：并发请求全部清单源，取 version/build 最新的一份。
+ * 彻底解决「jsDelivr 返回 3.5.1、raw 已是 3.5.3，却显示云端旧版」的问题。
+ */
 async function fetchRemoteUpdateManifest(options = {}) {
   const candidates = updateManifestCandidateUrls(options);
+  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : REPOSITORY_CONFIG.timeoutMs;
+  const settled = await Promise.allSettled(
+    candidates.map((url) => fetchOneUpdateManifest(url, timeoutMs))
+  );
+
+  const successes = [];
   const errors = [];
-  for (const url of candidates) {
-    try {
-      const text = await fetchTextWithTimeout(url);
-      const parsed = JSON.parse(text);
-      const manifest = normalizeRemoteUpdateManifest(parsed);
-      if (!manifest.version || !manifest.build) {
-        errors.push(`${url}：缺少 version 或 build`);
-        continue;
-      }
-      manifest.manifestUrl = url.split("?")[0];
-      manifest.manifestFetchUrl = url;
-      return manifest;
-    } catch (err) {
-      errors.push(`${url}：${err?.message || String(err)}`);
+  const sourceRows = [];
+
+  settled.forEach((item, index) => {
+    const url = candidates[index];
+    const host = manifestSourceHost(url) || url;
+    if (item.status === "fulfilled" && item.value) {
+      successes.push(item.value);
+      sourceRows.push({
+        host,
+        ok: true,
+        version: item.value.version,
+        build: item.value.build,
+        url: item.value.manifestUrl
+      });
+    } else {
+      const reason = item.status === "rejected"
+        ? (item.reason?.message || String(item.reason || "失败"))
+        : "未知错误";
+      errors.push(`${host}：${reason}`);
+      sourceRows.push({ host, ok: false, error: reason, url: String(url || "").split("?")[0] });
     }
+  });
+
+  if (!successes.length) {
+    throw new Error(`远程版本清单读取失败（已并发尝试 ${candidates.length} 个源）：${errors.slice(0, 4).join("；")}`);
   }
-  throw new Error(`远程版本清单读取失败（已尝试 ${candidates.length} 个源）：${errors.slice(0, 3).join("；")}`);
+
+  // 按新鲜度排序：最新 version/build 在前；同版本优先 raw
+  successes.sort((a, b) => compareManifestFreshness(b, a));
+  const best = successes[0];
+  const staleCount = successes.filter((item) => compareManifestFreshness(best, item) > 0).length;
+  const probe = {
+    totalCount: candidates.length,
+    okCount: successes.length,
+    failCount: errors.length,
+    staleCount,
+    pickedHost: best.manifestHost || manifestSourceHost(best.manifestUrl),
+    pickedVersion: best.version,
+    pickedBuild: best.build,
+    sources: sourceRows,
+    summary: sourceRows
+      .map((row) => (row.ok ? `${row.host}=v${row.version}/${row.build}` : `${row.host}=失败`))
+      .join(" · ")
+  };
+  best.probe = probe;
+  return best;
 }
 
 function shouldUpdateByManifest(remote = {}, localVersion = localExtensionVersion(), localBuild = LOCAL_UPDATE_BUILD) {
@@ -1965,15 +2069,17 @@ async function checkRepositoryUpdate(options = {}) {
     const remoteManifest = await fetchRemoteUpdateManifest({ force: true, realtime: true });
     const readmeFallback = await resolveReadmeFallback(remoteManifest);
     const updateId = readmeFallback?.id || remoteManifest.id || `${remoteManifest.version}|${remoteManifest.build}`;
-    const manifestHost = (() => {
-      try { return new URL(remoteManifest.manifestUrl || "").hostname; } catch (_) { return "update.json"; }
-    })();
+    const probe = remoteManifest.probe || null;
+    const manifestHost = probe?.pickedHost || manifestSourceHost(remoteManifest.manifestUrl) || "update.json";
     const result = buildRepositoryUpdateResult(remoteManifest, {
       realtime: Boolean(options.realtime || options.force),
       manifestUrl: remoteManifest.manifestUrl,
-      manifestSourceLabel: `update.json · ${manifestHost}`,
+      manifestSourceLabel: probe
+        ? `多源最新 ${manifestHost}（${probe.okCount}/${probe.totalCount}）`
+        : `update.json · ${manifestHost}`,
       ignoredLegacyCache: !stateSchemaOk,
-      readmeFallback
+      readmeFallback,
+      probe
     });
     const nextUpdateState = {
       schemaVersion: UPDATE_STATE_SCHEMA_VERSION,
@@ -2017,11 +2123,12 @@ async function checkRepositoryUpdate(options = {}) {
       updateManifest: null,
       updateSystem: {
         schemaVersion: UPDATE_STATE_SCHEMA_VERSION,
-        engine: "upgrade-system-v4",
+        engine: "upgrade-system-v5",
         cacheTtlMs: REPOSITORY_CONFIG.checkIntervalMs,
         ignoredLegacyCache: !stateSchemaOk,
-        cachePolicy: "升级系统 v4：检测失败也会记录原因，可立即重试。",
-        downloadPolicy: "即使清单失败，仍可尝试固定 GitHub 压缩包候选地址。"
+        cachePolicy: "升级系统 v5：并发探测全部镜像失败时记录原因，可立即重试。",
+        downloadPolicy: "即使清单失败，仍可尝试固定 GitHub 压缩包候选地址。",
+        mirrorCount: (REPOSITORY_CONFIG.updateManifestUrls || []).length
       }
     };
     const nextUpdateState = {

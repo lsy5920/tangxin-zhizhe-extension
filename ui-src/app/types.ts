@@ -29,6 +29,24 @@ export type RepositoryUpdateState = {
   shouldNotify?: boolean;
   status?: string;
   compareHint?: string;
+  probe?: {
+    totalCount?: number;
+    okCount?: number;
+    failCount?: number;
+    staleCount?: number;
+    pickedHost?: string;
+    pickedVersion?: string;
+    pickedBuild?: string;
+    summary?: string;
+    sources?: Array<{
+      host?: string;
+      ok?: boolean;
+      version?: string;
+      build?: string;
+      error?: string;
+      url?: string;
+    }>;
+  };
   updateSystem?: {
     schemaVersion?: string;
     cacheTtlMs?: number;
@@ -36,6 +54,7 @@ export type RepositoryUpdateState = {
     cachePolicy?: string;
     downloadPolicy?: string;
     engine?: string;
+    mirrorCount?: number;
   };
   local?: {
     version?: string;
@@ -56,6 +75,15 @@ export type RepositoryUpdateState = {
     downloadCandidates?: string[];
     detectionSource?: string;
     compareHint?: string;
+    probeSummary?: string;
+    probeSources?: Array<{
+      host?: string;
+      ok?: boolean;
+      version?: string;
+      build?: string;
+      error?: string;
+      url?: string;
+    }>;
     changelog?: UpdateChangelogItem[];
   };
 };

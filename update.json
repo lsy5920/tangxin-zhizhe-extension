@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.5.3",
-  "build": "2026-07-10-0445",
-  "releasedAt": "2026-07-10 04:45",
+  "version": "3.5.4",
+  "build": "2026-07-10-0505",
+  "releasedAt": "2026-07-10 05:05",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0505",
+      "type": "修复",
+      "title": "更新检测多源并发取最新 · 修复云端显示旧版",
+      "detail": "根因是 jsDelivr 等 CDN 强缓存旧 update.json，旧逻辑「第一个成功源就返回」会把 3.5.1/3.5.2 当成云端版本。现改为并发探测 GitHub raw、gitmirror、ghproxy、jsDelivr 等多源，按 version+build 取最新一份；同版本优先 raw。升级中心展示探测摘要。"
+    },
     {
       "id": "2026-07-10-0445",
       "type": "优化",
@@ -76,72 +82,6 @@
       "type": "优化",
       "title": "完全重构升级系统 · 专业状态机与视觉中心",
       "detail": "升级系统提升到 v4：前端新增 UpdateViewModel 统一状态机（idle/checking/latest/available/error/downloading/downloaded）；设置页接入升级中心卡片；发现新版本时使用专业渐变弹窗，展示本地/远程版本、升级进度条、更新日志与多操作按钮；检测失败可一键重试；下载前实时读清单并多候选 GitHub 压缩包兜底；清理旧设置页破碎更新弹窗逻辑。"
-    },
-    {
-      "id": "2026-07-10-0010",
-      "type": "修复",
-      "title": "紧急恢复插件核心功能",
-      "detail": "修复 v3.2.3 重写广告清理时误删 content.js 大量核心函数（展示覆盖、账号会话、剪贴板工具等）导致初始化中断、大部分功能失效。已从 v3.2.0 完整恢复 content.js，并仅保留实测 .ad-splash 严格清理，不再使用猜测规则。"
-    },
-    {
-      "id": "2026-07-09-2355",
-      "type": "修复",
-      "title": "广告清理严格模式 · 只删实测 .ad-splash",
-      "detail": "撤销过于激进的猜测规则（全站 fixed/popup/overlay/文案/面积启发式、window.open 拦截、右上角纯数字误删等），避免无法进入网站。现仅清理 Playwright 实测到的开屏根节点 .ad-splash / .my-swipe.ad-splash.van-swipe。"
-    },
-    {
-      "id": "2026-07-09-2340",
-      "type": "优化",
-      "title": "广告清理 v3.1 · 实测 txh068.com 开屏硬杀",
-      "detail": "用 Playwright 打开 https://txh068.com/ 实测：全屏广告为 .my-swipe.ad-splash.van-swipe（fixed/z-index:1001）轮播 a.swiper-link 外链，右上角为数字倒计时。已永久 CSS 隐藏+主世界 180ms 追杀+Mutation 插入即删，避免 Vue 反复重建后回弹。"
-    },
-    {
-      "id": "2026-07-09-2305",
-      "type": "删除",
-      "title": "移除悬浮视频图标 · 详情页默认暂停",
-      "detail": "删除获取到播放链接后显示的右侧悬浮视频按钮及其一键全屏播放链路。新增进入 /movie/detail/* 视频详情页时阻止网站自动播放：主世界拦截 HTMLMediaElement.play、去掉 autoplay、默认 pause；用户点击播放器区域后放行。"
-    },
-    {
-      "id": "2026-07-09-2245",
-      "type": "优化",
-      "title": "缩小中央手势提示 · 悬浮全屏横屏片强制横屏",
-      "detail": "1) 中央快进/拖进度提示从大卡片改为紧凑横条/胶囊，侧边音量亮度更瘦，区域闪更淡，减少遮挡画面。2) 悬浮全屏与自动方向：横屏片源/尺寸未知时优先 screen.orientation.lock 横屏；元数据到达后补锁；系统锁失败且视口仍竖屏时启用 CSS 旋转舞台横屏兜底。"
-    },
-    {
-      "id": "2026-07-09-2225",
-      "type": "修复",
-      "title": "修复全屏仍无画面 · 合成层与多层黑底",
-      "detail": "Kiwi 复测：全屏进度条/控制栏正常、声音有，画面仍全黑；缩小后有画面。全屏只让外壳 fixed 黑底，播放器内部改 absolute 且含 video 容器背景透明；隐藏 art-poster/mask；进入全屏后多帧强制重绘硬件解码层。"
-    },
-    {
-      "id": "2026-07-10-0040",
-      "type": "修复",
-      "title": "修复全屏黑屏只有声音 · 手势层误盖黑色背景",
-      "detail": "根据 Kiwi 截图确认：全屏时进度在走、有控制栏，但画面全黑；缩小后又能看见画面。根因是 :host 把手势层一并设为 background:#000，而手势层 z-index 高于 video。现全屏手势层强制 transparent。"
-    },
-    {
-      "id": "2026-07-10-0025",
-      "type": "修复",
-      "title": "修复退出全屏无法回到插件面板",
-      "detail": "点缩小后只剩竖排假全屏的问题：退出时完整 exitFullscreen + 恢复宿主 + clearForcedFullscreenStyles，系统全屏结束也自动回面板。"
-    },
-    {
-      "id": "2026-07-10-0010-b",
-      "type": "修复",
-      "title": "修复有声音无画面 · 去掉 video 的 CSS filter",
-      "detail": "Android/Kiwi 对 video 使用 filter:brightness 会导致硬件解码层合成失败，只剩声音黑屏。已全面移除 video 上的 filter，亮度改为上层遮罩。"
-    },
-    {
-      "id": "2026-07-09-2355-fs",
-      "type": "修复",
-      "title": "修复全屏后视频黑屏不显示",
-      "detail": "全屏一律 inset:0 + 100% 铺满；优先宿主/播放器容器全屏；进入全屏后多帧 forceFullscreenVideoVisible 强制校正画面。"
-    },
-    {
-      "id": "2026-07-09-2345",
-      "type": "优化",
-      "title": "全屏改为网站同款 Fullscreen API · 视频自适应铺满",
-      "detail": "新增 browserFullscreen 模块，按网站标准写法调用 requestFullscreen({navigationUI:'hide'})；视频层统一 object-fit:contain、宽高100%、居中自适应。"
     }
   ]
 }
