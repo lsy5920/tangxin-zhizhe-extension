@@ -736,6 +736,10 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const [downloadLineKey, setDownloadLineKey] = useState<"auto" | "play" | "backup">("auto");
   const [previewKey, setPreviewKey] = useState<PlaybackPreviewKey>("recommended");
   const [previewRecord, setPreviewRecord] = useState<PlaybackPreviewRecord | null>(null);
+  // 锁定推荐线路 URL，避免后台探测改分后自动切换源导致播放中断。
+  const [lockedPlayback, setLockedPlayback] = useState<{ movieId: string; url: string; label: string } | null>(null);
+  // 页内查看报告，不写入系统剪贴板。
+  const [reportView, setReportView] = useState<{ title: string; body: string } | null>(null);
   const [playerReloadKey, setPlayerReloadKey] = useState(0);
   const [playerStatus, setPlayerStatus] = useState("等待播放链接");
   const [playerError, setPlayerError] = useState("");
@@ -826,8 +830,16 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const currentTaskUrl = absoluteUrl(currentTask?.url || "");
   const preferredLineUrl = absoluteUrl(preferredLine?.url || "");
   const backupLineUrl = absoluteUrl(lines[1]?.url || "");
+  const currentMovieId = String(latest?.movieId || "").trim();
+  // 播放中锁定推荐源：探测结果只更新分数展示，不改正在播的 URL。
+  const lockedRecommendedUrl = lockedPlayback && lockedPlayback.movieId === currentMovieId
+    ? lockedPlayback.url
+    : preferredLineUrl;
+  const lockedRecommendedHint = lockedPlayback && lockedPlayback.movieId === currentMovieId
+    ? `${lockedPlayback.label}（播放中锁定）`
+    : (preferredLine?.label || "自动选择");
   const previewOptions = [
-    { key: "recommended" as const, label: "推荐", url: preferredLineUrl, hint: preferredLine?.label || "自动选择" },
+    { key: "recommended" as const, label: "推荐", url: lockedRecommendedUrl, hint: lockedRecommendedHint },
     { key: "play" as const, label: "主线", url: absoluteUrl(lines[0]?.url || ""), hint: lineState(lines[0]).label },
     { key: "backup" as const, label: "备用", url: absoluteUrl(lines[1]?.url || ""), hint: lineState(lines[1]).label }
   ];
@@ -887,6 +899,34 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   } as CSSProperties;
   const health = playbackHealth(latest, lines, preferredLine);
   const healthReport = playbackHealthReport(latest, lines, health, currentTask);
+
+  // 换视频时解除锁定，允许新片重新选择推荐线路。
+  useEffect(() => {
+    if (!currentMovieId) {
+      setLockedPlayback(null);
+      return;
+    }
+    if (lockedPlayback && lockedPlayback.movieId !== currentMovieId) {
+      setLockedPlayback(null);
+    }
+  }, [currentMovieId, lockedPlayback]);
+
+  // 起播后锁定当前推荐/选中源，后台探测改分也不切换。
+  useEffect(() => {
+    if (!currentMovieId || !previewUrl) return;
+    if (activePreviewKey === "record") return;
+    if (lockedPlayback?.movieId === currentMovieId && lockedPlayback.url) return;
+    const label = activePreviewKey === "play"
+      ? "主线路"
+      : activePreviewKey === "backup"
+        ? "备用线路"
+        : (preferredLine?.label || "推荐线路");
+    setLockedPlayback({ movieId: currentMovieId, url: previewUrl, label });
+  }, [currentMovieId, previewUrl, activePreviewKey, preferredLine?.label, lockedPlayback?.movieId, lockedPlayback?.url]);
+
+  const openReportView = (title: string, body: string) => {
+    setReportView({ title, body: String(body || "暂无报告内容") });
+  };
   const playerDiagnosticReport = [
     "糖心志者网页播放器诊断报告",
     `视频标题：${previewTitle}`,
@@ -1598,8 +1638,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           click: () => onAction("open-playback-url", { url: source, label: `${previewLineLabel(playerRuntimeRef.current.previewKey)}完整链接` })
         },
         {
-          html: "复制播放器诊断",
-          click: () => onAction("copy-playback-health-report", { report: playerDiagnosticReportRef.current })
+          html: "查看播放器诊断",
+          click: () => setReportView({ title: "播放器诊断", body: String(playerDiagnosticReportRef.current || "暂无诊断") })
         }
       ]
     }, (instance) => {
@@ -2155,6 +2195,9 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     if (!backupUrl || activePreviewKey === "backup") return;
     setPreviewRecord(null);
     setPreviewKey("backup");
+    if (currentMovieId) {
+      setLockedPlayback({ movieId: currentMovieId, url: backupUrl, label: "备用线路" });
+    }
     setPlayerMoreOpen(false);
     revealPlayerControls(true);
   };
@@ -2609,6 +2652,15 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             onSelectPreview={(key) => {
               setPreviewRecord(null);
               setPreviewKey(key as PlaybackPreviewKey);
+              // 用户手动切线时更新锁定，避免之后探测又改回去。
+              const next = previewOptions.find((item) => item.key === key);
+              if (currentMovieId && next?.url) {
+                setLockedPlayback({
+                  movieId: currentMovieId,
+                  url: next.url,
+                  label: key === "play" ? "主线路" : key === "backup" ? "备用线路" : (preferredLine?.label || "推荐线路")
+                });
+              }
               setPlayerMoreOpen(false);
               revealPlayerControls(true);
             }}
@@ -2629,7 +2681,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             onCopyLink={() => onAction("copy-play-link", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}
             onOpenLink={() => onAction("open-playback-url", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}
             onDownload={() => onAction("download-full-video", { movieId: latest?.movieId || "" })}
-            onCopyDiagnostic={() => onAction("copy-playback-health-report", { report: playerDiagnosticReportRef.current })}
+            onCopyDiagnostic={() => openReportView("播放器诊断", playerDiagnosticReportRef.current)}
             onBrightnessChange={applyPlayerBrightness}
           />
           </div>
@@ -2641,8 +2693,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             icon={Activity}
             disabled={!previewUrl}
             className="w-full"
-            title="复制网页播放器诊断报告"
-            onClick={() => onAction("copy-playback-health-report", { report: playerDiagnosticReportRef.current })}
+            title="在面板内查看诊断，不写入剪贴板"
+            onClick={() => openReportView("播放器诊断", playerDiagnosticReportRef.current)}
           >
             诊断
           </SoftButton>
@@ -2781,12 +2833,13 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               <SoftButton
                 size="sm"
                 variant="secondary"
-                icon={Copy}
+                icon={Activity}
                 className="w-full"
-                onClick={() => onAction("copy-playback-health-report", { report: healthReport })}
+                onClick={() => openReportView("播放资源体检", healthReport)}
               >
-                复制体检报告
+                查看体检报告
               </SoftButton>
+              <p className="text-center text-[10px] text-purple-300">线路探测在后台静默完成，不会改写当前播放源，也不会写入剪贴板。</p>
             </div>
           </SectionCard>
         )}
@@ -2949,11 +3002,11 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               <SoftButton
                 size="xs"
                 variant="secondary"
-                icon={Copy}
+                icon={Activity}
                 disabled={!filteredRecordRows.length}
-                onClick={() => onAction("copy-playback-health-report", { report: batchRecordReport })}
+                onClick={() => openReportView("播放记录批量报告", batchRecordReport)}
               >
-                批量报告
+                查看报告
               </SoftButton>
             }
           >
@@ -3069,7 +3122,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                         <SoftButton size="xs" variant="sky" icon={ExternalLink} disabled={!recordUrl} className="w-full" onClick={() => onAction("open-playback-url", { url: recordUrl, label: "播放记录完整链接" })}>
                           打开
                         </SoftButton>
-                        <SoftButton size="xs" variant="secondary" icon={Copy} className="w-full" onClick={() => onAction("copy-playback-health-report", { report: recordReport })}>
+                        <SoftButton size="xs" variant="secondary" icon={Activity} className="w-full" onClick={() => openReportView("播放记录报告", recordReport)}>
                           报告
                         </SoftButton>
                         <SoftButton size="xs" variant="secondary" icon={RefreshCw} disabled={!item.movieId} className="w-full" onClick={() => onAction("refresh-full-detail", { movieId: item.movieId || "" })}>
@@ -3102,6 +3155,32 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           </SectionCard>
         )}
       </div>
+
+      {/* 报告仅页内查看，不写入系统剪贴板 */}
+      {reportView && (
+        <div
+          className="txzz-candy-interactive fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-3 backdrop-blur-[4px] sm:items-center"
+          onClick={() => setReportView(null)}
+        >
+          <div
+            className="flex max-h-[min(72vh,520px)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-purple-100 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="flex items-center justify-between border-b border-purple-50 px-4 py-3">
+              <h3 className="text-sm font-bold text-purple-800">{reportView.title}</h3>
+              <SoftButton size="xs" variant="ghost" onClick={() => setReportView(null)}>关闭</SoftButton>
+            </div>
+            <pre className="flex-1 overflow-y-auto whitespace-pre-wrap break-words px-4 py-3 text-[11px] leading-relaxed text-purple-700">
+              {reportView.body}
+            </pre>
+            <p className="border-t border-purple-50 px-4 py-2 text-center text-[10px] text-purple-300">
+              仅面板内查看，不会复制到系统剪贴板
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

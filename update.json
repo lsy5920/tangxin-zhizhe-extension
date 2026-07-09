@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.5.2",
-  "build": "2026-07-10-0430",
-  "releasedAt": "2026-07-10 04:30",
+  "version": "3.5.3",
+  "build": "2026-07-10-0445",
+  "releasedAt": "2026-07-10 04:45",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0445",
+      "type": "优化",
+      "title": "线路探测不打断播放 · 报告不写剪贴板",
+      "detail": "主备线路探测改为返回播放详情后延迟串行后台执行，降低与起播带宽冲突；播放中锁定当前源，探测改分不再自动切换导致重载。体检/诊断/记录报告改为面板内查看弹层，不再写入系统剪贴板。"
+    },
     {
       "id": "2026-07-10-0430",
       "type": "修复",

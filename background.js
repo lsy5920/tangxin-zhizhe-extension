@@ -47,9 +47,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0430";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0445";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 04:30 【修复】升级版本到 v3.5.2，修复 background.js 中 ?? 与 || 混用导致 Service Worker 无法启动、同步账号与检测更新全部失效。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 04:45 【优化】升级版本到 v3.5.3，线路探测改为后台延迟静默执行不打断播放；体检/诊断报告仅面板内查看，不写剪贴板。";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1225,22 +1225,43 @@ async function finishLocalFullDetail(options = {}) {
   const cacheEntries = Object.entries(fresh.fullDetailCache);
   if (cacheEntries.length > 120) fresh.fullDetailCache = Object.fromEntries(cacheEntries.slice(-120));
   await saveState(fresh);
+  // 线路探测：后台静默、延迟串行执行，避免与起播/HLS 抢带宽，也不阻塞返回结果。
   if (detail?.play_link || detail?.backup_link) {
-    Promise.all([statM3u8Quick(detail?.play_link), statM3u8Quick(detail?.backup_link)])
-      .then(async ([resolvedFullStat, resolvedBackupStat]) => {
-        const latest = await getStateInternal();
-        latest.fullDetails = (latest.fullDetails || []).map((item) => {
-          // 只按 movieId 合并探测结果，兼容 upsert 后 fetchedAt 变化。
-          if (String(item.movieId) !== String(movieId)) return item;
-          return {
-            ...item,
-            fullStat: pickBetterStat(resolvedFullStat, item.fullStat) || resolvedFullStat || item.fullStat,
-            backupStat: pickBetterStat(resolvedBackupStat, item.backupStat) || resolvedBackupStat || item.backupStat
-          };
-        });
-        await saveState(latest);
-      })
-      .catch(() => {});
+    const probeMovieId = String(movieId || "");
+    const playLink = detail?.play_link || "";
+    const backupLink = detail?.backup_link || "";
+    setTimeout(() => {
+      (async () => {
+        try {
+          // 串行探测 + 间隔，降低对正在播放分片的干扰。
+          const resolvedFullStat = playLink ? await statM3u8Quick(playLink, 4000) : null;
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          const resolvedBackupStat = backupLink ? await statM3u8Quick(backupLink, 4000) : null;
+          const latest = await getStateInternal();
+          latest.fullDetails = (latest.fullDetails || []).map((item) => {
+            if (String(item.movieId) !== probeMovieId) return item;
+            return {
+              ...item,
+              fullStat: pickBetterStat(resolvedFullStat, item.fullStat) || resolvedFullStat || item.fullStat,
+              backupStat: pickBetterStat(resolvedBackupStat, item.backupStat) || resolvedBackupStat || item.backupStat
+            };
+          });
+          // 同步更新缓存摘要，下载选线可用最新分数，但不触发播放器重载（前端会锁定已播 URL）。
+          const cacheKeyHit = Object.keys(latest.fullDetailCache || {}).find((key) => key.endsWith(`:${probeMovieId}`) || key.includes(`:${probeMovieId}`));
+          if (cacheKeyHit && latest.fullDetailCache?.[cacheKeyHit]?.summary) {
+            latest.fullDetailCache[cacheKeyHit] = {
+              ...latest.fullDetailCache[cacheKeyHit],
+              summary: {
+                ...latest.fullDetailCache[cacheKeyHit].summary,
+                fullStat: pickBetterStat(resolvedFullStat, latest.fullDetailCache[cacheKeyHit].summary.fullStat) || resolvedFullStat || latest.fullDetailCache[cacheKeyHit].summary.fullStat,
+                backupStat: pickBetterStat(resolvedBackupStat, latest.fullDetailCache[cacheKeyHit].summary.backupStat) || resolvedBackupStat || latest.fullDetailCache[cacheKeyHit].summary.backupStat
+              }
+            };
+          }
+          await saveState(latest);
+        } catch (_) {}
+      })();
+    }, 2500);
   }
   return { ok: true, detail, data: detail, summary, account: publicAccount(account), state: sanitizeState(fresh) };
 }

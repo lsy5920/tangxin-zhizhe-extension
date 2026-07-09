@@ -866,7 +866,7 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
                 <Download size={12} strokeWidth={2.2} />
                 <span>下载</span>
               </CtrlChip>
-              <CtrlChip onClick={onCopyDiagnostic} disabled={disabled} title="复制诊断报告" className="flex-col min-h-11 gap-0.5 py-1.5">
+              <CtrlChip onClick={onCopyDiagnostic} disabled={disabled} title="查看诊断报告（不写剪贴板）" className="flex-col min-h-11 gap-0.5 py-1.5">
                 <Activity size={12} strokeWidth={2.2} />
                 <span>诊断</span>
               </CtrlChip>

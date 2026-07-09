@@ -2439,7 +2439,8 @@
         openFullUrl(payload.url || latest?.playLink || latest?.backupLink || "", payload.label || "播放线路完整链接");
       }
       if (action === "copy-playback-health-report") {
-        await copyText(String(payload.report || ""), "播放资源体检报告");
+        // 播放线路/体检报告默认不写剪贴板，只在流程里提示可在面板内查看。
+        emitFlow("播放报告", "报告已在播放页内展示，不会写入系统剪贴板", "info");
       }
       if (action === "copy-observations") {
         await copyText(JSON.stringify(state.observations.slice(-80), null, 2), "判定记录");
