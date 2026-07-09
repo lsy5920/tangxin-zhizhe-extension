@@ -1,9 +1,18 @@
 import { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Ban, CheckCircle, Copy, ExternalLink, Info, Lightbulb, Package, Radio, RefreshCw, Sparkles, Trash2, Users } from "lucide-react";
+import { Activity, AlertTriangle, Ban, CheckCircle, Copy, ExternalLink, Info, Lightbulb, Radio, RefreshCw, Sparkles, Trash2, Users } from "lucide-react";
 import type { BridgeState, Page, WorkerDiagnostics } from "../types";
 import { formatRelativeTime } from "../helpers";
 import { APP_BUILD, APP_VERSION_LABEL, ART_PLAYER_VERSION, HLS_CORE_VERSION } from "../constants";
 import { UpdateCenter } from "../update/UpdateCenter";
+import {
+  HeroBanner,
+  ModalSheet,
+  PageShell,
+  Pill,
+  SectionCard,
+  SoftButton,
+  StatGrid
+} from "./ui/primitives";
 
 type Props = {
   state: BridgeState;
@@ -203,232 +212,214 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
   const adCleanerLastRun = adCleaner.lastRunAt ? formatRelativeTime(adCleaner.lastRunAt) : "等待清理";
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-pink-400 via-rose-400 to-purple-500 p-4 text-white shadow-lg">
-        <div className="absolute right-3 top-2 select-none text-5xl opacity-15 pointer-events-none">🍭</div>
-        <div className="mb-2 flex items-center gap-2"><Package size={18} /><span className="font-bold">糖心志者</span></div>
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          {[
-            { label: "版本", value: APP_VERSION_LABEL },
-            { label: "构建", value: APP_BUILD },
-            { label: "播放器", value: `ArtPlayer ${ART_PLAYER_VERSION}` },
-            { label: "HLS内核", value: `hls.js ${HLS_CORE_VERSION}` },
-            { label: "mux.js", value: "7.0.0" },
-            { label: "升级系统", value: "v4" },
-            { label: "React", value: "18 + TSX" }
-          ].map((item) => (
-            <div key={item.label} className="rounded-xl bg-white/20 px-3 py-1.5 backdrop-blur">
-              <p className="text-[10px] opacity-70">{item.label}</p>
-              <p className="font-semibold">{item.value}</p>
+    <PageShell>
+      <HeroBanner
+        eyebrow="设置中心"
+        title="糖心志者"
+        subtitle={`${APP_VERSION_LABEL} · 构建 ${APP_BUILD}`}
+        emoji="⚙️"
+        badges={
+          <>
+            <Pill className="bg-white/20 text-white backdrop-blur">ArtPlayer {ART_PLAYER_VERSION}</Pill>
+            <Pill className="bg-white/20 text-white backdrop-blur">hls.js {HLS_CORE_VERSION}</Pill>
+            <Pill className="bg-white/20 text-white backdrop-blur">升级系统 v4</Pill>
+            <Pill className="bg-white/20 text-white backdrop-blur">React 18</Pill>
+          </>
+        }
+      />
+
+      <StatGrid
+        items={[
+          { label: "版本", value: APP_VERSION_LABEL, tone: "pink" },
+          { label: "广告清理", value: adCleanerTotal, tone: "emerald" },
+          { label: "开屏层", value: Number(adCleaner.splashHits || 0), tone: "sky" },
+          { label: "拦截", value: Number(adCleaner.blockedClicks || 0), tone: "amber" }
+        ]}
+      />
+
+      <SectionCard title="云端服务体检" icon={Activity} hint="依次探测智能诊断 / 状态 / 健康接口" tone="sky">
+        <div className="space-y-3">
+          {serviceCheck && !diagnostics && (
+            <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${serviceCheck.ok ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
+              {serviceCheck.ok ? <CheckCircle size={13} className="shrink-0" /> : <AlertTriangle size={13} className="shrink-0" />}
+              <span>{serviceCheck.text}</span>
             </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
-        <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><Activity size={14} className="text-sky-400" /> 云端服务体检</h3>
-        <p className="text-xs text-purple-400">依次检测智能诊断、整体状态和基础连接，帮助快速定位密钥、数据库和账号池问题。</p>
-        {serviceCheck && !diagnostics && (
-          <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${serviceCheck.ok ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
-            {serviceCheck.ok ? <CheckCircle size={13} className="shrink-0" /> : <AlertTriangle size={13} className="shrink-0" />}
-            <span>{serviceCheck.text}</span>
-          </div>
-        )}
-        {diagnostics && (
-          <div className={`space-y-3 rounded-2xl border ${diagnosticTone.border} ${diagnosticTone.bg} p-3`}>
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className={`text-[11px] font-semibold ${diagnosticTone.text}`}>{serviceCheck?.cached ? "上次体检" : "体检结果"} · {levelText(diagnostics.level)}</p>
-                <p className="mt-1 text-xs leading-relaxed text-purple-700">{diagnostics.summary || serviceCheck.text}</p>
-                {diagnostics.checkedAt && <p className="mt-1 text-[10px] text-purple-300">检查于 {formatRelativeTime(diagnostics.checkedAt)}{serviceCheck?.cached ? "，可重新体检刷新状态" : ""}</p>}
-              </div>
-              <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/80 shadow-sm">
-                <span className={`text-lg font-bold ${diagnosticTone.text}`}>{Math.round(Number(diagnostics.score ?? 0))}</span>
-                <span className="text-[9px] text-purple-300">分</span>
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              {(diagnostics.checks || []).map((item) => {
-                const tone = levelClasses(item.level);
-                return (
-                  <div key={`${item.key}-${item.label}`} className="flex items-start gap-2 rounded-xl bg-white/80 px-3 py-2">
-                    <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-semibold text-purple-700">{item.label || "检查项"} · {levelText(item.level)}</p>
-                      <p className="text-[10px] leading-relaxed text-purple-400">{item.message || "暂无详情"}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {(diagnostics.suggestions || []).length > 0 && (
-              <div className="space-y-1 rounded-xl bg-white/80 px-3 py-2">
-                <p className="flex items-center gap-1 text-[11px] font-semibold text-purple-700"><Lightbulb size={11} className="text-amber-400" /> 建议下一步</p>
-                {(diagnostics.suggestions || []).slice(0, 3).map((item) => (
-                  <p key={item} className="text-[10px] leading-relaxed text-purple-400">{item}</p>
-                ))}
-              </div>
-            )}
-
-            {diagnostics.accountsSummary && (
-              <div className="grid grid-cols-5 gap-1 rounded-xl bg-white/80 px-2 py-2 text-center">
-                {[
-                  { label: "总数", value: diagnostics.accountsSummary.total ?? 0 },
-                  { label: "启用", value: diagnostics.accountsSummary.enabled ?? 0 },
-                  { label: "可用", value: diagnostics.accountsSummary.ok ?? 0 },
-                  { label: "异常", value: diagnostics.accountsSummary.error ?? 0 },
-                  { label: "待验", value: diagnostics.accountsSummary.unverified ?? 0 }
-                ].map((item) => (
-                  <div key={item.label} className="min-w-0">
-                    <p className="text-[10px] text-purple-300">{item.label}</p>
-                    <p className="truncate text-xs font-semibold text-purple-700">{item.value}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {(diagnostics.nextActions || []).length > 0 && (
-              <div className="space-y-1 rounded-xl bg-white/80 px-3 py-2">
-                <p className="text-[11px] font-semibold text-purple-700">服务端建议动作</p>
-                {(diagnostics.nextActions || []).slice(0, 3).map((item) => (
-                  <p key={item.id || item.label} className="text-[10px] leading-relaxed text-purple-400">
-                    {item.label || "处理动作"}：{item.detail || "暂无详情"}
+          )}
+          {diagnostics && (
+            <div className={`space-y-3 rounded-2xl border ${diagnosticTone.border} ${diagnosticTone.bg} p-3`}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className={`text-[11px] font-semibold ${diagnosticTone.text}`}>
+                    {serviceCheck?.cached ? "上次体检" : "体检结果"} · {levelText(diagnostics.level)}
                   </p>
-                ))}
+                  <p className="mt-1 text-xs leading-relaxed text-purple-700">{diagnostics.summary || serviceCheck?.text}</p>
+                  {diagnostics.checkedAt && (
+                    <p className="mt-1 text-[10px] text-purple-300">
+                      检查于 {formatRelativeTime(diagnostics.checkedAt)}{serviceCheck?.cached ? "，可重新体检刷新" : ""}
+                    </p>
+                  )}
+                </div>
+                <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/90 shadow-sm">
+                  <span className={`text-lg font-bold ${diagnosticTone.text}`}>{Math.round(Number(diagnostics.score ?? 0))}</span>
+                  <span className="text-[9px] text-purple-300">分</span>
+                </div>
               </div>
-            )}
-
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <button
-                onClick={() => onPage?.("accounts", { showInvalid: shouldShowInvalid, openAdd: shouldOpenAdd })}
-                className="flex items-center justify-center gap-1 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-medium text-purple-600 shadow-sm transition-transform active:scale-95"
-              >
-                <Users size={12} /> {accountProblem ? "处理账号池" : "查看账号池"}
-              </button>
-              <button
-                onClick={() => onAction("sync-remote")}
-                className="flex items-center justify-center gap-1 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-medium text-sky-600 shadow-sm transition-transform active:scale-95"
-              >
-                <RefreshCw size={12} /> 同步账号
-              </button>
-              <button
-                onClick={copyDiagnostics}
-                className="flex items-center justify-center gap-1 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-medium text-pink-600 shadow-sm transition-transform active:scale-95"
-              >
-                <Copy size={12} /> 复制报告
-              </button>
-            </div>
-            <div className="flex items-center justify-center gap-2 text-[10px] text-purple-400">
-              {copyStatus && <span>{copyStatus}</span>}
-              {serviceCheck?.cached && (
-                <button onClick={clearDiagnosticsHistory} className="rounded-full bg-white/80 px-2 py-0.5 text-purple-500">
-                  清除上次体检
-                </button>
+              <div className="grid gap-1.5">
+                {(diagnostics.checks || []).map((item) => {
+                  const tone = levelClasses(item.level);
+                  return (
+                    <div key={`${item.key}-${item.label}`} className="flex items-start gap-2 rounded-xl bg-white/85 px-3 py-2">
+                      <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-purple-700">{item.label || "检查项"} · {levelText(item.level)}</p>
+                        <p className="text-[10px] leading-relaxed text-purple-400">{item.message || "暂无详情"}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {(diagnostics.suggestions || []).length > 0 && (
+                <div className="space-y-1 rounded-xl bg-white/85 px-3 py-2">
+                  <p className="flex items-center gap-1 text-[11px] font-semibold text-purple-700"><Lightbulb size={11} className="text-amber-400" /> 建议下一步</p>
+                  {(diagnostics.suggestions || []).slice(0, 3).map((item) => (
+                    <p key={item} className="text-[10px] leading-relaxed text-purple-400">{item}</p>
+                  ))}
+                </div>
               )}
+              {diagnostics.accountsSummary && (
+                <div className="grid grid-cols-5 gap-1 rounded-xl bg-white/85 px-2 py-2 text-center">
+                  {[
+                    { label: "总数", value: diagnostics.accountsSummary.total ?? 0 },
+                    { label: "启用", value: diagnostics.accountsSummary.enabled ?? 0 },
+                    { label: "可用", value: diagnostics.accountsSummary.ok ?? 0 },
+                    { label: "异常", value: diagnostics.accountsSummary.error ?? 0 },
+                    { label: "待验", value: diagnostics.accountsSummary.unverified ?? 0 }
+                  ].map((item) => (
+                    <div key={item.label} className="min-w-0">
+                      <p className="text-[10px] text-purple-300">{item.label}</p>
+                      <p className="truncate text-xs font-semibold text-purple-700">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <SoftButton size="sm" variant="secondary" icon={Users} className="w-full" onClick={() => onPage?.("accounts", { showInvalid: shouldShowInvalid, openAdd: shouldOpenAdd })}>
+                  {accountProblem ? "处理账号池" : "查看账号池"}
+                </SoftButton>
+                <SoftButton size="sm" variant="sky" icon={RefreshCw} className="w-full" onClick={() => onAction("sync-remote")}>同步账号</SoftButton>
+                <SoftButton size="sm" variant="primary" icon={Copy} className="w-full" onClick={copyDiagnostics}>复制报告</SoftButton>
+              </div>
+              <div className="flex items-center justify-center gap-2 text-[10px] text-purple-400">
+                {copyStatus && <span>{copyStatus}</span>}
+                {serviceCheck?.cached && (
+                  <button type="button" onClick={clearDiagnosticsHistory} className="rounded-full bg-white/80 px-2 py-0.5 text-purple-500">清除上次体检</button>
+                )}
+              </div>
             </div>
+          )}
+          {state.remote?.baseUrl && <p className="truncate font-mono text-[10px] text-purple-300">{state.remote.baseUrl}</p>}
+          <div className="grid grid-cols-2 gap-2">
+            <SoftButton className="w-full" variant="sky" icon={checkingService ? RefreshCw : Radio} disabled={checkingService} onClick={checkWorkerHealth}>
+              {checkingService ? "体检中…" : "开始体检"}
+            </SoftButton>
+            <SoftButton className="w-full" variant="secondary" icon={RefreshCw} onClick={() => onAction("sync-remote")}>同步账号</SoftButton>
           </div>
-        )}
-        {state.remote?.baseUrl && <p className="truncate text-[10px] text-purple-300 font-mono">{state.remote.baseUrl}</p>}
-        <div className="flex gap-2">
-          <button onClick={checkWorkerHealth} disabled={checkingService} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 disabled:opacity-70">
-            {checkingService ? <><RefreshCw size={13} className="animate-spin" /> 体检中…</> : <><Radio size={13} /> 开始体检</>}
-          </button>
-          <button onClick={() => onAction("sync-remote")} className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95">
-            <RefreshCw size={13} /> 同步账号
-          </button>
         </div>
-      </div>
+      </SectionCard>
 
-      <div className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
-        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-purple-700"><Sparkles size={14} className="text-pink-400" /> 展示覆盖</h3>
-        <p className="mb-3 text-xs text-purple-400">{state.displayPatchApplied ? "展示覆盖已应用，VIP 永久有效、余额 999、永久尤物圈已生效。" : "尚未应用展示覆盖，点击下方按钮立即应用。"}</p>
-        <button onClick={() => onAction("apply")} className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 ${state.displayPatchApplied ? "bg-gradient-to-r from-emerald-400 to-teal-500" : "bg-gradient-to-r from-pink-400 to-rose-500"}`}>
-          <Sparkles size={13} />{state.displayPatchApplied ? "重新应用展示覆盖" : "立即应用展示覆盖"}
-        </button>
-      </div>
+      <SectionCard title="展示覆盖" icon={Sparkles} hint={state.displayPatchApplied ? "VIP 永久、余额 999、尤物圈已生效" : "尚未应用展示覆盖"}>
+        <SoftButton
+          className="w-full"
+          variant={state.displayPatchApplied ? "emerald" : "primary"}
+          icon={Sparkles}
+          onClick={() => onAction("apply")}
+        >
+          {state.displayPatchApplied ? "重新应用展示覆盖" : "立即应用展示覆盖"}
+        </SoftButton>
+      </SectionCard>
 
-      <div className="space-y-3 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
-        <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><Ban size={14} className="text-emerald-500" /> 广告清理</h3>
-        <p className="text-xs leading-relaxed text-purple-400">严格模式：仅清理实测开屏 <code className="text-[10px]">.ad-splash</code>，不扫描其它弹层，避免误伤网站与插件功能。</p>
-        <div className="grid grid-cols-3 gap-2 text-center">
-          {[
-            { label: "总处理", value: adCleanerTotal },
-            { label: "移除", value: Number(adCleaner.removed || 0) },
-            { label: "拦截", value: Number(adCleaner.blockedClicks || 0) }
-          ].map((item) => (
-            <div key={item.label} className="rounded-xl bg-emerald-50 px-2 py-2">
-              <p className="text-[10px] text-emerald-500">{item.label}</p>
-              <p className="text-base font-bold text-purple-800">{item.value}</p>
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-2 text-center">
-          <div className="rounded-xl bg-sky-50 px-2 py-2">
-            <p className="text-[10px] text-sky-500">开屏层</p>
-            <p className="text-base font-bold text-purple-800">{Number(adCleaner.splashHits || 0)}</p>
+      <SectionCard title="广告清理" icon={Ban} hint="严格模式：仅清理实测 .ad-splash 开屏" tone="emerald">
+        <div className="space-y-3">
+          <StatGrid
+            items={[
+              { label: "总处理", value: adCleanerTotal, tone: "emerald" },
+              { label: "移除", value: Number(adCleaner.removed || 0), tone: "sky" },
+              { label: "拦截", value: Number(adCleaner.blockedClicks || 0), tone: "amber" },
+              { label: "开屏层", value: Number(adCleaner.splashHits || 0), tone: "purple" }
+            ]}
+          />
+          <div className="rounded-xl bg-purple-50 px-3 py-2 text-[10px] leading-relaxed text-purple-400">
+            <p>规则 {Number(adCleaner.selectors || 0)} 条 · 引擎 {String(adCleaner.version || "v3")} · 倒计时 {Number(adCleaner.countdownHits || 0)}</p>
+            <p>最近清理：{adCleanerLastRun}{adCleaner.bootActive ? " · 首屏强化中" : ""}</p>
+            <p className="line-clamp-2">命中：{adCleaner.lastReason || "暂无"}{adCleaner.lastMatched ? ` / ${adCleaner.lastMatched}` : ""}</p>
           </div>
-          <div className="rounded-xl bg-amber-50 px-2 py-2">
-            <p className="text-[10px] text-amber-500">倒计时</p>
-            <p className="text-base font-bold text-purple-800">{Number(adCleaner.countdownHits || 0)}</p>
-          </div>
+          <SoftButton className="w-full" variant="emerald" icon={Ban} onClick={() => onAction("clean-ads")}>立即清理广告</SoftButton>
         </div>
-        <div className="rounded-xl bg-purple-50 px-3 py-2 text-[10px] leading-relaxed text-purple-400">
-          <p>规则数量：{Number(adCleaner.selectors || 0)} 条 · 引擎 {String(adCleaner.version || "v3")}</p>
-          <p>最近清理：{adCleanerLastRun}{adCleaner.bootActive ? " · 首屏强化中" : ""}</p>
-          <p className="line-clamp-2">命中原因：{adCleaner.lastReason || "暂无"}{adCleaner.lastMatched ? ` / ${adCleaner.lastMatched}` : ""}</p>
-        </div>
-        <button onClick={() => onAction("clean-ads")} className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-500 py-2 text-xs font-medium text-white shadow-sm transition-transform active:scale-95">
-          <Ban size={13} /> 立即清理广告
-        </button>
-      </div>
+      </SectionCard>
 
       <UpdateCenter state={state} onAction={onAction} />
 
-      <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
-        <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><Trash2 size={14} className="text-rose-400" /> 清除数据缓存</h3>
-        <p className="text-xs text-purple-400">覆盖安装后如出现旧账号、旧配置残留，可在此清除。</p>
-        <div className="space-y-2">
-          {cacheItems.map((item, index) => (
-            <label key={item} className="flex cursor-pointer items-center gap-2 select-none">
-              <div onClick={() => setCacheChecked((prev) => prev.map((v, i) => i === index ? !v : v))} className={`flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border-2 transition-all ${cacheChecked[index] ? "border-transparent bg-gradient-to-br from-pink-400 to-purple-500" : "border-purple-200 bg-white"}`}>
-                {cacheChecked[index] && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
-              </div>
-              <span className="text-xs text-purple-700">{item}</span>
-            </label>
-          ))}
-        </div>
-        <button onClick={() => setShowClearConfirm(true)} className="flex w-full items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-rose-400 to-pink-500 py-2 text-xs font-medium text-white shadow-sm transition-transform active:scale-95">
-          <Trash2 size={13} /> 清除选中缓存
-        </button>
-      </div>
-
-      <div className="rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
-        <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-purple-700"><Info size={14} className="text-purple-400" /> 关于项目</h3>
-        <p className="mb-3 text-xs text-purple-400">糖心志者 {APP_VERSION_LABEL} 是一个 Chrome Manifest V3 浏览器插件，提供账号池管理、展示覆盖、播放资源获取、视频下载等功能。</p>
-        <button onClick={() => onAction("about")} className="flex w-full items-center justify-center gap-1 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95">
-          <ExternalLink size={13} /> 打开项目主页
-        </button>
-      </div>
-
-      {showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
-            <div className="mb-3 flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-rose-400 to-pink-500">
-                <AlertTriangle size={16} className="text-white" />
-              </div>
-              <h3 className="font-bold text-purple-800">确认清除缓存？</h3>
-            </div>
-            <p className="mb-4 text-xs text-purple-400">清除后需要重新同步账号池，建议操作后刷新页面。</p>
-            <div className="flex gap-2">
-              <button onClick={() => setShowClearConfirm(false)} className="flex-1 rounded-xl border border-pink-200 py-2 text-sm font-medium text-purple-500">取消</button>
-              <button onClick={() => { onAction("clear-cache"); setShowClearConfirm(false); }} className="flex-1 rounded-xl bg-gradient-to-r from-rose-400 to-pink-500 py-2 text-sm font-medium text-white shadow-md">确认清除</button>
-            </div>
+      <SectionCard title="清除数据缓存" icon={Trash2} hint="覆盖安装后如有旧账号/配置残留可清除" tone="rose">
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            {cacheItems.map((item, index) => (
+              <label key={item} className="flex cursor-pointer items-center gap-2.5 rounded-xl px-2 py-1.5 transition hover:bg-purple-50 select-none">
+                <div
+                  onClick={() => setCacheChecked((prev) => prev.map((v, i) => (i === index ? !v : v)))}
+                  className={`flex h-4 w-4 cursor-pointer items-center justify-center rounded-full border-2 transition ${
+                    cacheChecked[index] ? "border-transparent bg-gradient-to-br from-pink-400 to-purple-500" : "border-purple-200 bg-white"
+                  }`}
+                >
+                  {cacheChecked[index] && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                </div>
+                <span className="text-xs text-purple-700">{item}</span>
+              </label>
+            ))}
           </div>
+          <SoftButton className="w-full" variant="danger" icon={Trash2} onClick={() => setShowClearConfirm(true)}>清除选中缓存</SoftButton>
         </div>
-      )}
-    </div>
+      </SectionCard>
+
+      <SectionCard title="关于项目" icon={Info} hint={`糖心志者 ${APP_VERSION_LABEL}`}>
+        <div className="space-y-3">
+          <p className="text-[11px] leading-relaxed text-purple-400">
+            Chrome Manifest V3 插件：账号池、展示覆盖、播放资源、视频下载与专业升级系统。界面采用统一设计系统，移动端完整适配。
+          </p>
+          <div className="grid grid-cols-2 gap-2 text-[10px]">
+            {[
+              { label: "mux.js", value: "7.0.0" },
+              { label: "构建", value: APP_BUILD },
+              { label: "播放器", value: ART_PLAYER_VERSION },
+              { label: "HLS", value: HLS_CORE_VERSION }
+            ].map((item) => (
+              <div key={item.label} className="rounded-xl bg-purple-50 px-2.5 py-2">
+                <p className="text-purple-300">{item.label}</p>
+                <p className="font-semibold text-purple-700">{item.value}</p>
+              </div>
+            ))}
+          </div>
+          <SoftButton className="w-full" variant="secondary" icon={ExternalLink} onClick={() => onAction("about")}>打开项目主页</SoftButton>
+        </div>
+      </SectionCard>
+
+      <ModalSheet
+        open={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        title="确认清除缓存？"
+        footer={
+          <div className="grid grid-cols-2 gap-2">
+            <SoftButton variant="secondary" className="w-full" onClick={() => setShowClearConfirm(false)}>取消</SoftButton>
+            <SoftButton variant="danger" className="w-full" onClick={() => { onAction("clear-cache"); setShowClearConfirm(false); }}>确认清除</SoftButton>
+          </div>
+        }
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-400 to-pink-500">
+            <AlertTriangle size={18} className="text-white" />
+          </div>
+          <p className="text-xs leading-relaxed text-purple-500">清除后需要重新同步账号池，建议操作后刷新页面。下载目录中的已保存文件不会删除。</p>
+        </div>
+      </ModalSheet>
+    </PageShell>
   );
 }

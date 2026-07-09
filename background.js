@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0115";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0200";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 01:15 【优化】升级版本到 v3.3.1，缩小播放器主控与多级菜单功能图标尺寸，菜单芯片更紧凑，减少遮挡画面。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 02:00 【优化】升级版本到 v3.4.0，完全重构插件面板 UI：统一设计系统、五页布局、外壳导航与视觉交互全面升级。";
 
 const DEFAULT_STATE = {
   role: "guest",

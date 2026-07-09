@@ -34,6 +34,14 @@ const pageTitles: Record<Page, string> = {
   settings: "设置"
 };
 
+const pageSubtitles: Record<Page, string> = {
+  overview: "运行状态与快捷入口",
+  accounts: "云端同步与本地账号管理",
+  playback: "播放器、线路与播放记录",
+  downloads: "任务进度、保存与排查",
+  settings: "体检、覆盖、广告与升级"
+};
+
 const flowLevelColors: Record<string, string> = {
   ok: "from-emerald-500 to-teal-500",
   error: "from-rose-500 to-red-500",
@@ -255,31 +263,35 @@ export default function App() {
       )}
 
       {open && (
-        <div className="txzz-app-panel-overlay txzz-candy-interactive fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6">
-          <div className="txzz-app-panel-backdrop absolute inset-0 bg-black/32 backdrop-blur-[8px]" onClick={closePanel} />
-          <div className="txzz-app-panel-frame relative flex h-full w-full flex-col overflow-hidden rounded-none border border-pink-100/90 bg-white/97 shadow-[0_24px_80px_rgba(147,51,234,0.18)] backdrop-blur-xl sm:h-auto sm:max-h-[90vh] sm:w-[760px] sm:max-w-full sm:flex-row sm:rounded-[1.75rem]">
+        <div className="txzz-app-panel-overlay txzz-candy-interactive fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-5">
+          <div className="txzz-app-panel-backdrop absolute inset-0 bg-black/38 backdrop-blur-[10px]" onClick={closePanel} />
+          <div className="txzz-app-panel-frame relative flex h-full w-full flex-col overflow-hidden rounded-none border border-pink-100/80 bg-[#fffafc]/95 shadow-[0_28px_90px_rgba(147,51,234,0.22)] backdrop-blur-2xl sm:h-auto sm:max-h-[min(92vh,880px)] sm:w-[820px] sm:max-w-full sm:flex-row sm:rounded-[1.85rem]">
 
-            <aside className="txzz-app-sidebar hidden w-[5.25rem] shrink-0 flex-col items-center gap-1 bg-gradient-to-b from-pink-400 via-rose-400 to-purple-600 py-5 sm:flex">
-              <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/25 shadow-inner ring-1 ring-white/30 backdrop-blur">
+            <aside className="txzz-app-sidebar hidden w-[5.75rem] shrink-0 flex-col items-center gap-0.5 bg-gradient-to-b from-pink-400 via-rose-400 to-purple-600 py-5 sm:flex">
+              <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/22 shadow-inner ring-1 ring-white/35 backdrop-blur">
                 <span className="text-xl font-bold text-white drop-shadow-sm">志</span>
               </div>
-              <span className="mb-3 text-[9px] font-medium text-white/75">{APP_VERSION_LABEL}</span>
+              <span className="mb-4 rounded-full bg-white/15 px-2 py-0.5 text-[9px] font-medium text-white/85">{APP_VERSION_LABEL}</span>
 
               {navItems.map((item) => {
                 const active = page === item.id;
                 const hasBadge = item.id === "downloads" && activeDownloads > 0;
+                const hasUpdateDot = item.id === "settings" && updateAvailable;
                 return (
                   <button
                     key={item.id}
                     onClick={() => setPage(item.id)}
-                    className={`relative flex w-14 flex-col items-center gap-1 rounded-2xl py-2.5 transition-all ${active ? "bg-white/25 shadow-inner ring-1 ring-white/20" : "hover:bg-white/10"}`}
+                    className={`relative mb-0.5 flex w-[4.25rem] flex-col items-center gap-1 rounded-2xl py-2.5 transition-all ${active ? "bg-white/28 shadow-inner ring-1 ring-white/25" : "hover:bg-white/12"}`}
                   >
-                    <item.icon size={20} className="text-white" />
-                    <span className="text-[9px] font-medium text-white">{item.label}</span>
+                    <item.icon size={18} className="text-white" strokeWidth={active ? 2.4 : 2} />
+                    <span className="text-[9px] font-semibold text-white">{item.label}</span>
                     {hasBadge && (
                       <span className="absolute top-1.5 right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/80 bg-orange-400 text-[8px] font-bold text-white">
                         {activeDownloads}
                       </span>
+                    )}
+                    {hasUpdateDot && (
+                      <span className="absolute top-1.5 right-1.5 h-2.5 w-2.5 rounded-full border border-white bg-amber-300 animate-pulse" />
                     )}
                   </button>
                 );
@@ -287,22 +299,22 @@ export default function App() {
 
               <button
                 onClick={closePanel}
-                className="mt-auto flex h-10 w-10 items-center justify-center rounded-full bg-white/15 transition-all hover:bg-white/25"
+                className="mt-auto flex h-10 w-10 items-center justify-center rounded-full bg-white/15 transition-all hover:bg-white/28"
                 title="关闭面板 (Esc)"
               >
                 <X size={16} className="text-white" />
               </button>
             </aside>
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-white via-white to-pink-50/30">
-              <header className="txzz-app-header flex shrink-0 items-center justify-between border-b border-pink-100/90 bg-white/90 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-md">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-[#fffafc] via-white to-pink-50/40">
+              <header className="txzz-app-header flex shrink-0 items-center justify-between border-b border-pink-100/80 bg-white/88 px-4 py-2.5 pt-[max(0.65rem,env(safe-area-inset-top))] backdrop-blur-md">
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-pink-400 to-purple-600 shadow-sm shadow-pink-400/25 sm:hidden">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-pink-400 to-purple-600 shadow-sm shadow-pink-400/30 sm:hidden">
                     <span className="text-sm font-bold text-white">志</span>
                   </div>
                   <div>
-                    <h1 className="text-sm font-bold tracking-wide text-purple-800">{pageTitles[page]}</h1>
-                    <p className="hidden text-[10px] text-purple-400 sm:block">糖心志者控制台 · {APP_VERSION_LABEL}</p>
+                    <h1 className="text-[13px] font-bold tracking-tight text-purple-900 sm:text-sm">{pageTitles[page]}</h1>
+                    <p className="text-[10px] text-purple-400">{pageSubtitles[page]} · {APP_VERSION_LABEL}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -312,23 +324,23 @@ export default function App() {
                         if (updateAvailable) setShowUpdateModal(true);
                         else setPage("settings");
                       }}
-                      className={`hidden items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] transition-colors sm:flex ${
+                      className={`hidden items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium transition-colors sm:flex ${
                         updateAvailable
                           ? "border-amber-200 bg-amber-50 text-amber-600"
                           : updateVm.status === "error"
                             ? "border-rose-200 bg-rose-50 text-rose-600"
-                            : "border-pink-100 bg-pink-50 text-purple-400"
+                            : "border-pink-100 bg-pink-50/80 text-purple-400"
                       }`}
                     >
                       {updateAvailable ? <Bell size={11} /> : <Zap size={11} />}
                       <span>
                         {updateAvailable
-                          ? "有新版本可用"
+                          ? "有新版本"
                           : updateVm.status === "error"
-                            ? "更新检测失败"
+                            ? "检测失败"
                             : updateVm.status === "checking"
-                              ? "正在检测更新"
-                              : "版本最新"}
+                              ? "检测中"
+                              : "已是最新"}
                       </span>
                     </button>
                   )}
@@ -351,11 +363,11 @@ export default function App() {
                 </div>
               )}
 
-              <main className="txzz-app-main flex-1 overflow-y-auto overscroll-contain">
+              <main className="txzz-app-main flex-1 overflow-y-auto overscroll-contain scroll-smooth">
                 {renderPage()}
               </main>
 
-              <nav className="txzz-app-mobile-nav flex shrink-0 items-center border-t border-pink-100/90 bg-white/96 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-0.5 backdrop-blur-md sm:hidden">
+              <nav className="txzz-app-mobile-nav flex shrink-0 items-center border-t border-pink-100/90 bg-white/97 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1 backdrop-blur-md sm:hidden">
                 {navItems.map((item) => {
                   const active = page === item.id;
                   const hasBadge = item.id === "downloads" && activeDownloads > 0;
@@ -363,14 +375,14 @@ export default function App() {
                     <button
                       key={item.id}
                       onClick={() => setPage(item.id)}
-                      className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 transition-all ${active ? "text-pink-500" : "text-purple-300"}`}
+                      className={`relative flex flex-1 flex-col items-center gap-0.5 py-1.5 transition-all ${active ? "text-pink-500" : "text-purple-300"}`}
                     >
-                      <div className={`rounded-xl p-1.5 transition-all ${active ? "bg-gradient-to-br from-pink-400 to-purple-500 shadow-md shadow-pink-400/30 scale-105" : "hover:bg-pink-50"}`}>
-                        <item.icon size={18} className={active ? "text-white" : ""} />
+                      <div className={`rounded-xl p-1.5 transition-all ${active ? "scale-105 bg-gradient-to-br from-pink-400 to-purple-500 shadow-md shadow-pink-400/30" : "hover:bg-pink-50"}`}>
+                        <item.icon size={17} className={active ? "text-white" : ""} strokeWidth={active ? 2.4 : 2} />
                       </div>
-                      <span className={`text-[9px] font-medium ${active ? "text-pink-500" : ""}`}>{item.label}</span>
+                      <span className={`text-[9px] font-semibold ${active ? "text-pink-500" : ""}`}>{item.label}</span>
                       {hasBadge && (
-                        <span className="absolute top-1.5 right-[calc(50%-1.1rem)] h-2.5 w-2.5 rounded-full border border-white bg-orange-400 shadow-sm" />
+                        <span className="absolute top-1 right-[calc(50%-1.05rem)] h-2.5 w-2.5 rounded-full border border-white bg-orange-400 shadow-sm" />
                       )}
                     </button>
                   );

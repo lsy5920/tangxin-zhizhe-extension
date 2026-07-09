@@ -2175,9 +2175,10 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const batchRecordReport = playbackRecordsReport(filteredRecordRows, recordFilterLabel);
 
   return (
-    <div className="txzz-playback-root space-y-4 p-4" style={playerStageStyle}>
-      <div className="txzz-playback-hidden-during-fullscreen relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-400 to-violet-500 p-4 text-white shadow-lg">
-        <div className="absolute right-3 top-2 select-none text-5xl opacity-15 pointer-events-none">🎬</div>
+    <div className="txzz-playback-root txzz-page space-y-3.5 p-3.5 sm:p-4" style={playerStageStyle}>
+      <div className="txzz-playback-hidden-during-fullscreen relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-400 via-fuchsia-400 to-violet-500 p-4 text-white shadow-[0_14px_36px_rgba(168,85,247,0.28)]">
+        <div className="pointer-events-none absolute -right-2 -top-3 select-none text-5xl opacity-[0.14]">🎬</div>
+        <div className="pointer-events-none absolute -bottom-10 left-8 h-24 w-24 rounded-full bg-white/10 blur-2xl" />
         <p className="mb-0.5 text-[10px] opacity-70 uppercase tracking-wider">最近视频</p>
         <h3 className="mb-2 pr-10 text-sm font-bold leading-snug">
           {latest?.movieTitle || latest?.title || latest?.movieId || "等待播放详情"}
@@ -2236,13 +2237,13 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
         </div>
       </div>
 
-      <div className="txzz-player-card space-y-3 rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
+      <div className="txzz-player-card space-y-3 overflow-hidden rounded-2xl border border-sky-100/90 bg-white/95 p-3.5 shadow-[0_8px_28px_rgba(14,165,233,0.08)]">
         <div className="txzz-player-card-title flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
+            <h3 className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
               <Film size={14} className="text-sky-400" /> 完整播放器
             </h3>
-            <p className="mt-1 truncate text-xs text-purple-400">{previewTitle} · 完整手势：单击/双击/长按/滑动/滚轮</p>
+            <p className="mt-0.5 truncate text-[10px] text-purple-400">{previewTitle} · 单击/双击/长按/滑动/滚轮</p>
           </div>
         </div>
         <div
@@ -2538,13 +2539,13 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
         </div>
       </div>
 
-      <div className="txzz-playback-hidden-during-fullscreen space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+      <div className="txzz-playback-hidden-during-fullscreen space-y-3 overflow-hidden rounded-2xl border border-pink-100/90 bg-white/95 p-3.5 shadow-[0_8px_28px_rgba(147,51,234,0.06)]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
+            <h3 className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
               <ShieldCheck size={14} className="text-emerald-400" /> 播放就绪
             </h3>
-            <p className="mt-1 text-xs leading-relaxed text-purple-400">{playbackTip(latest)}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-purple-400">{playbackTip(latest)}</p>
           </div>
           <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${readyCount ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
             {readyCount ? `${readyCount} 条可用` : "待获取"}
@@ -2629,8 +2630,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
         </div>
       </div>
 
-      <div className="txzz-playback-hidden-during-fullscreen rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
-        <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold text-purple-700">
+      <div className="txzz-playback-hidden-during-fullscreen overflow-hidden rounded-2xl border border-pink-100/90 bg-white/95 p-3.5 shadow-[0_8px_28px_rgba(147,51,234,0.06)]">
+        <h3 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
           <Layers size={14} className="text-purple-400" /> 分片统计
         </h3>
         <div className="grid grid-cols-3 gap-3">
@@ -2656,10 +2657,10 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
         </div>
       </div>
 
-      <div className="txzz-playback-hidden-during-fullscreen space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
+      <div className="txzz-playback-hidden-during-fullscreen space-y-3 overflow-hidden rounded-2xl border border-amber-100/90 bg-white/95 p-3.5 shadow-[0_8px_28px_rgba(245,158,11,0.08)]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
+            <h3 className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
               <Download size={14} className="text-amber-400" /> 当前视频下载
             </h3>
             <p className="mt-1 truncate text-xs text-purple-400">
@@ -2732,9 +2733,9 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
         </div>
       </div>
 
-      <div className="txzz-playback-hidden-during-fullscreen space-y-2">
+      <div className="txzz-playback-hidden-during-fullscreen space-y-2.5">
         <div className="flex items-center justify-between">
-          <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
+          <h3 className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
             <Film size={14} className="text-pink-400" /> 播放记录
           </h3>
           <div className="flex items-center gap-2">

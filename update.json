@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.3.1",
-  "build": "2026-07-10-0115",
-  "releasedAt": "2026-07-10 01:15",
+  "version": "3.4.0",
+  "build": "2026-07-10-0200",
+  "releasedAt": "2026-07-10 02:00",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0200",
+      "type": "优化",
+      "title": "完全重构插件面板 UI · 统一设计系统",
+      "detail": "新增 ui 设计系统 primitives（PageShell/SectionCard/HeroBanner/StatGrid/SoftButton/SegmentedControl/ModalSheet 等）；总览、账号池、下载、设置全面重构布局与交互；控制台外壳（侧栏/顶栏/底栏）升级更专业；播放页外围卡片视觉对齐；移动端与桌面端体验统一。"
+    },
     {
       "id": "2026-07-10-0115",
       "type": "优化",

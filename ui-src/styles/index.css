@@ -48,6 +48,65 @@
   pointer-events: auto;
 }
 
+/* 面板业务页统一滚动与触控体验 */
+.txzz-app-main {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(192, 132, 252, 0.45) transparent;
+}
+
+.txzz-app-main::-webkit-scrollbar {
+  width: 5px;
+}
+
+.txzz-app-main::-webkit-scrollbar-thumb {
+  background: rgba(192, 132, 252, 0.4);
+  border-radius: 999px;
+}
+
+.txzz-page {
+  min-height: 100%;
+}
+
+.txzz-section {
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.txzz-section:hover {
+  box-shadow: 0 10px 32px rgba(147, 51, 234, 0.08);
+}
+
+.txzz-app-panel-frame {
+  animation: txzz-panel-in 0.22s ease-out;
+}
+
+@keyframes txzz-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .txzz-app-panel-frame {
+    animation: txzz-panel-in-mobile 0.2s ease-out;
+  }
+  @keyframes txzz-panel-in-mobile {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
 /*
  * 播放器全屏模式：把插件面板退化成纯播放容器。
  * 优先配合浏览器 Fullscreen API（:fullscreen）；变量仅作 visualViewport 微调兜底。

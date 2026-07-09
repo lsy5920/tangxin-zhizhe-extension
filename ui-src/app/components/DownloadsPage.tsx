@@ -2,6 +2,17 @@ import { useState } from "react";
 import { AlertTriangle, CheckCircle, Copy, Download, FolderOpen, Link, Loader, RefreshCw, Save, Search, SortDesc, Trash2, XCircle } from "lucide-react";
 import type { BridgeState, DownloadTask } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, isRunningDownloadTask, maskUrl, shortTime } from "../helpers";
+import {
+  ActionToolbar,
+  EmptyState,
+  PageShell,
+  Pill,
+  SectionCard,
+  SegmentedControl,
+  SoftButton,
+  SoftInput,
+  StatGrid
+} from "./ui/primitives";
 
 type Props = {
   state: BridgeState;
@@ -14,7 +25,7 @@ type DownloadSort = "updated" | "failed" | "progress" | "size";
 function taskTone(task: DownloadTask) {
   if (task.stage === "complete" || task.stage === "ready") return { label: downloadStageLabel(task.stage), color: "bg-emerald-100 text-emerald-600", icon: <CheckCircle size={11} /> };
   if (task.stage === "error") return { label: "失败", color: "bg-rose-100 text-rose-600", icon: <XCircle size={11} /> };
-  if (["playlist","segments","segment"].includes(String(task.stage||""))) return { label: downloadStageLabel(task.stage), color: "bg-amber-100 text-amber-600", icon: <Download size={11} /> };
+  if (["playlist", "segments", "segment"].includes(String(task.stage || ""))) return { label: downloadStageLabel(task.stage), color: "bg-amber-100 text-amber-600", icon: <Download size={11} /> };
   return { label: downloadStageLabel(task.stage), color: "bg-sky-100 text-sky-600", icon: <Loader size={11} className="animate-spin" /> };
 }
 
@@ -25,7 +36,7 @@ export function DownloadsPage({ state, onAction }: Props) {
   const [searchText, setSearchText] = useState("");
   const [sortMode, setSortMode] = useState<DownloadSort>("updated");
   const readyCount = tasks.filter(canSaveDownload).length;
-  // 下载任务较多时先按状态缩小范围，再查看具体任务卡片。
+
   const statusFilteredTasks = tasks.filter((task) => {
     if (filter === "running") return isRunningDownloadTask(task);
     if (filter === "ready") return canSaveDownload(task);
@@ -34,7 +45,6 @@ export function DownloadsPage({ state, onAction }: Props) {
   });
   const searchKeyword = searchText.trim().toLowerCase();
   const searchedTasks = statusFilteredTasks.filter((task) => {
-    // 搜索只在本地任务摘要里匹配，保证批量操作看到什么就处理什么。
     if (!searchKeyword) return true;
     const sourceUrl = absoluteUrl(task.url);
     return [
@@ -52,7 +62,6 @@ export function DownloadsPage({ state, onAction }: Props) {
   });
   const updatedTime = (task: DownloadTask) => Date.parse(String(task.updatedAt || "")) || 0;
   const filteredTasks = [...searchedTasks].sort((a, b) => {
-    // 排序只改变展示和导出顺序，不改变当前筛选、搜索后的任务集合。
     if (sortMode === "failed") {
       const diff = Number(b.stage === "error") - Number(a.stage === "error");
       if (diff) return diff;
@@ -67,11 +76,12 @@ export function DownloadsPage({ state, onAction }: Props) {
     }
     return updatedTime(b) - updatedTime(a);
   });
-  const filterItems: { key: DownloadFilter; label: string; value: number; color: string }[] = [
-    { key: "all", label: "全部", value: stats.total, color: "text-purple-600" },
-    { key: "running", label: "进行中", value: stats.running, color: "text-amber-600" },
-    { key: "ready", label: "可保存", value: readyCount, color: "text-emerald-600" },
-    { key: "failed", label: "失败", value: stats.failed, color: "text-rose-600" }
+
+  const filterItems = [
+    { key: "all" as const, label: "全部", count: stats.total, tone: "text-purple-600" },
+    { key: "running" as const, label: "进行中", count: stats.running, tone: "text-amber-600" },
+    { key: "ready" as const, label: "可保存", count: readyCount, tone: "text-emerald-600" },
+    { key: "failed" as const, label: "失败", count: stats.failed, tone: "text-rose-600" }
   ];
   const sortItems: { key: DownloadSort; label: string; tip: string }[] = [
     { key: "updated", label: "最近", tip: "按更新时间倒序" },
@@ -96,239 +106,165 @@ export function DownloadsPage({ state, onAction }: Props) {
     .map((task) => String(task.movieId))));
 
   function retryFilteredFailedTasks() {
-    // 批量重试按视频编号去重，避免同一视频重复创建下载任务。
     retryMovieIds.forEach((movieId) => onAction("download-full-video", { movieId }));
   }
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="grid grid-cols-4 gap-2">
-        {[
-          { label: "总任务", value: stats.total, color: "bg-purple-100 text-purple-700" },
-          { label: "进行中", value: stats.running, color: "bg-amber-100 text-amber-700" },
-          { label: "已完成", value: stats.completed, color: "bg-emerald-100 text-emerald-700" },
-          { label: "失败", value: stats.failed, color: "bg-rose-100 text-rose-700" }
-        ].map((item) => (
-          <div key={item.label} className={`${item.color} rounded-2xl p-2 text-center`}>
-            <p className="text-lg font-bold">{item.value}</p>
-            <p className="text-[10px] opacity-75">{item.label}</p>
+    <PageShell>
+      <StatGrid
+        items={[
+          { label: "总任务", value: stats.total, tone: "purple" },
+          { label: "进行中", value: stats.running, tone: "amber" },
+          { label: "已完成", value: stats.completed, tone: "emerald" },
+          { label: "失败", value: stats.failed, tone: "rose" }
+        ]}
+      />
+
+      <SegmentedControl items={filterItems} value={filter} onChange={setFilter} />
+
+      <SectionCard title="查找与排序" icon={Search} hint={`当前显示 ${filteredTasks.length} / ${statusFilteredTasks.length}`}>
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2 rounded-xl bg-purple-50/80 px-2.5 py-2 ring-1 ring-purple-100">
+            <Search size={13} className="shrink-0 text-purple-300" />
+            <SoftInput
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="搜索标题、编号、任务或链接"
+              className="border-0 bg-transparent px-0 py-0 shadow-none ring-0 focus:ring-0"
+            />
+            {searchText && (
+              <SoftButton size="xs" variant="ghost" onClick={() => setSearchText("")}>清除</SoftButton>
+            )}
           </div>
-        ))}
-      </div>
+          <div className="grid grid-cols-4 gap-1.5">
+            {sortItems.map((item) => {
+              const active = sortMode === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setSortMode(item.key)}
+                  title={item.tip}
+                  className={`flex min-h-8 items-center justify-center gap-1 rounded-xl px-1.5 text-[10px] font-semibold transition ${
+                    active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "bg-purple-50 text-purple-400 hover:bg-purple-100"
+                  }`}
+                >
+                  <SortDesc size={11} /> {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </SectionCard>
 
-      <div className="grid grid-cols-4 gap-1.5 rounded-2xl bg-white p-1.5 shadow-sm border border-pink-100">
-        {filterItems.map((item) => {
-          const active = filter === item.key;
-          return (
-            <button
-              key={item.key}
-              onClick={() => setFilter(item.key)}
-              className={`rounded-xl px-1.5 py-2 text-center transition-all ${active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "text-purple-300 hover:bg-purple-50"}`}
-            >
-              <p className={`text-sm font-bold ${active ? "text-white" : item.color}`}>{item.value}</p>
-              <p className="mt-0.5 text-[10px]">{item.label}</p>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="rounded-2xl border border-pink-100 bg-white p-2 shadow-sm">
-        <div className="flex items-center gap-2 rounded-xl bg-purple-50 px-2.5 py-1.5">
-          <Search size={12} className="shrink-0 text-purple-300" />
-          <input
-            value={searchText}
-            onChange={(event) => setSearchText(event.target.value)}
-            placeholder="搜索标题、编号、任务或链接"
-            className="min-w-0 flex-1 bg-transparent text-xs text-purple-700 outline-none placeholder:text-purple-300"
-          />
-          <span className="shrink-0 text-[10px] text-purple-300">{filteredTasks.length}/{statusFilteredTasks.length}</span>
-          {searchText && (
-            <button onClick={() => setSearchText("")} className="rounded-full bg-white px-2 py-0.5 text-[10px] text-purple-400">
-              清除
-            </button>
+      <SectionCard title="批量操作" icon={Download}>
+        <ActionToolbar>
+          <SoftButton size="sm" variant="sky" icon={FolderOpen} onClick={() => onAction("open-download-folder")}>目录</SoftButton>
+          <SoftButton size="sm" variant="secondary" icon={RefreshCw} onClick={() => onAction("refresh-downloads")}>刷新</SoftButton>
+          <SoftButton size="sm" variant="emerald" icon={Save} onClick={() => onAction("save-downloads")}>保存记录</SoftButton>
+          <SoftButton size="sm" variant="emerald" icon={Save} disabled={!readyTaskIds.length} onClick={() => onAction("save-ready-downloads", { taskIds: readyTaskIds })}>保存全部</SoftButton>
+          <SoftButton size="sm" variant="secondary" icon={Copy} disabled={!filteredLinkCount} onClick={() => onAction("copy-filtered-download-urls", { taskIds: filteredTaskIds })}>复制链接</SoftButton>
+          <SoftButton size="sm" variant="sky" icon={Copy} disabled={!filteredTasks.length} onClick={() => onAction("copy-filtered-download-report", { taskIds: filteredTaskIds, filterLabel })}>复制报告</SoftButton>
+          <SoftButton size="sm" variant="danger" icon={AlertTriangle} disabled={!failedFilteredTasks.length} onClick={() => onAction("copy-failed-download-summary", { taskIds: filteredTaskIds, filterLabel })}>失败摘要</SoftButton>
+          {filter === "failed" && (
+            <SoftButton size="sm" variant="amber" icon={RefreshCw} disabled={!retryMovieIds.length} onClick={retryFilteredFailedTasks}>重试失败</SoftButton>
           )}
-        </div>
-        <div className="mt-2 grid grid-cols-4 gap-1.5">
-          {sortItems.map((item) => {
-            const active = sortMode === item.key;
-            return (
-              <button
-                key={item.key}
-                onClick={() => setSortMode(item.key)}
-                title={item.tip}
-                className={`flex min-h-8 items-center justify-center gap-1 rounded-xl px-1.5 text-[10px] font-medium transition-all ${active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "bg-white text-purple-400 hover:bg-purple-100"}`}
-              >
-                <SortDesc size={11} /> {item.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button onClick={() => onAction("open-download-folder")} className="flex items-center gap-1 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 px-3 py-2 text-xs text-white shadow-sm transition-transform active:scale-95">
-          <FolderOpen size={13} /> 下载目录
-        </button>
-        <button onClick={() => onAction("refresh-downloads")} className="flex items-center gap-1 rounded-xl bg-gradient-to-r from-purple-400 to-violet-500 px-3 py-2 text-xs text-white shadow-sm transition-transform active:scale-95">
-          <RefreshCw size={13} /> 刷新
-        </button>
-        <button onClick={() => onAction("save-downloads")} className="flex items-center gap-1 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-500 px-3 py-2 text-xs text-white shadow-sm transition-transform active:scale-95">
-          <Save size={13} /> 保存记录
-        </button>
-        <button
-          onClick={() => onAction("save-ready-downloads", { taskIds: readyTaskIds })}
-          disabled={!readyTaskIds.length}
-          className="flex items-center gap-1 rounded-xl border border-emerald-200 px-3 py-2 text-xs text-emerald-500 transition-transform active:scale-95 disabled:opacity-45"
-          title="逐个处理当前筛选里的可保存任务"
-        >
-          <Save size={13} /> 保存全部
-        </button>
-        <button
-          onClick={() => onAction("copy-filtered-download-urls", { taskIds: filteredTaskIds })}
-          disabled={!filteredLinkCount}
-          className="flex items-center gap-1 rounded-xl border border-purple-200 px-3 py-2 text-xs text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
-          title="复制当前筛选里的完整下载链接"
-        >
-          <Copy size={13} /> 复制筛选链接
-        </button>
-        <button
-          onClick={() => onAction("copy-filtered-download-report", { taskIds: filteredTaskIds, filterLabel })}
-          disabled={!filteredTasks.length}
-          className="flex items-center gap-1 rounded-xl border border-sky-200 px-3 py-2 text-xs text-sky-500 transition-transform active:scale-95 disabled:opacity-45"
-          title="复制当前筛选里的任务状态、进度和完整源链接"
-        >
-          <Copy size={13} /> 复制报告
-        </button>
-        <button
-          onClick={() => onAction("copy-failed-download-summary", { taskIds: filteredTaskIds, filterLabel })}
-          disabled={!failedFilteredTasks.length}
-          className="flex items-center gap-1 rounded-xl border border-rose-200 px-3 py-2 text-xs text-rose-500 transition-transform active:scale-95 disabled:opacity-45"
-          title="复制当前范围里的失败原因、视频编号和完整源链接"
-        >
-          <AlertTriangle size={13} /> 失败摘要
-        </button>
-        {filter === "failed" && (
-          <button
-            onClick={retryFilteredFailedTasks}
-            disabled={!retryMovieIds.length}
-            className="flex items-center gap-1 rounded-xl border border-amber-200 px-3 py-2 text-xs text-amber-500 transition-transform active:scale-95 disabled:opacity-45"
-            title="批量重试当前失败任务"
-          >
-            <RefreshCw size={13} /> 重试失败
-          </button>
-        )}
-        <button onClick={() => onAction("clear-downloads")} className="ml-auto flex items-center gap-1 rounded-xl border border-rose-200 px-3 py-2 text-xs text-rose-500 transition-transform active:scale-95">
-          <Trash2 size={13} /> 清空
-        </button>
-      </div>
+          <SoftButton size="sm" variant="danger" icon={Trash2} onClick={() => onAction("clear-downloads")}>清空</SoftButton>
+        </ActionToolbar>
+      </SectionCard>
 
       {failedReasonGroups.length > 0 && (
-        <div className="space-y-2 rounded-2xl border border-rose-100 bg-rose-50 p-3 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <p className="flex items-center gap-1.5 text-xs font-bold text-rose-600"><AlertTriangle size={13} /> 失败原因概览</p>
-            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] text-rose-500">{failedFilteredTasks.length} 个失败 / {failedReasonGroups.length} 类原因</span>
-          </div>
-          <div className="grid gap-1.5">
+        <SectionCard title="失败原因概览" icon={AlertTriangle} tone="rose" action={
+          <Pill className="bg-rose-100 text-rose-600">{failedFilteredTasks.length} 个 / {failedReasonGroups.length} 类</Pill>
+        }>
+          <div className="space-y-1.5">
             {failedReasonGroups.slice(0, 3).map(([reason, list]) => (
-              <div key={reason} className="flex items-start justify-between gap-2 rounded-xl bg-white/80 px-2.5 py-1.5">
+              <div key={reason} className="flex items-start justify-between gap-2 rounded-xl bg-rose-50/80 px-2.5 py-2">
                 <p className="min-w-0 flex-1 break-all text-[10px] leading-relaxed text-rose-600">{reason}</p>
-                <span className="shrink-0 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-600">{list.length} 个</span>
+                <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-rose-500">{list.length}</span>
               </div>
             ))}
+            {failedReasonGroups.length > 3 && (
+              <p className="text-[10px] text-rose-400">还有 {failedReasonGroups.length - 3} 类原因，可用「失败摘要」导出。</p>
+            )}
           </div>
-          {failedReasonGroups.length > 3 && <p className="text-[10px] text-rose-400">还有 {failedReasonGroups.length - 3} 类原因，可点击「失败摘要」复制完整排查内容。</p>}
-        </div>
+        </SectionCard>
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         {filteredTasks.length ? filteredTasks.map((task) => {
           const tone = taskTone(task);
           const progress = downloadProgress(task);
           const sourceUrl = absoluteUrl(task.url);
           return (
-            <div key={task.taskId || task.movieId || task.url} className="space-y-2 rounded-2xl border border-pink-100 bg-white p-3 shadow-sm">
-              <div className="flex items-start justify-between gap-2">
+            <div key={task.taskId || task.movieId || task.url} className="overflow-hidden rounded-2xl border border-pink-100/90 bg-white shadow-[0_6px_20px_rgba(147,51,234,0.05)]">
+              <div className="flex items-start justify-between gap-2 border-b border-purple-50 px-3 py-2.5">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-semibold text-purple-800">{downloadTitle(task)}</p>
+                  <p className="truncate text-xs font-bold text-purple-800">{downloadTitle(task)}</p>
                   <p className="mt-0.5 text-[10px] text-purple-300">{task.movieId ? `视频 ${task.movieId}` : task.taskId || "视频任务"}</p>
                 </div>
-                <span className={`flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-medium ${tone.color}`}>
+                <span className={`flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone.color}`}>
                   {tone.icon} {tone.label}
                 </span>
               </div>
-              <div className="flex flex-wrap gap-1.5 text-[10px]">
-                <span className="rounded-full bg-purple-50 px-2 py-0.5 text-purple-500">{downloadFormat(task)}</span>
-                <span className="rounded-full bg-sky-50 px-2 py-0.5 text-sky-500">{formatBytes(task.bytes)}</span>
-                <span className="rounded-full bg-gray-50 px-2 py-0.5 text-gray-400">{shortTime(task.updatedAt)}</span>
-              </div>
-              {sourceUrl && (
-                <div className="flex items-center gap-1.5 rounded-xl bg-purple-50 px-2.5 py-1.5">
-                  <Link size={11} className="shrink-0 text-purple-300" />
-                  <span className="shrink-0 text-[10px] font-medium text-purple-400">完整源链接</span>
-                  <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-purple-500">{maskUrl(sourceUrl)}</span>
+              <div className="space-y-2 p-3">
+                <div className="flex flex-wrap gap-1.5">
+                  <Pill className="bg-purple-50 text-purple-500">{downloadFormat(task)}</Pill>
+                  <Pill className="bg-sky-50 text-sky-500">{formatBytes(task.bytes)}</Pill>
+                  <Pill className="bg-slate-50 text-slate-400">{shortTime(task.updatedAt)}</Pill>
                 </div>
-              )}
-              {task.stage !== "complete" && (
-                <div>
-                  <div className="mb-1 flex justify-between text-[10px] text-purple-400">
-                    <span>{downloadStageLabel(task.stage)}</span>
-                    <span>{task.total ? `${task.current||0}/${task.total}` : `${progress}%`}</span>
+                {sourceUrl && (
+                  <div className="flex items-center gap-1.5 rounded-xl bg-purple-50/80 px-2.5 py-1.5">
+                    <Link size={11} className="shrink-0 text-purple-300" />
+                    <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-purple-500">{maskUrl(sourceUrl)}</span>
                   </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-pink-100">
-                    <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${progress}%` }} />
+                )}
+                {task.stage !== "complete" && (
+                  <div>
+                    <div className="mb-1 flex justify-between text-[10px] text-purple-400">
+                      <span>{downloadStageLabel(task.stage)}</span>
+                      <span className="tabular-nums">{task.total ? `${task.current || 0}/${task.total}` : `${progress}%`}</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-pink-100">
+                      <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${progress}%` }} />
+                    </div>
                   </div>
-                </div>
-              )}
-              {(task.error || task.transmuxError) && (
-                <div className="flex items-start gap-1.5 rounded-xl bg-rose-50 p-2">
-                  <AlertTriangle size={11} className="mt-0.5 shrink-0 text-rose-400" />
-                  <p className="text-[10px] text-rose-600 break-all">{task.error || `MP4转封装失败，TS已保留：${task.transmuxError}`}</p>
-                </div>
-              )}
-              <div className="flex gap-1.5 pt-0.5">
-                {task.stage === "error" && (
-                  // 失败重试复用完整视频下载流程，继续走账号池和资源刷新逻辑。
-                  <button
-                    onClick={() => onAction("download-full-video", { movieId: task.movieId || "" })}
-                    disabled={!task.movieId}
-                    className="flex items-center gap-1 rounded-xl border border-amber-200 px-2.5 py-1.5 text-[11px] text-amber-500 transition-transform active:scale-95 disabled:opacity-45"
-                    title="重新创建下载任务"
+                )}
+                {(task.error || task.transmuxError) && (
+                  <div className="flex items-start gap-1.5 rounded-xl bg-rose-50 p-2">
+                    <AlertTriangle size={11} className="mt-0.5 shrink-0 text-rose-400" />
+                    <p className="break-all text-[10px] text-rose-600">{task.error || `MP4转封装失败，TS已保留：${task.transmuxError}`}</p>
+                  </div>
+                )}
+                <div className="flex gap-1.5">
+                  {task.stage === "error" && (
+                    <SoftButton size="sm" variant="amber" icon={RefreshCw} disabled={!task.movieId} onClick={() => onAction("download-full-video", { movieId: task.movieId || "" })}>
+                      重试
+                    </SoftButton>
+                  )}
+                  <SoftButton
+                    size="sm"
+                    className="flex-1"
+                    icon={Save}
+                    disabled={!canSaveDownload(task)}
+                    onClick={() => onAction("save-download-device", { taskId: task.taskId || "" })}
                   >
-                    <RefreshCw size={11} /> 重试
-                  </button>
-                )}
-                <button
-                  onClick={() => onAction("save-download-device", { taskId: task.taskId || "" })}
-                  disabled={!canSaveDownload(task)}
-                  className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 py-1.5 text-[11px] font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-40"
-                >
-                  <Save size={12} /> 保存到设备
-                </button>
-                {task.url && (
-                  <button onClick={() => onAction("copy-download-url", { taskId: task.taskId || "" })} className="flex items-center gap-1 rounded-xl border border-purple-200 px-2.5 py-1.5 text-[11px] text-purple-400 hover:bg-purple-50 transition-colors" title="复制完整下载链接">
-                    <Copy size={11} />
-                  </button>
-                )}
-                <button onClick={() => onAction("remove-download-task", { taskId: task.taskId || "", movieId: task.movieId || "" })} className="flex items-center gap-1 rounded-xl border border-rose-200 px-2.5 py-1.5 text-[11px] text-rose-400 hover:bg-rose-50 transition-colors" title="删除任务">
-                  <Trash2 size={11} />
-                </button>
+                    保存到设备
+                  </SoftButton>
+                  {task.url && (
+                    <SoftButton size="sm" variant="secondary" icon={Copy} title="复制链接" onClick={() => onAction("copy-download-url", { taskId: task.taskId || "" })} />
+                  )}
+                  <SoftButton size="sm" variant="danger" icon={Trash2} title="删除" onClick={() => onAction("remove-download-task", { taskId: task.taskId || "", movieId: task.movieId || "" })} />
+                </div>
               </div>
             </div>
           );
         }) : tasks.length ? (
-          <div className="rounded-2xl border border-pink-100 bg-white p-5 text-center shadow-sm">
-            <Download size={28} className="mx-auto mb-2 text-purple-200" />
-            <p className="text-xs text-purple-400">当前筛选或搜索没有任务</p>
-            <p className="mt-1 text-[10px] text-purple-300">切换到「全部」或清除搜索词可以查看更多下载记录</p>
-          </div>
+          <EmptyState icon={Search} title="当前筛选或搜索没有任务" desc="切换到「全部」或清除搜索词可查看更多下载记录" />
         ) : (
-          <div className="rounded-2xl border border-pink-100 bg-white p-5 text-center shadow-sm">
-            <Download size={28} className="mx-auto mb-2 text-purple-200" />
-            <p className="text-xs text-purple-400">暂无下载任务</p>
-            <p className="mt-1 text-[10px] text-purple-300">进入视频详情页点击"下载"按钮即可创建任务</p>
-          </div>
+          <EmptyState icon={Download} title="暂无下载任务" desc="进入视频详情页点击「下载」即可创建任务" />
         )}
       </div>
-    </div>
+    </PageShell>
   );
 }

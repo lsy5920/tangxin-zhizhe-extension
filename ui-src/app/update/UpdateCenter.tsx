@@ -67,20 +67,21 @@ export function UpdateCenter({ state, onAction }: Props) {
   };
 
   return (
-    <div className={`space-y-3 overflow-hidden rounded-2xl border bg-white p-4 shadow-sm ${tone.border}`}>
-      <div className="flex items-start justify-between gap-3">
+    <div className={`space-y-3 overflow-hidden rounded-2xl border bg-white/95 p-0 shadow-[0_8px_28px_rgba(147,51,234,0.06)] ${tone.border}`}>
+      <div className="flex items-start justify-between gap-3 border-b border-purple-50 px-3.5 py-2.5">
         <div className="min-w-0">
-          <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
+          <h3 className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
             <Rocket size={14} className="text-sky-400" /> 升级中心
           </h3>
-          <p className="mt-1 text-[11px] leading-relaxed text-purple-400">
-            专业版升级引擎：实时读取远程清单、版本/构建双重比对、候选下载兜底、更新日志可视化。
+          <p className="mt-0.5 text-[10px] leading-relaxed text-purple-400">
+            实时清单 · 版本/构建比对 · 多候选下载 · 更新日志
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ${tone.badge}`}>
           {vm.statusLabel}
         </span>
       </div>
+      <div className="space-y-3 px-3.5 pb-3.5">
 
       <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${tone.soft} p-3 ring-1 ${tone.ring}`}>
         <div className="absolute -right-2 -top-3 select-none text-5xl opacity-10 pointer-events-none">🚀</div>
@@ -233,6 +234,7 @@ export function UpdateCenter({ state, onAction }: Props) {
           <CheckCircle2 size={12} /> {feedback}
         </p>
       )}
+      </div>
     </div>
   );
 }
