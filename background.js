@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2110";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2120";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 21:10 【优化】升级版本到 v3.0.4，优化插件糖果风外壳与全屏播放：悬浮球/视频按钮安全区适配，全屏贴底控制层、手势 HUD、锁屏防误触、顶部返回退出、Esc 先解锁、L 键锁屏，进度条与控制按钮更易点按。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 21:20 【优化】升级版本到 v3.0.5，全面重构播放器交互与按钮：左右分区主控栏、音量/倍速快开面板、快捷参数条、模块化控制组件，新增横向滑动快进快退，清晰度/倍速/步长一键点选。";
 
 const DEFAULT_STATE = {
   role: "guest",

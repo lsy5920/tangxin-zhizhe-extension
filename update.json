@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.0.4",
-  "build": "2026-07-09-2110",
-  "releasedAt": "2026-07-09 21:10",
+  "version": "3.0.5",
+  "build": "2026-07-09-2120",
+  "releasedAt": "2026-07-09 21:20",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2120",
+      "type": "优化",
+      "title": "全面重构播放器交互与按钮 · 主控分区、快开面板、横滑快进",
+      "detail": "升级到 v3.0.5：播放器控制层重构为模块化组件（PlayerChrome），主控改为左右分区布局；音量与倍速支持主栏快开面板一键调节；新增清晰度/填充/步长快捷条；二级菜单重做线路、画面、声音、工具四组，倍速/步长/清晰度改为芯片点选；触摸手势新增横向滑动快进快退，保留竖滑音量亮度、双击三区、长按倍速和锁屏防误触，整体更接近主流视频 App 操作路径。"
+    },
     {
       "id": "2026-07-09-2110",
       "type": "优化",

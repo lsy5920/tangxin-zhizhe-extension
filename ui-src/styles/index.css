@@ -597,6 +597,50 @@
   height: 10px !important;
 }
 
+/* 重构后的主控栏：左右分区、快捷条、二级菜单统一视觉节奏。 */
+.txzz-player-control-row {
+  min-height: 2.75rem;
+}
+
+.txzz-player-quick-row {
+  opacity: 0.96;
+}
+
+.txzz-player-more-sheet {
+  max-height: min(42vh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.txzz-player-range {
+  height: 0.35rem;
+  cursor: pointer;
+}
+
+.txzz-player-control-panel .txzz-player-control-button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.txzz-player-fullscreen-shell .txzz-player-control-row {
+  gap: 0.45rem;
+}
+
+.txzz-player-fullscreen-shell .txzz-player-quick-row {
+  margin-top: 0.55rem;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .txzz-player-fullscreen-shell .txzz-player-quick-row {
+    display: none;
+  }
+
+  .txzz-player-fullscreen-shell .txzz-player-more-sheet {
+    max-height: min(48vh, 220px);
+  }
+}
+
 /* Artplayer 内核样式覆写 */
 .txzz-player-shell .art-video-player {
   width: 100% !important;
