@@ -102,8 +102,7 @@
 :host(.txzz-player-fullscreen-mode) .txzz-player-card,
 :host(.txzz-player-fullscreen-mode) .txzz-player-shell,
 :host(.txzz-player-fullscreen-mode) .txzz-player-card-body,
-:host(.txzz-player-fullscreen-mode) .txzz-player-orientation-stage,
-:host(.txzz-player-fullscreen-mode) .txzz-player-gesture-surface {
+:host(.txzz-player-fullscreen-mode) .txzz-player-orientation-stage {
   position: fixed !important;
   inset: 0 !important;
   width: 100% !important;
@@ -120,6 +119,46 @@
   box-shadow: none !important;
   transform: none !important;
   overflow: hidden !important;
+}
+
+/*
+ * 手势层全屏时也要铺满，但背景必须透明！
+ * 之前误写 background:#000，手势层 z-index 高于 video，导致全屏只闻其声不见其画；
+ * 退出全屏后规则失效，画面又恢复 —— 与用户描述完全一致。
+ */
+:host(.txzz-player-fullscreen-mode) .txzz-player-gesture-surface,
+:host(:fullscreen) .txzz-player-gesture-surface,
+:host(:-webkit-full-screen) .txzz-player-gesture-surface {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 100% !important;
+  min-height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+  overflow: hidden !important;
+  z-index: 12 !important;
+}
+
+/* 亮度遮罩全屏时同样禁止被写成实心黑底（opacity 由 inline 控制） */
+:host(.txzz-player-fullscreen-mode) .txzz-player-brightness-mask,
+:host(:fullscreen) .txzz-player-brightness-mask,
+:host(:-webkit-full-screen) .txzz-player-brightness-mask {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+  z-index: 8 !important;
 }
 
 :host(.txzz-player-fullscreen-mode) .txzz-player-card-title,

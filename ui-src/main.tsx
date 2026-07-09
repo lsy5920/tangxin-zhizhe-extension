@@ -103,6 +103,44 @@ function createHost() {
   overflow: hidden !important;
   pointer-events: auto !important;
 }
+/* 手势层：全屏铺满但背景必须透明，否则会盖住 video */
+:host(:fullscreen) .txzz-player-gesture-surface,
+:host(:-webkit-full-screen) .txzz-player-gesture-surface {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  pointer-events: auto !important;
+  z-index: 12 !important;
+}
+:host(:fullscreen) .txzz-player-brightness-mask,
+:host(:-webkit-full-screen) .txzz-player-brightness-mask {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+  z-index: 8 !important;
+}
+:host(:fullscreen) video,
+:host(:-webkit-full-screen) video,
+:host(:fullscreen) .art-video,
+:host(:-webkit-full-screen) .art-video {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  filter: none !important;
+  -webkit-filter: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  z-index: 1 !important;
+  background: #000 !important;
+}
 :host(:fullscreen) .txzz-app-panel-backdrop,
 :host(:-webkit-full-screen) .txzz-app-panel-backdrop,
 :host(:fullscreen) .txzz-app-sidebar,

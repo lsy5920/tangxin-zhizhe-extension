@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.1.5",
-  "build": "2026-07-10-0025",
-  "releasedAt": "2026-07-10 00:25",
+  "version": "3.1.6",
+  "build": "2026-07-10-0040",
+  "releasedAt": "2026-07-10 00:40",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0040",
+      "type": "修复",
+      "title": "修复全屏黑屏只有声音 · 手势层误盖黑色背景",
+      "detail": "根据 Kiwi 截图确认：全屏时进度在走、有控制栏，但画面全黑；缩小后又能看见画面。根因是 :host(.txzz-player-fullscreen-mode) 把手势层一并设为 background:#000，而手势层 z-index 高于 video，等于整屏黑布盖住影片。现全屏手势层强制 transparent，亮度遮罩单独处理。"
+    },
     {
       "id": "2026-07-10-0025",
       "type": "修复",
