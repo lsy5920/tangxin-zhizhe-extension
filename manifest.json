@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "糖心志者",
-  "version": "3.3.0",
+  "version": "3.3.1",
   "description": "账号池管理、播放状态展示、视频下载和专业版升级系统管理工具。",
   "permissions": ["storage", "downloads", "offscreen"],
   "host_permissions": ["https://txh068.com/*", "https://*/*", "http://*/*"],

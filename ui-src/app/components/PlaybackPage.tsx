@@ -813,8 +813,9 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     ? "inset-x-0 bottom-0 rounded-none bg-gradient-to-t from-black/92 via-black/55 to-transparent px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-8 sm:px-5 sm:pb-4"
     : "inset-x-2 bottom-2 rounded-2xl bg-black/70 p-2.5 shadow-lg backdrop-blur-md ring-1 ring-white/10";
   // 横屏矮屏用更小按钮，避免控制条过高；桌面全屏才放大。
-  const playerControlIconSize = isCompactLandscape ? 15 : playerFullscreenActive ? 17 : 14;
-  const playerControlButtonSize = isCompactLandscape ? "md" as const : playerFullscreenActive ? "lg" as const : "md" as const;
+  // 全屏/面板统一用紧凑图标，避免多级菜单与主控按钮图标过大遮挡画面。
+  const playerControlIconSize = isCompactLandscape ? 13 : playerFullscreenActive ? 14 : 13;
+  const playerControlButtonSize = "md" as const;
   const playerStageStyle = {
     "--txzz-player-viewport-width": `${playerViewportSize.width || 0}px`,
     "--txzz-player-viewport-height": `${playerViewportSize.height || 0}px`,

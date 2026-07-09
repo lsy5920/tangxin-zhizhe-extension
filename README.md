@@ -588,3 +588,4 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 2026-07-09 23:55 【修复】升级版本到 v3.2.3，广告清理改为严格模式：删除全部猜测规则，仅清理实测到的 .ad-splash 开屏层，修复过度清理导致无法进入网站的问题。
 2026-07-10 00:10 【修复】升级版本到 v3.2.4，紧急恢复 content.js 被误删的核心函数与初始化链路，广告清理继续仅针对实测 .ad-splash，插件主体功能恢复可用。
 2026-07-10 01:00 【优化】升级版本到 v3.3.0，完全重构升级系统到 v4：新增 `ui-src/app/update/` 模块（helpers 状态机、UpdateCenter 升级中心、UpdateModal 专业弹窗）；App 顶部状态徽标与自动弹窗接入统一视图模型；设置页移除旧破碎更新弹窗，仅保留升级中心；后台 schema v4、changelog 规范化、多候选下载与忽略提醒；同步 manifest、package、update.json、构建号与构建产物。
+2026-07-10 01:15 【优化】升级版本到 v3.3.1，缩小播放器主控与多级菜单功能图标：全屏主控改为紧凑 md 尺寸；菜单芯片与工具宫格图标约 10–12px，工具区改为上图标下文字四列布局；CSS 强制限制 more-sheet 内 svg 尺寸，减少遮挡画面。

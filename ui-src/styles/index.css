@@ -1026,10 +1026,51 @@
 }
 
 .txzz-player-more-sheet {
-  max-height: min(42vh, 320px);
+  max-height: min(38vh, 280px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+}
+
+/* 多级菜单：强制小图标与紧凑点击区，避免遮挡播放画面。 */
+.txzz-player-more-sheet .txzz-player-chip {
+  min-height: 1.75rem;
+  font-size: 10px;
+  line-height: 1.1;
+  padding-left: 0.4rem;
+  padding-right: 0.4rem;
+}
+
+.txzz-player-more-sheet .txzz-player-chip svg {
+  width: 12px !important;
+  height: 12px !important;
+  flex-shrink: 0;
+}
+
+.txzz-player-more-sheet .txzz-player-control-button {
+  min-height: 1.75rem !important;
+  min-width: 1.75rem !important;
+  font-size: 10px !important;
+  padding-left: 0.35rem !important;
+  padding-right: 0.35rem !important;
+}
+
+.txzz-player-more-sheet .txzz-player-control-button svg {
+  width: 11px !important;
+  height: 11px !important;
+}
+
+/* 主控栏图标统一上限，防止全屏时被浏览器缩放拉大。 */
+.txzz-player-control-panel .txzz-player-control-button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.txzz-player-control-panel--compact .txzz-player-control-button svg,
+.txzz-player-fullscreen-shell .txzz-player-control-button svg {
+  width: 13px !important;
+  height: 13px !important;
 }
 
 .txzz-player-range {

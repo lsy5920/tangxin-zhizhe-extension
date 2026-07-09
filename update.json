@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.3.0",
-  "build": "2026-07-10-0100",
-  "releasedAt": "2026-07-10 01:00",
+  "version": "3.3.1",
+  "build": "2026-07-10-0115",
+  "releasedAt": "2026-07-10 01:15",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0115",
+      "type": "优化",
+      "title": "缩小播放器多级菜单与主控功能图标",
+      "detail": "根据真机反馈，缩小播放器主控按钮与「菜单」多级面板中的功能图标：全屏不再使用 oversized lg 按钮；菜单芯片与工具宫格改为紧凑小图标（约 10–12px）；工具面板改为图标在上文字在下的紧凑四列布局；CSS 强制限制 more-sheet 内 svg 尺寸，减少遮挡视频画面。"
+    },
     {
       "id": "2026-07-10-0100",
       "type": "优化",

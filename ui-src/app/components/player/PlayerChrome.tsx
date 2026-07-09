@@ -68,7 +68,8 @@ export function CtrlButton({
   className = "",
   children
 }: CtrlButtonProps) {
-  const sizeClass = size === "lg" ? "min-h-12 min-w-12 px-2.5 text-xs" : size === "sm" ? "min-h-8 min-w-8 px-2 text-[10px]" : "min-h-10 min-w-10 px-2 text-[11px]";
+  // 主控与菜单按钮统一偏紧凑，避免全屏时图标/点击区过大。
+  const sizeClass = size === "lg" ? "min-h-10 min-w-10 px-2 text-[11px]" : size === "sm" ? "min-h-7 min-w-7 px-1.5 text-[10px]" : "min-h-9 min-w-9 px-1.5 text-[11px]";
   const accentClass = active
     ? accent === "amber"
       ? "bg-amber-400/90 text-white shadow-md shadow-amber-500/25"
@@ -134,7 +135,7 @@ export function CtrlChip({ active, disabled, title, onClick, children, className
         onClick?.();
       }}
       onPointerDown={(event) => event.stopPropagation()}
-      className={`inline-flex min-h-8 items-center justify-center gap-1 rounded-xl px-2.5 text-[10px] font-medium transition-all active:scale-95 disabled:opacity-40 ${
+      className={`txzz-player-chip inline-flex min-h-7 items-center justify-center gap-0.5 rounded-lg px-2 text-[10px] font-medium leading-none transition-all active:scale-95 disabled:opacity-40 ${
         active ? "bg-sky-500 text-white shadow-sm shadow-sky-500/30" : "bg-white/12 text-white/90 hover:bg-white/18"
       } ${className}`}
     >
@@ -339,7 +340,7 @@ export function PlayerOverlays({
             className="pointer-events-auto flex h-[4.25rem] w-[4.25rem] items-center justify-center rounded-full bg-black/55 text-white shadow-xl ring-1 ring-white/25 backdrop-blur transition-transform hover:scale-105 active:scale-95"
             title="播放"
           >
-            <Play size={28} className="ml-1 fill-white" />
+            <Play size={22} className="ml-1 fill-white" />
           </button>
         </div>
       )}
@@ -686,30 +687,30 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
 
       {/* 快捷条：横屏矮屏隐藏，避免控制区占掉大半画面。 */}
       {showQuickRow && (
-        <div className="txzz-player-quick-row mt-2 flex flex-wrap items-center gap-1.5">
+        <div className="txzz-player-quick-row mt-1.5 flex flex-wrap items-center gap-1">
           <CtrlChip active title="当前清晰度" disabled={disabled || !qualities.length} onClick={onCycleQuality}>
-            <SlidersHorizontal size={11} /> {qualityLabel}
+            <SlidersHorizontal size={10} /> {qualityLabel}
           </CtrlChip>
           <CtrlChip title="画面填充" disabled={disabled} onClick={onCycleFill}>
-            <Layers size={11} /> {fillLabel}
+            <Layers size={10} /> {fillLabel}
           </CtrlChip>
           <CtrlChip title="快进步长" disabled={disabled} onClick={() => {
             const index = seekStepOptions.indexOf(seekStep);
             onSetSeekStep(seekStepOptions[(index + 1) % seekStepOptions.length]);
           }}>
-            <SkipForward size={11} /> {seekStep}秒
+            <SkipForward size={10} /> {seekStep}秒
           </CtrlChip>
           {canBackup && (
             <CtrlChip title="切换备用线路" disabled={disabled || isBackupActive} onClick={onSwitchBackup} className={isBackupActive ? "" : "bg-emerald-500/25"}>
-              <Route size={11} /> 备用
+              <Route size={10} /> 备用
             </CtrlChip>
           )}
         </div>
       )}
 
       {moreOpen && (
-        <div className="txzz-player-more-sheet mt-2 rounded-2xl bg-black/50 p-2 ring-1 ring-white/8 backdrop-blur-sm">
-          <div className="mb-2 grid grid-cols-4 gap-1.5">
+        <div className="txzz-player-more-sheet mt-1.5 rounded-xl bg-black/55 p-1.5 ring-1 ring-white/8 backdrop-blur-sm">
+          <div className="mb-1.5 grid grid-cols-4 gap-1">
             {[
               { key: "line" as const, label: "线路", icon: Route },
               { key: "display" as const, label: "画面", icon: Ratio },
@@ -719,15 +720,15 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
               const Icon = item.icon;
               return (
                 <CtrlChip key={item.key} active={morePanel === item.key} onClick={() => onSetMorePanel(item.key)} title={item.label}>
-                  <Icon size={11} /> {item.label}
+                  <Icon size={10} strokeWidth={2.25} /> {item.label}
                 </CtrlChip>
               );
             })}
           </div>
 
           {morePanel === "line" && (
-            <div className="space-y-2">
-              <div className="grid grid-cols-3 gap-1.5">
+            <div className="space-y-1.5">
+              <div className="grid grid-cols-3 gap-1">
                 {previewOptions.map((item) => (
                   <CtrlChip
                     key={item.key}
@@ -735,15 +736,15 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
                     disabled={!item.url}
                     title={`切换到${item.label}`}
                     onClick={() => onSelectPreview(item.key)}
-                    className="min-h-12 flex-col !items-stretch py-1.5"
+                    className="min-h-9 flex-col !items-stretch gap-0.5 py-1"
                   >
-                    <span className="text-center font-semibold">{item.label}</span>
-                    <span className="truncate text-center text-[9px] opacity-70">{item.hint}</span>
+                    <span className="text-center text-[10px] font-semibold">{item.label}</span>
+                    <span className="truncate text-center text-[8px] opacity-70">{item.hint}</span>
                   </CtrlChip>
                 ))}
               </div>
               {qualities.length > 0 && (
-                <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+                <div className="grid grid-cols-3 gap-1 sm:grid-cols-4">
                   <CtrlChip active={qualityLevel < 0} onClick={() => onSetQuality(-1)} title="自动清晰度">
                     自动
                   </CtrlChip>
@@ -754,50 +755,50 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
                   ))}
                 </div>
               )}
-              <p className="truncate rounded-xl bg-white/8 px-2.5 py-1.5 text-[9px] text-white/65">
+              <p className="truncate rounded-lg bg-white/8 px-2 py-1 text-[8px] text-white/65">
                 状态：{previewSourceLabel} · {playerStatus} · {qualityLabel}
               </p>
             </div>
           )}
 
           {morePanel === "display" && (
-            <div className="space-y-2">
-              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+            <div className="space-y-1.5">
+              <div className="grid grid-cols-3 gap-1 sm:grid-cols-5">
                 {rateOptions.map((item) => (
                   <CtrlChip key={item} active={rate === item} onClick={() => onSetRate(item)} title={`倍速 ${item}x`}>
                     {item}x
                   </CtrlChip>
                 ))}
               </div>
-              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+              <div className="grid grid-cols-3 gap-1 sm:grid-cols-4">
                 {seekStepOptions.map((item) => (
                   <CtrlChip key={item} active={seekStep === item} onClick={() => onSetSeekStep(item)} title={`步长 ${item} 秒`}>
                     {item}秒
                   </CtrlChip>
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
                 <CtrlChip onClick={onCycleFit} disabled={disabled} title="画面比例">
-                  {fitMode === "vertical" ? <RectangleVertical size={11} /> : fitMode === "wide" ? <RectangleHorizontal size={11} /> : <Ratio size={11} />} {fitLabel}
+                  {fitMode === "vertical" ? <RectangleVertical size={10} /> : fitMode === "wide" ? <RectangleHorizontal size={10} /> : <Ratio size={10} />} {fitLabel}
                 </CtrlChip>
                 <CtrlChip onClick={onCycleFill} disabled={disabled} title="填充模式">
-                  <Layers size={11} /> {fillLabel}
+                  <Layers size={10} /> {fillLabel}
                 </CtrlChip>
                 <CtrlChip onClick={onCycleOrientation} disabled={disabled} title="观看方向">
-                  {orientationRequested || orientationMode === "landscape" ? <RectangleHorizontal size={11} /> : <RectangleVertical size={11} />} {orientationLabel}
+                  {orientationRequested || orientationMode === "landscape" ? <RectangleHorizontal size={10} /> : <RectangleVertical size={10} />} {orientationLabel}
                 </CtrlChip>
                 <CtrlChip onClick={onScreenshot} disabled={disabled} title="截图">
-                  <Film size={11} /> 截图
+                  <Film size={10} /> 截图
                 </CtrlChip>
               </div>
             </div>
           )}
 
           {morePanel === "sound" && (
-            <div className="space-y-3 rounded-xl bg-white/8 p-2.5">
-              <div className="flex items-center gap-2">
+            <div className="space-y-2 rounded-lg bg-white/8 p-2">
+              <div className="flex items-center gap-1.5">
                 <CtrlButton title={muted ? "取消静音" : "静音"} size="sm" accent={muted ? "rose" : "none"} onClick={onToggleMute} disabled={disabled}>
-                  {muted ? <VolumeX size={12} /> : <Volume2 size={12} />} {muted ? "静音" : "声音"}
+                  {muted ? <VolumeX size={11} /> : <Volume2 size={11} />} {muted ? "静音" : "声音"}
                 </CtrlButton>
                 <input
                   type="range"
@@ -810,11 +811,11 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
                   className="txzz-player-range min-w-0 flex-1 accent-sky-400"
                   title="调节播放音量"
                 />
-                <span className="w-10 text-right text-[10px] tabular-nums text-white/75">{volumePercent}%</span>
+                <span className="w-9 text-right text-[9px] tabular-nums text-white/75">{volumePercent}%</span>
               </div>
-              <div className="flex items-center gap-2 border-t border-white/10 pt-2">
-                <span className="flex w-16 items-center justify-center gap-1 rounded-xl bg-white/12 px-2 py-1.5 text-[10px] font-medium text-white">
-                  <Sun size={11} /> 亮度
+              <div className="flex items-center gap-1.5 border-t border-white/10 pt-1.5">
+                <span className="flex w-14 items-center justify-center gap-0.5 rounded-lg bg-white/12 px-1.5 py-1 text-[9px] font-medium text-white">
+                  <Sun size={10} /> 亮度
                 </span>
                 <input
                   type="range"
@@ -827,48 +828,56 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
                   className="txzz-player-range min-w-0 flex-1 accent-amber-300"
                   title="调节画面亮度"
                 />
-                <span className="w-10 text-right text-[10px] tabular-nums text-white/75">{brightness}%</span>
+                <span className="w-9 text-right text-[9px] tabular-nums text-white/75">{brightness}%</span>
               </div>
-              <p className="text-[9px] leading-relaxed text-white/55">
+              <p className="text-[8px] leading-relaxed text-white/55">
                 快捷键：空格/K 播放 · ←/→ 快退快进 · ↑/↓ 音量 · M 静音 · F 全屏 · L 锁屏
                 <br />
-                手势：单击显隐控制 · 中双击播放暂停 · 左/右双击快退快进 · 长按左快退/右倍速
+                手势：单击显隐 · 中双击播放暂停 · 左右双击快退快进 · 长按左快退/右倍速
                 <br />
-                滑动：横向调进度 · 左半屏竖滑亮度 · 右半屏竖滑音量 · 滚轮音量 · Shift+滚轮亮度
+                滑动：横向进度 · 左半屏亮度 · 右半屏音量 · 滚轮音量
               </p>
             </div>
           )}
 
           {morePanel === "tools" && (
-            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
-              <CtrlChip onClick={onReload} disabled={disabled} title="重载播放器">
-                <RefreshCw size={11} /> 重载
+            <div className="grid grid-cols-4 gap-1">
+              <CtrlChip onClick={onReload} disabled={disabled} title="重载播放器" className="flex-col min-h-11 gap-0.5 py-1.5">
+                <RefreshCw size={12} strokeWidth={2.2} />
+                <span>重载</span>
               </CtrlChip>
-              <CtrlChip onClick={onPip} disabled={disabled} title="画中画">
-                <PictureInPicture2 size={11} /> 画中画
+              <CtrlChip onClick={onPip} disabled={disabled} title="画中画" className="flex-col min-h-11 gap-0.5 py-1.5">
+                <PictureInPicture2 size={12} strokeWidth={2.2} />
+                <span>画中画</span>
               </CtrlChip>
-              <CtrlChip onClick={onRecenter} disabled={disabled} title="全屏居中校准" className="bg-sky-500/25">
-                <Ratio size={11} /> 居中
+              <CtrlChip onClick={onRecenter} disabled={disabled} title="全屏居中校准" className="flex-col min-h-11 gap-0.5 bg-sky-500/25 py-1.5">
+                <Ratio size={12} strokeWidth={2.2} />
+                <span>居中</span>
               </CtrlChip>
-              <CtrlChip onClick={onCopyLink} disabled={disabled} title="复制完整链接">
-                <Copy size={11} /> 复制
+              <CtrlChip onClick={onCopyLink} disabled={disabled} title="复制完整链接" className="flex-col min-h-11 gap-0.5 py-1.5">
+                <Copy size={12} strokeWidth={2.2} />
+                <span>复制</span>
               </CtrlChip>
-              <CtrlChip onClick={onOpenLink} disabled={disabled} title="打开完整链接">
-                <ExternalLink size={11} /> 打开
+              <CtrlChip onClick={onOpenLink} disabled={disabled} title="打开完整链接" className="flex-col min-h-11 gap-0.5 py-1.5">
+                <ExternalLink size={12} strokeWidth={2.2} />
+                <span>打开</span>
               </CtrlChip>
-              <CtrlChip onClick={onDownload} disabled={!hasMovieId} title="下载当前视频" className="bg-pink-500/25">
-                <Download size={11} /> 下载
+              <CtrlChip onClick={onDownload} disabled={!hasMovieId} title="下载当前视频" className="flex-col min-h-11 gap-0.5 bg-pink-500/25 py-1.5">
+                <Download size={12} strokeWidth={2.2} />
+                <span>下载</span>
               </CtrlChip>
-              <CtrlChip onClick={onCopyDiagnostic} disabled={disabled} title="复制诊断报告">
-                <Activity size={11} /> 诊断
+              <CtrlChip onClick={onCopyDiagnostic} disabled={disabled} title="复制诊断报告" className="flex-col min-h-11 gap-0.5 py-1.5">
+                <Activity size={12} strokeWidth={2.2} />
+                <span>诊断</span>
               </CtrlChip>
-              <CtrlChip onClick={onSwitchBackup} disabled={!canBackup || isBackupActive} title="切换备用线路">
-                <Route size={11} /> 备用
+              <CtrlChip onClick={onSwitchBackup} disabled={!canBackup || isBackupActive} title="切换备用线路" className="flex-col min-h-11 gap-0.5 py-1.5">
+                <Route size={12} strokeWidth={2.2} />
+                <span>备用</span>
               </CtrlChip>
             </div>
           )}
 
-          <p className="mt-2 truncate text-[9px] text-white/50">
+          <p className="mt-1.5 truncate text-[8px] text-white/50">
             当前：{currentLineLabel} · {rate}x · {muted ? "静音" : `${volumePercent}%`} · 步长{seekStep}秒 · {fitLabel} · {fillLabel} · {orientationLabel} · 亮度{brightness}% · {qualityLabel}
             {fullscreen ? ` · ${fullscreenDiagnosticLabel}` : ""}
           </p>
