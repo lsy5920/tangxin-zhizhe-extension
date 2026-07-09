@@ -167,13 +167,21 @@
     "下载失败",
     "操作失败"
   ];
-  // 广告清理规则集中维护，后续新增站点样式时只扩展这里，避免清理逻辑散落到播放器或面板中。
-  // v3：重点强化「首次进入全屏弹窗 + 右上角倒计时」识别与首屏瞬时清理。
-  const AD_CLEANER_VERSION = "2026-07-09-ad-clean-v3";
+  // 广告清理规则集中维护。v3.1 基于 Playwright 实测 https://txh068.com/ DOM：
+  // 全屏开屏 = .my-swipe.ad-splash.van-swipe (position:fixed; z-index:1001)
+  //   内含 a.swiper-link[href][title] + 图片轮播；右上角白色圆点倒计时数字。
+  const AD_CLEANER_VERSION = "2026-07-09-ad-clean-v3.1-txh068";
   const AD_CONTAINER_SELECTORS = [
+    // —— 站点实测关键选择器（最高优先）——
     ".ad-splash",
+    ".my-swipe.ad-splash",
+    ".ad-splash.van-swipe",
+    ".my-swipe.ad-splash.van-swipe",
     ".ad-apps",
     ".ad-item",
+    ".ad-splash a.swiper-link",
+    ".ad-splash .swiper-link",
+    // —— 通用开屏/弹层 ——
     ".splash-ad",
     ".launch-ad",
     ".open-ad",
@@ -199,7 +207,6 @@
     "[class*='count-down']",
     "[class*='skip-ad']",
     "[class*='ad-skip']",
-    "[class*='splash']",
     "[class*='launch-screen']",
     "[class*='open-screen']",
     "[class*='kaiping']",
@@ -214,13 +221,23 @@
     "[id*='countdown']",
     "[id*='splash']"
   ];
-  const AD_TEXT_PATTERN = /(广告|推广|赞助|app下载|立即下载|立即打开|同城约|博彩|棋牌|皇冠|葡京|bet365|telegram|免费看片|免费海角|免费抖阴|限时优惠|点击下载|安装APP)/i;
+  const AD_TEXT_PATTERN = /(广告|推广|赞助|app下载|立即下载|立即打开|同城约|约炮|博彩|棋牌|皇冠|葡京|bet365|telegram|免费看片|免费海角|免费抖阴|限时优惠|点击下载|安装APP|全国空降|一线天)/i;
   // 开屏/倒计时文案：覆盖「3」「3s」「3秒」「跳过 3」「倒计时」「进入」等右上角形态
-  const AD_LAUNCH_TEXT_PATTERN = /(广告|推广|跳过|进入|倒计时|关闭广告|跳过广告|立即进入|\d+\s*秒|\d+\s*s|立即下载|立即打开|app下载)/i;
+  const AD_LAUNCH_TEXT_PATTERN = /(广告|推广|跳过|进入|倒计时|关闭广告|跳过广告|立即进入|\d+\s*秒|\d+\s*s|立即下载|立即打开|app下载|同城约|约炮)/i;
   const AD_COUNTDOWN_TEXT_PATTERN = /^(跳过|关闭|进入|跳过广告|关闭广告)?\s*\d{1,2}\s*(秒|s|S)?$|^(跳过|关闭|进入|跳过广告|关闭广告)$|倒计时|^\d{1,2}$/;
-  const AD_HOST_PATTERN = /(aff-|hjsq|douyin|haijiao|bet365|casino|promo|ads?|telegram|t\.me|download|apk)/i;
-  // 首屏强化清理窗口（毫秒）：覆盖倒计时 3~5 秒常见区间
-  const AD_BOOT_SWEEP_MS = 18000;
+  // 实测外链域名片段：kktx1.guaxtjy.cn 等
+  const AD_HOST_PATTERN = /(aff-|hjsq|douyin|haijiao|bet365|casino|promo|ads?|telegram|t\.me|download|apk|guaxtjy|kktx|tx[0-9]*\.|about:blank)/i;
+  // 首屏强化清理窗口（毫秒）：覆盖倒计时 3~5 秒及延迟挂载
+  const AD_BOOT_SWEEP_MS = 25000;
+  // 永久追杀的选择器（站点实测，Vue 会反复重建）
+  const AD_SPLASH_KILL_SELECTORS = [
+    ".ad-splash",
+    ".my-swipe.ad-splash",
+    ".ad-splash.van-swipe",
+    ".my-swipe.ad-splash.van-swipe",
+    "[class*='ad-splash']",
+    ".ad-apps"
+  ];
 
   function isCompactViewport() {
     return window.matchMedia?.("(max-width: 720px)")?.matches || window.innerWidth <= 720;
@@ -1018,40 +1035,181 @@
   }
 
   function injectAdCleanerCss() {
-    if (document.getElementById("txzz-ad-cleaner-style")) return;
-    const style = document.createElement("style");
-    style.id = "txzz-ad-cleaner-style";
+    let style = document.getElementById("txzz-ad-cleaner-style");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "txzz-ad-cleaner-style";
+      const root = document.documentElement || document.head || document.body;
+      if (root) root.appendChild(style);
+    }
+    // 永久规则 + 首屏加强；!important 压过站点内联 style
     style.textContent = `
-/* 糖心志者广告清理 v3：优先隐藏开屏/倒计时层，避免首屏闪一下 */
-.ad-splash, .ad-apps, .splash-ad, .launch-ad, .open-ad, .popup-ad,
-[class*="ad-splash"], [class*="splash-ad"], [class*="launch-ad"], [class*="open-ad"],
-[class*="popup-ad"], [class*="ad-app"], [id*="ad-splash"], [id*="splash-ad"],
-[id*="launch-ad"], [id*="open-ad"],
-html.txzz-ad-boot .van-overlay,
-html.txzz-ad-boot [class*="splash"],
-html.txzz-ad-boot [class*="launch"],
-html.txzz-ad-boot [class*="kaiping"],
-html.txzz-ad-boot [class*="open-screen"],
-html.txzz-ad-boot [class*="launch-screen"] {
+/* 糖心志者广告清理 v3.1 · 基于 txh068.com 实测 DOM */
+/* 永久：全屏开屏轮播 .my-swipe.ad-splash.van-swipe */
+.ad-splash,
+.my-swipe.ad-splash,
+.ad-splash.van-swipe,
+.my-swipe.ad-splash.van-swipe,
+.ad-apps,
+.ad-item,
+.splash-ad,
+.launch-ad,
+.open-ad,
+.popup-ad,
+[class*="ad-splash"],
+[class*="splash-ad"],
+[class*="launch-ad"],
+[class*="open-ad"],
+[class*="popup-ad"],
+[class*="ad-app"],
+[id*="ad-splash"],
+[id*="splash-ad"],
+[id*="launch-ad"],
+[id*="open-ad"],
+.ad-splash a.swiper-link,
+.ad-splash .swiper-link,
+.van-swipe.ad-splash,
+.van-swipe.ad-splash .van-swipe__track,
+.van-swipe.ad-splash .van-swipe-item,
+.van-swipe.ad-splash .swiper-link,
+.van-swipe.ad-splash .aspect-ratio,
+.van-swipe.ad-splash .easy-image {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
   max-height: 0 !important;
   max-width: 0 !important;
   overflow: hidden !important;
-  z-index: -1 !important;
+  z-index: -2147483648 !important;
+  transform: scale(0) !important;
+  position: fixed !important;
+  left: -99999px !important;
+  top: -99999px !important;
 }
-html.txzz-ad-cleaner-active, html.txzz-ad-boot {
-  overflow: auto !important;
+/* 首屏额外：遮罩/弹层 */
+html.txzz-ad-boot .van-overlay,
+html.txzz-ad-boot [class*="kaiping"],
+html.txzz-ad-boot [class*="open-screen"],
+html.txzz-ad-boot [class*="launch-screen"] {
+  display: none !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
 }
-html.txzz-ad-cleaner-active body, html.txzz-ad-boot body {
+html.txzz-ad-cleaner-active,
+html.txzz-ad-boot,
+html.txzz-ad-cleaner-active body,
+html.txzz-ad-boot body {
   overflow: auto !important;
+  height: auto !important;
+  position: static !important;
 }
 `;
-    const root = document.documentElement || document.head || document.body;
-    if (root) root.appendChild(style);
     try { document.documentElement.classList.add("txzz-ad-boot"); } catch (_) {}
+  }
+
+  /** 主世界永久追杀：Vue 重建 .ad-splash 时立刻 remove（隔离世界有时打不赢站点） */
+  function injectMainWorldSplashKiller() {
+    if (document.documentElement.dataset.txzzSplashKiller === "1") return;
+    document.documentElement.dataset.txzzSplashKiller = "1";
+    const code = `(() => {
+      if (window.__txzzSplashKiller) return;
+      window.__txzzSplashKiller = true;
+      const SEL = ${JSON.stringify(AD_SPLASH_KILL_SELECTORS.join(","))};
+      const kill = () => {
+        try {
+          document.querySelectorAll(SEL).forEach((el) => {
+            try { el.remove(); } catch (_) {
+              try {
+                el.style.setProperty("display","none","important");
+                el.style.setProperty("pointer-events","none","important");
+              } catch(__) {}
+            }
+          });
+          // 右上角纯数字倒计时圆点：fixed/absolute 且宽高接近圆形
+          const vw = innerWidth || 1, vh = innerHeight || 1;
+          document.querySelectorAll("div,span,button,a,p,i,em,b").forEach((el) => {
+            try {
+              const t = String(el.textContent || "").replace(/\\s+/g, "").trim();
+              if (!/^\\d{1,2}$/.test(t) && !/^(跳过|关闭)$/.test(t)) return;
+              const r = el.getBoundingClientRect();
+              if (r.width < 12 || r.height < 12 || r.width > 96 || r.height > 96) return;
+              if (r.top > vh * 0.32 || r.right < vw * 0.55) return;
+              // 向上找 fixed 全屏祖先
+              let cur = el;
+              for (let i = 0; i < 8 && cur; i++) {
+                const st = getComputedStyle(cur);
+                const cr = cur.getBoundingClientRect();
+                const area = cr.width * cr.height;
+                if ((st.position === "fixed" || st.position === "absolute") && area > vw * vh * 0.4) {
+                  cur.remove();
+                  break;
+                }
+                if (cur.classList && (cur.classList.contains("ad-splash") || /ad-splash/.test(cur.className || ""))) {
+                  cur.remove();
+                  break;
+                }
+                cur = cur.parentElement;
+              }
+            } catch (_) {}
+          });
+          document.body && document.body.classList.remove("van-overflow-hidden");
+          document.documentElement && document.documentElement.classList.remove("van-overflow-hidden");
+          if (document.body) {
+            document.body.style.removeProperty("overflow");
+            document.body.style.removeProperty("position");
+            document.body.style.removeProperty("height");
+          }
+        } catch (_) {}
+      };
+      kill();
+      setInterval(kill, 180);
+      try {
+        new MutationObserver(kill).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
+      } catch (_) {}
+      ["DOMContentLoaded","load","pageshow"].forEach((ev) => window.addEventListener(ev, kill, true));
+    })();`;
+    try {
+      const s = document.createElement("script");
+      s.textContent = code;
+      (document.documentElement || document.head || document.body).appendChild(s);
+      s.remove();
+    } catch (_) {
+      // 部分环境禁止 inline script，退回隔离世界
+    }
+  }
+
+  /** 实测站点开屏：优先硬杀 .ad-splash / swiper 外链 */
+  function killKnownSiteSplash(reason = "站点开屏硬杀") {
+    let changed = 0;
+    try {
+      AD_SPLASH_KILL_SELECTORS.forEach((sel) => {
+        document.querySelectorAll(sel).forEach((el) => {
+          if (isPluginUi(el)) return;
+          if (removeAdElement(el, reason + "·" + sel)) changed += 1;
+        });
+      });
+      // 全屏 fixed + z-index 很高 + 内含 swiper-link 外链
+      document.querySelectorAll("div.van-swipe, div.my-swipe, [class*='van-swipe']").forEach((el) => {
+        if (isPluginUi(el) || el.dataset?.txzzAdCleaned === "1") return;
+        const hasSplashClass = /ad-splash|splash-ad|launch-ad/i.test(String(el.className || ""));
+        const hasAdLink = Boolean(el.querySelector?.("a.swiper-link[href], a[target='_blank'][href*='http']"));
+        let st, rect;
+        try {
+          st = getComputedStyle(el);
+          rect = el.getBoundingClientRect();
+        } catch (_) { return; }
+        const { area: viewportArea } = viewportMetrics();
+        const area = rect.width * rect.height;
+        const z = Number.parseInt(st.zIndex || "0", 10) || 0;
+        if ((hasSplashClass || (hasAdLink && st.position === "fixed" && z >= 100 && area > viewportArea * 0.5))) {
+          if (removeAdElement(el, reason + "·van-swipe全屏")) changed += 1;
+        }
+      });
+    } catch (_) {}
+    return changed;
   }
 
   function safeMatchesAdSelector(el) {
@@ -1244,14 +1402,16 @@ html.txzz-ad-cleaner-active body, html.txzz-ad-boot body {
   function cleanCountdownAndSplash(reason = "开屏倒计时清理") {
     let changed = 0;
     try {
-      // 1) 直接命中右上角倒计时 → 拔掉整棵全屏广告树
-      const scan = Array.from(document.querySelectorAll("div,span,button,a,p,i,em,b,strong")).slice(0, 800);
+      // 0) 站点实测硬杀
+      changed += killKnownSiteSplash(reason);
+
+      // 1) 直接命中右上角倒计时（含纯数字圆点）→ 拔掉整棵全屏广告树
+      const scan = Array.from(document.querySelectorAll("div,span,button,a,p,i,em,b,strong")).slice(0, 1200);
       const roots = new Set();
       for (const node of scan) {
         if (!isTopRightCountdownBadge(node)) continue;
-        const root = findSplashRootFrom(node);
+        const root = findSplashRootFrom(node) || document.querySelector(".ad-splash, .my-swipe.ad-splash");
         if (root && !isPluginUi(root)) roots.add(root);
-        // 单独徽标也干掉，防止残留数字浮层
         if (removeAdElement(node, `${reason}·右上角倒计时`)) changed += 1;
       }
       roots.forEach((root) => {
@@ -1262,7 +1422,7 @@ html.txzz-ad-cleaner-active body, html.txzz-ad-boot body {
       // 2) 扫描 fixed 全屏层
       document.querySelectorAll("div,section,aside,dialog").forEach((el) => {
         if (isPluginUi(el) || el.dataset?.txzzAdCleaned === "1") return;
-        if (!isLaunchAdOverlay(el)) return;
+        if (!isLaunchAdOverlay(el) && !/ad-splash/.test(String(el.className || ""))) return;
         tryClickSkipControls(el);
         if (removeAdElement(el, `${reason}·开屏广告命中`)) changed += 1;
       });
@@ -1280,7 +1440,8 @@ html.txzz-ad-cleaner-active body, html.txzz-ad-boot body {
     let changed = 0;
     try {
       injectAdCleanerCss();
-      // 优先：倒计时 + 全屏开屏
+      injectMainWorldSplashKiller();
+      // 优先：站点硬杀 + 倒计时 + 全屏开屏
       changed += cleanCountdownAndSplash(reason);
 
       safeQueryAdContainers().forEach((el) => {
@@ -1352,12 +1513,32 @@ html.txzz-ad-cleaner-active body, html.txzz-ad-boot body {
     if (window.__txzzAdCleanerInstalled) return;
     window.__txzzAdCleanerInstalled = true;
     injectAdCleanerCss();
+    injectMainWorldSplashKiller();
     adBootUntil = Date.now() + AD_BOOT_SWEEP_MS;
+    // 尽早硬杀一次（nuxt loading 结束后 Vue 会挂 .ad-splash）
+    killKnownSiteSplash("安装时硬杀");
 
     // 点击 + 触摸都拦，避免移动端点透
     document.addEventListener("click", blockAdClick, true);
     document.addEventListener("pointerdown", blockAdClick, true);
     document.addEventListener("touchstart", blockAdClick, true);
+
+    // 拦截 window.open 广告跳转（swiper-link 常用）
+    try {
+      const rawOpen = window.open;
+      window.open = function (url, ...rest) {
+        try {
+          const u = String(url || "");
+          if (AD_HOST_PATTERN.test(u) || /guaxtjy|kktx|同城|约炮/i.test(u)) {
+            state.adCleaner.blockedClicks += 1;
+            markAdCleanerChanged("拦截 window.open 广告", u.slice(0, 80));
+            publishState();
+            return null;
+          }
+        } catch (_) {}
+        return rawOpen.apply(this, [url, ...rest]);
+      };
+    } catch (_) {}
 
     // 首屏：rAF 连续扫 3 秒，尽量在倒计时出现当帧干掉
     let rafFrames = 0;
@@ -1380,24 +1561,32 @@ html.txzz-ad-cleaner-active body, html.txzz-ad-boot body {
       window.setTimeout(() => cleanAdElements(delay ? `开屏延迟清理+${delay}ms` : "首屏清理"), delay);
     });
 
-    // Mutation：首屏窗口内立即清理；之后轻量防抖
+    // Mutation：只要出现 ad-splash / my-swipe 立即硬杀（不防抖）
     let moTimer = 0;
     try {
       new MutationObserver((mutations) => {
-        const boot = Date.now() < adBootUntil;
-        let splashLike = boot;
-        if (!splashLike) {
-          for (const m of mutations) {
-            for (const node of m.addedNodes) {
-              if (!(node instanceof Element)) continue;
-              const cls = String(node.className || node.id || "");
-              if (/(splash|launch|ad-|countdown|overlay|popup|modal)/i.test(cls) || isLaunchAdOverlay(node, true)) {
-                splashLike = true;
-                break;
-              }
+        let splashLike = false;
+        for (const m of mutations) {
+          // class 变成 ad-splash
+          if (m.type === "attributes" && m.target instanceof Element) {
+            const cls = String(m.target.className || "");
+            if (/ad-splash|my-swipe|ad-apps/i.test(cls)) {
+              killKnownSiteSplash("属性突变硬杀");
+              splashLike = true;
             }
-            if (splashLike) break;
           }
+          for (const node of m.addedNodes) {
+            if (!(node instanceof Element)) continue;
+            const cls = String(node.className || node.id || "");
+            if (/ad-splash|my-swipe|ad-apps|swiper-link/i.test(cls)
+              || node.querySelector?.(".ad-splash, .my-swipe.ad-splash, a.swiper-link")
+              || isLaunchAdOverlay(node, true)) {
+              killKnownSiteSplash("节点插入硬杀");
+              splashLike = true;
+              break;
+            }
+          }
+          if (splashLike) break;
         }
         if (splashLike) {
           cleanAdElements("DOM突变开屏清理");
@@ -1421,10 +1610,11 @@ html.txzz-ad-cleaner-active body, html.txzz-ad-boot body {
     window.addEventListener("popstate", rearmBoot);
     window.addEventListener("hashchange", rearmBoot);
     window.addEventListener("pageshow", rearmBoot);
-    // 常规巡检：首屏过后也保持清扫连环弹窗（间隔固定，避免 setInterval 只取一次 delay）
+    // 常规巡检：永久追杀 .ad-splash（站点会反复重建）+ 通用清理
     window.setInterval(() => {
+      killKnownSiteSplash("定时硬杀");
       cleanAdElements(Date.now() < adBootUntil ? "首屏巡检" : "巡检清理");
-    }, 700);
+    }, 400);
     // 首屏 CSS 强制隐藏到期后恢复，避免误伤正常 overlay
     window.setTimeout(() => {
       try { document.documentElement.classList.remove("txzz-ad-boot"); } catch (_) {}

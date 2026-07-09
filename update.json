@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.2.1",
-  "build": "2026-07-09-2320",
-  "releasedAt": "2026-07-09 23:20",
+  "version": "3.2.2",
+  "build": "2026-07-09-2340",
+  "releasedAt": "2026-07-09 23:40",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2340",
+      "type": "优化",
+      "title": "广告清理 v3.1 · 实测 txh068.com 开屏硬杀",
+      "detail": "用 Playwright 打开 https://txh068.com/ 实测：全屏广告为 .my-swipe.ad-splash.van-swipe（fixed/z-index:1001）轮播 a.swiper-link 外链，右上角为数字倒计时。已永久 CSS 隐藏+主世界 180ms 追杀+Mutation 插入即删+拦截 window.open 广告域名，避免 Vue 反复重建后回弹。"
+    },
     {
       "id": "2026-07-09-2320",
       "type": "优化",
