@@ -47,9 +47,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0400";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0415";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 04:00 【优化】升级版本到 v3.5.0，线路推荐按探测分优选；下载支持选线，实时体积进度与速度。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 04:15 【修复】升级版本到 v3.5.1，广告清理补杀开屏倒计时结束后的右上角进入/跳过残留按钮。";
 
 const DEFAULT_STATE = {
   role: "guest",

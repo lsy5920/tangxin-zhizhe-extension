@@ -191,9 +191,10 @@
     "下载失败",
     "操作失败"
   ];
-  // 广告清理：严格模式。只处理 Playwright 实测到的 txh068 开屏 DOM，不做全站猜测。
-  // 实测：.my-swipe.ad-splash.van-swipe（fixed z-index:1001）+ 内嵌 a.swiper-link 外链。
-  const AD_CLEANER_VERSION = "2026-07-10-ad-clean-strict";
+  // 广告清理：严格模式。
+  // 1) 实测开屏根：.my-swipe.ad-splash.van-swipe（fixed z-index:1001）
+  // 2) 倒计时结束后常残留右上角「进入/跳过/数字」徽标（可能挂到 body，不在 .ad-splash 内）
+  const AD_CLEANER_VERSION = "2026-07-10-ad-clean-residual-v1";
   const AD_CONTAINER_SELECTORS = [
     ".ad-splash",
     ".my-swipe.ad-splash",
@@ -202,6 +203,10 @@
     "[class~='ad-splash']"
   ];
   const AD_SPLASH_ROOT_SELECTOR = ".ad-splash, .my-swipe.ad-splash, .ad-splash.van-swipe, .my-swipe.ad-splash.van-swipe, [class~='ad-splash']";
+  // 倒计时/进入按钮常见 class 线索（仍需几何与文案二次校验）
+  const AD_RESIDUAL_CLASS_RE = /ad[-_]?(skip|close|count|enter|countdown|splash)|skip[-_]?ad|count[-_]?down|splash[-_]?(btn|enter|skip|close)|van-count-down/i;
+  const AD_RESIDUAL_TEXT_RE = /^(进入|跳过|关闭|跳过广告|立即进入|进入网站|进入app|\d{1,3}s?|s?\d{1,3})$/i;
+  let adSplashSeenUntil = 0;
 
   function isCompactViewport() {
     return window.matchMedia?.("(max-width: 720px)")?.matches || window.innerWidth <= 720;
@@ -979,7 +984,7 @@
     return Boolean(el?.closest?.("#txzz-candy-ui-root, #txzz-panel, .txzz-candy-app"));
   }
 
-  /** 只隐藏实测开屏 .ad-splash，绝不扫全站弹层 */
+  /** 隐藏开屏层 + 倒计时结束后的右上角进入/跳过残留 */
   function injectAdCleanerCss() {
     let style = document.getElementById("txzz-ad-cleaner-style");
     if (!style) {
@@ -988,12 +993,20 @@
       (document.documentElement || document.head || document.body)?.appendChild(style);
     }
     style.textContent = `
-/* 严格模式：仅实测开屏 .ad-splash */
+/* 严格模式：实测开屏 .ad-splash */
 .ad-splash,
 .my-swipe.ad-splash,
 .ad-splash.van-swipe,
 .my-swipe.ad-splash.van-swipe,
 [class~="ad-splash"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+}
+/* 被标记的倒计时/进入残留徽标 */
+[data-txzz-ad-residual="1"] {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
@@ -1012,9 +1025,154 @@
     } catch (_) {}
   }
 
+  function adElementPlainText(el) {
+    return String(el?.innerText || el?.textContent || "")
+      .replace(/\s+/g, "")
+      .trim()
+      .slice(0, 24);
+  }
+
+  function isTopRightBadgeRect(rect) {
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+    // 右上角小徽标：不宜过大，避免误伤导航/菜单
+    if (rect.width > 140 || rect.height > 72) return false;
+    if (rect.width < 18 || rect.height < 14) return false;
+    const vw = window.innerWidth || document.documentElement.clientWidth || 390;
+    const vh = window.innerHeight || document.documentElement.clientHeight || 640;
+    if (rect.top > vh * 0.28) return false;
+    if (rect.right < vw * 0.62) return false;
+    if (rect.left < vw * 0.45) return false;
+    return true;
+  }
+
+  /** 判断是否为开屏倒计时结束后残留的右上角进入/跳过按钮 */
+  function isSplashResidualEnterBadge(el) {
+    if (!(el instanceof Element) || isPluginUi(el) || el.dataset?.txzzAdCleaned === "1") return false;
+    // 仍在开屏根内的由 removeAdElement 整层处理
+    if (el.closest?.(AD_SPLASH_ROOT_SELECTOR)) return false;
+    // 不碰表单与插件
+    if (el.closest?.("input,textarea,select,video,audio,#txzz-candy-ui-root")) return false;
+    const tag = String(el.tagName || "").toUpperCase();
+    if (!["DIV", "SPAN", "A", "BUTTON", "P", "I", "EM", "B", "STRONG"].includes(tag)) return false;
+
+    let style = null;
+    try { style = window.getComputedStyle(el); } catch (_) { return false; }
+    if (!style || style.display === "none" || style.visibility === "hidden") return false;
+    const pos = style.position;
+    if (pos !== "fixed" && pos !== "absolute") return false;
+    const z = Number.parseInt(style.zIndex, 10);
+    // 开屏层 z-index 实测约 1001；残留按钮通常也很高
+    if (Number.isFinite(z) && z > 0 && z < 200) return false;
+
+    const rect = el.getBoundingClientRect?.();
+    if (!isTopRightBadgeRect(rect)) return false;
+
+    const text = adElementPlainText(el);
+    const className = String(el.className || "");
+    const classHit = AD_RESIDUAL_CLASS_RE.test(className);
+    const textHit = Boolean(text) && (
+      AD_RESIDUAL_TEXT_RE.test(text)
+      || (/进入|跳过/.test(text) && text.length <= 8)
+      || /^\d{1,3}$/.test(text)
+    );
+    // 文案命中即可；或 class 线索 + 右上角小块 + 短文案
+    if (textHit) return true;
+    if (classHit && text && text.length <= 8) return true;
+    // 最近刚出现过开屏时，右上角纯数字倒计时也清
+    if (Date.now() < adSplashSeenUntil && /^\d{1,3}$/.test(text)) return true;
+    return false;
+  }
+
+  function findSplashResidualCandidates() {
+    const out = [];
+    const seen = new Set();
+    const pushUnique = (el) => {
+      if (!(el instanceof Element) || seen.has(el) || isPluginUi(el)) return;
+      seen.add(el);
+      out.push(el);
+    };
+    try {
+      // 1) class 线索（轻量）
+      document.querySelectorAll("[class*='skip'],[class*='count'],[class*='splash'],[class*='ad-'],button,a").forEach((el) => {
+        const cls = String(el.className || "");
+        if (AD_RESIDUAL_CLASS_RE.test(cls)) pushUnique(el);
+      });
+      // 2) body/html 直接子级（倒计时结束常挂到 body）
+      [document.body, document.documentElement].filter(Boolean).forEach((root) => {
+        Array.from(root.children || []).forEach((el) => {
+          pushUnique(el);
+          // 只再下钻一层，避免全树扫描
+          Array.from(el.children || []).slice(0, 30).forEach((child) => pushUnique(child));
+        });
+      });
+      // 3) 首屏/刚清过开屏时，额外扫 fixed 小节点（限制数量）
+      if (Date.now() < adSplashSeenUntil || document.querySelector(AD_SPLASH_ROOT_SELECTOR)) {
+        let fixedCount = 0;
+        const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_ELEMENT);
+        let node = walker.currentNode;
+        while (node && fixedCount < 80) {
+          if (node instanceof Element) {
+            try {
+              const st = window.getComputedStyle(node);
+              if ((st.position === "fixed" || st.position === "absolute")) {
+                const z = Number.parseInt(st.zIndex, 10);
+                if (!Number.isFinite(z) || z >= 200) {
+                  pushUnique(node);
+                  fixedCount += 1;
+                }
+              }
+            } catch (_) {}
+          }
+          node = walker.nextNode();
+        }
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  function removeResidualAdBadge(el, reason = "开屏残留进入按钮") {
+    if (!isSplashResidualEnterBadge(el)) return false;
+    // 尽量删小节点本身；若父级也是同等小徽标则上提一层
+    let target = el;
+    try {
+      const parent = el.parentElement;
+      if (parent && !isPluginUi(parent) && parent !== document.body && parent !== document.documentElement) {
+        const pr = parent.getBoundingClientRect?.();
+        const er = el.getBoundingClientRect?.();
+        const pText = adElementPlainText(parent);
+        if (
+          pr && er
+          && pr.width <= 160 && pr.height <= 90
+          && Math.abs(pr.width - er.width) < 40
+          && Math.abs(pr.height - er.height) < 40
+          && (AD_RESIDUAL_TEXT_RE.test(pText) || /进入|跳过|^\d{1,3}$/.test(pText) || pText.length <= 8)
+        ) {
+          target = parent;
+        }
+      }
+    } catch (_) {}
+    if (target.dataset?.txzzAdCleaned === "1") return false;
+    const matched = `${adElementPlainText(target)}|${String(target.className || "").slice(0, 40)}`;
+    target.dataset.txzzAdCleaned = "1";
+    target.dataset.txzzAdResidual = "1";
+    state.adCleaner.countdownHits += 1;
+    try {
+      target.remove();
+      state.adCleaner.removed += 1;
+    } catch (_) {
+      try {
+        target.style.setProperty("display", "none", "important");
+        target.style.setProperty("pointer-events", "none", "important");
+        state.adCleaner.hidden += 1;
+      } catch (__) {}
+    }
+    markAdCleanerChanged(reason, matched);
+    return true;
+  }
+
   function removeAdElement(el, reason = "广告规则") {
     if (!el || el.dataset?.txzzAdCleaned === "1" || isPluginUi(el)) return false;
-    // 安全闸：只允许删带 ad-splash 的节点
+    // 安全闸：开屏根节点
     const isSplashRoot = el.classList?.contains?.("ad-splash")
       || /(?:^|\s)ad-splash(?:\s|$)/.test(String(el.className || ""));
     const root = isSplashRoot ? el : el.closest?.(AD_SPLASH_ROOT_SELECTOR);
@@ -1022,6 +1180,7 @@
     const matched = String(root.className || root.tagName).slice(0, 80);
     root.dataset.txzzAdCleaned = "1";
     state.adCleaner.splashHits += 1;
+    adSplashSeenUntil = Math.max(adSplashSeenUntil, Date.now() + 20000);
     try {
       root.remove();
       state.adCleaner.removed += 1;
@@ -1042,8 +1201,16 @@
     let changed = 0;
     try {
       injectAdCleanerCss();
+      // 1) 实测开屏整层
+      if (document.querySelector(AD_SPLASH_ROOT_SELECTOR)) {
+        adSplashSeenUntil = Math.max(adSplashSeenUntil, Date.now() + 20000);
+      }
       document.querySelectorAll(AD_SPLASH_ROOT_SELECTOR).forEach((el) => {
         if (removeAdElement(el, reason)) changed += 1;
+      });
+      // 2) 倒计时结束后残留的右上角进入/跳过/数字按钮
+      findSplashResidualCandidates().forEach((el) => {
+        if (removeResidualAdBadge(el, `${reason}|残留进入`)) changed += 1;
       });
       unlockAdScrollState();
     } catch (_) {}
@@ -1054,17 +1221,37 @@
     return changed;
   }
 
-  /** 只拦截 .ad-splash 内部点击，不拦全站 */
+  /** 拦截开屏层与残留进入按钮的点击 */
   function blockAdClick(event) {
-    const splash = event.target?.closest?.(AD_SPLASH_ROOT_SELECTOR);
-    if (!splash || isPluginUi(splash)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-    removeAdElement(splash, "点击拦截开屏.ad-splash");
-    state.adCleaner.blockedClicks += 1;
-    markAdCleanerChanged("拦截开屏点击", String(splash.className || "").slice(0, 60));
-    publishState();
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || isPluginUi(target)) return;
+    const splash = target.closest?.(AD_SPLASH_ROOT_SELECTOR);
+    if (splash) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      removeAdElement(splash, "点击拦截开屏.ad-splash");
+      state.adCleaner.blockedClicks += 1;
+      markAdCleanerChanged("拦截开屏点击", String(splash.className || "").slice(0, 60));
+      // 点击时顺带清残留
+      cleanAdElements("点击后清残留");
+      publishState();
+      return;
+    }
+    // 右上角进入/跳过残留
+    let node = target;
+    for (let i = 0; i < 4 && node; i += 1) {
+      if (isSplashResidualEnterBadge(node)) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+        removeResidualAdBadge(node, "点击拦截残留进入");
+        state.adCleaner.blockedClicks += 1;
+        publishState();
+        return;
+      }
+      node = node.parentElement;
+    }
   }
 
   function installAdCleaner() {
@@ -1073,31 +1260,51 @@
     injectAdCleanerCss();
     cleanAdElements("安装清理");
     document.addEventListener("click", blockAdClick, true);
+    document.addEventListener("touchstart", blockAdClick, true);
 
-    // 仅在出现 ad-splash 时清理，避免全站 Mutation 误伤
+    // 开屏插入 / 属性变化 / 右上角残留插入
     try {
       new MutationObserver((mutations) => {
+        let needClean = false;
         for (const m of mutations) {
-          if (m.type === "attributes" && m.target instanceof Element && /ad-splash/.test(String(m.target.className || ""))) {
-            cleanAdElements("ad-splash 属性变化");
-            return;
+          if (m.type === "attributes" && m.target instanceof Element) {
+            const cls = String(m.target.className || "");
+            if (/ad-splash/.test(cls) || AD_RESIDUAL_CLASS_RE.test(cls)) {
+              needClean = true;
+              break;
+            }
           }
           for (const node of m.addedNodes) {
             if (!(node instanceof Element)) continue;
-            if (/ad-splash/.test(String(node.className || "")) || node.querySelector?.(AD_SPLASH_ROOT_SELECTOR)) {
-              cleanAdElements("ad-splash 插入");
-              return;
+            const cls = String(node.className || "");
+            const text = adElementPlainText(node);
+            if (
+              /ad-splash/.test(cls)
+              || node.querySelector?.(AD_SPLASH_ROOT_SELECTOR)
+              || AD_RESIDUAL_CLASS_RE.test(cls)
+              || AD_RESIDUAL_TEXT_RE.test(text)
+              || (/进入|跳过/.test(text) && text.length <= 8)
+            ) {
+              needClean = true;
+              break;
             }
           }
+          if (needClean) break;
         }
-      }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+        if (needClean) cleanAdElements("DOM变化清理");
+      }).observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class", "style"]
+      });
     } catch (_) {}
 
-    // 开屏常在 loading 后挂载，定点补扫几次 + 轻量巡检
-    [0, 500, 1500, 3000, 5000, 8000].forEach((delay) => {
-      window.setTimeout(() => cleanAdElements(delay ? `延迟.ad-splash+${delay}` : "首屏.ad-splash"), delay);
+    // 开屏与倒计时结束后的进入按钮常延迟挂载：更密首屏 + 持续巡检
+    [0, 200, 500, 1000, 1500, 2500, 4000, 6000, 9000, 12000, 16000].forEach((delay) => {
+      window.setTimeout(() => cleanAdElements(delay ? `延迟清理+${delay}` : "首屏清理"), delay);
     });
-    window.setInterval(() => cleanAdElements("巡检.ad-splash"), 2000);
+    window.setInterval(() => cleanAdElements("巡检清理"), 1500);
   }
 
   function publicSession(session = {}) {

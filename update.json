@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.5.0",
-  "build": "2026-07-10-0400",
-  "releasedAt": "2026-07-10 04:00",
+  "version": "3.5.1",
+  "build": "2026-07-10-0415",
+  "releasedAt": "2026-07-10 04:15",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0415",
+      "type": "修复",
+      "title": "开屏倒计时结束后进入按钮残留",
+      "detail": "广告清理在移除 .ad-splash 后，继续清理右上角固定定位的进入/跳过/纯数字倒计时残留徽标（常挂到 body，不在 splash 内）；点击拦截同步覆盖；首屏更密补扫与轻量巡检，避免倒计时归零后按钮回弹。"
+    },
     {
       "id": "2026-07-10-0400",
       "type": "优化",
