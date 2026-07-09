@@ -720,13 +720,80 @@
   height: 10px !important;
 }
 
-/* 重构后的主控栏：左右分区、快捷条、二级菜单统一视觉节奏。 */
+/* 重构后的主控栏：左右贴边、中间不塞状态，避免横屏大空白。 */
 .txzz-player-control-row {
-  min-height: 2.75rem;
+  min-height: 2.5rem;
+  width: 100%;
+}
+
+.txzz-player-control-left,
+.txzz-player-control-right {
+  flex-wrap: nowrap;
 }
 
 .txzz-player-quick-row {
   opacity: 0.96;
+}
+
+/* 横屏矮屏紧凑控制层：贴底、无圆角卡片感、少遮挡画面。 */
+.txzz-player-control-panel--compact {
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.txzz-player-control-panel--compact .txzz-player-control-button {
+  min-height: 34px !important;
+  min-width: 34px !important;
+  border-radius: 10px !important;
+  padding-left: 6px !important;
+  padding-right: 6px !important;
+}
+
+.txzz-player-control-panel--compact .txzz-player-progress {
+  height: 6px !important;
+}
+
+.txzz-player-shell.txzz-player-fullscreen-shell .txzz-player-control-panel,
+.txzz-player-control-panel--compact {
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+}
+
+/* 横屏：无论是否全屏，都隐藏快捷条，清晰度等进「菜单」。 */
+@media (orientation: landscape) and (max-height: 520px) {
+  .txzz-player-shell .txzz-player-quick-row {
+    display: none !important;
+  }
+
+  .txzz-player-shell .txzz-player-control-panel {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    border-radius: 0 !important;
+    padding-left: max(10px, env(safe-area-inset-left)) !important;
+    padding-right: max(10px, env(safe-area-inset-right)) !important;
+    padding-bottom: max(8px, env(safe-area-inset-bottom)) !important;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.45), transparent) !important;
+    box-shadow: none !important;
+  }
+
+  .txzz-player-shell .txzz-player-top-bar {
+    padding-top: max(6px, env(safe-area-inset-top)) !important;
+    padding-bottom: 20px !important;
+  }
+
+  .txzz-player-shell .txzz-player-top-bar span {
+    font-size: 10px !important;
+  }
+
+  /* 横屏播放器区域尽量吃满高度，减少上下黑边失控。 */
+  .txzz-player-shell:not(.txzz-player-fullscreen-shell) {
+    aspect-ratio: auto !important;
+    min-height: min(56vh, 280px) !important;
+    max-height: min(72vh, 360px) !important;
+  }
 }
 
 .txzz-player-more-sheet {

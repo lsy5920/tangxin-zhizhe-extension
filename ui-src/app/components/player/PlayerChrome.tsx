@@ -179,11 +179,12 @@ export function PlayerProgressBar({
   };
 
   return (
-    <div className="txzz-player-progress-wrap mb-2.5">
-      <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] tabular-nums text-white/75">
+    <div className={`txzz-player-progress-wrap ${fullscreen ? "mb-1.5" : "mb-2.5"}`}>
+      <div className="mb-1 flex items-center justify-between gap-2 text-[10px] tabular-nums text-white/75">
         <span className={previewTime !== null ? "font-semibold text-sky-300" : ""}>{formatDuration(shownTime)}</span>
         <span className="truncate opacity-80">
-          {duration ? formatDuration(duration) : "时长未知"} · 缓冲 {bufferedPercent}%
+          {duration ? formatDuration(duration) : "--:--"}
+          {!fullscreen && ` · 缓冲 ${bufferedPercent}%`}
         </span>
       </div>
       <div
@@ -453,6 +454,8 @@ export type PlayerControlBarProps = {
   onDownload: () => void;
   onCopyDiagnostic: () => void;
   onBrightnessChange: (value: number) => void;
+  /** 横屏矮屏紧凑模式：隐藏快捷条与多余文案，避免控制栏占满半屏。 */
+  compact?: boolean;
 };
 
 export function PlayerControlBar(props: PlayerControlBarProps) {
@@ -533,14 +536,17 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
     onOpenLink,
     onDownload,
     onCopyDiagnostic,
-    onBrightnessChange
+    onBrightnessChange,
+    compact = false
   } = props;
 
   const volumePercent = muted ? 0 : Math.round(volume * 100);
+  const showLabels = !compact;
+  const showQuickRow = !compact;
 
   return (
     <div
-      className={`txzz-player-control-panel absolute ${controlsTone} z-20 text-white transition-all duration-200 ${
+      className={`txzz-player-control-panel absolute ${controlsTone} z-20 text-white transition-all duration-200 ${compact ? "txzz-player-control-panel--compact" : ""} ${
         visible && !locked ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
       }`}
     >
@@ -551,37 +557,31 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
         progressPercent={progressPercent}
         previewTime={progressPreviewTime}
         dragging={isDraggingProgress}
-        fullscreen={fullscreen}
+        fullscreen={fullscreen || compact}
         onSeekStart={onSeekStart}
         onSeekMove={onSeekMove}
         onSeekEnd={onSeekEnd}
         onSeekCancel={onSeekCancel}
       />
 
-      {/* 主控：左播放区 · 中状态 · 右功能区，对齐主流视频站操作路径。 */}
-      <div className="txzz-player-control-row flex items-center gap-1.5 sm:gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      {/* 主控：左播放 · 右功能，中间不塞状态文案，避免横屏中间大片空白。 */}
+      <div className="txzz-player-control-row flex w-full items-center justify-between gap-1.5">
+        <div className="txzz-player-control-left flex shrink-0 items-center gap-1">
           <CtrlButton title={paused ? "播放" : "暂停"} disabled={disabled} size={buttonSize} onClick={onTogglePlay} className="shrink-0">
             {paused ? <Play size={iconSize} className="fill-white" /> : <Pause size={iconSize} />}
-            <span className="hidden sm:inline">{paused ? "播放" : "暂停"}</span>
+            {showLabels && <span className="hidden lg:inline">{paused ? "播放" : "暂停"}</span>}
           </CtrlButton>
           <CtrlButton title={`后退 ${seekStep} 秒`} disabled={disabled} size={buttonSize} onClick={onSeekBack} className="shrink-0">
             <SkipBack size={iconSize} />
-            <span className="tabular-nums">-{seekStep}</span>
+            <span className="tabular-nums text-[10px]">-{seekStep}</span>
           </CtrlButton>
           <CtrlButton title={`前进 ${seekStep} 秒`} disabled={disabled} size={buttonSize} onClick={onSeekForward} className="shrink-0">
             <SkipForward size={iconSize} />
-            <span className="tabular-nums">+{seekStep}</span>
+            <span className="tabular-nums text-[10px]">+{seekStep}</span>
           </CtrlButton>
-          <div className="ml-0.5 hidden min-w-0 flex-col leading-tight text-[10px] text-white/70 sm:flex">
-            <span className="truncate font-medium text-white/85">{currentLineLabel}</span>
-            <span className="tabular-nums opacity-70">
-              {formatDuration(currentTime)} / {duration ? formatDuration(duration) : "--:--"}
-            </span>
-          </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="txzz-player-control-right flex shrink-0 items-center gap-1">
           <div className="relative">
             <CtrlButton
               title={muted ? "取消静音" : "调节音量"}
@@ -593,7 +593,7 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
               className="shrink-0"
             >
               {muted || volumePercent <= 0 ? <VolumeX size={iconSize} /> : <Volume2 size={iconSize} />}
-              <span className="hidden tabular-nums md:inline">{volumePercent}%</span>
+              {showLabels && <span className="hidden tabular-nums xl:inline">{volumePercent}%</span>}
             </CtrlButton>
             {volumeOpen && (
               <div
@@ -659,13 +659,12 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
             className="shrink-0"
           >
             <MoreHorizontal size={iconSize} />
-            <span className="hidden sm:inline">菜单</span>
+            {showLabels && <span className="hidden lg:inline">菜单</span>}
           </CtrlButton>
 
-          {fullscreen && (
+          {fullscreen && !compact && (
             <CtrlButton title="锁定控制层" disabled={disabled} size={buttonSize} onClick={onToggleLock} className="shrink-0">
               <Lock size={iconSize} />
-              <span className="hidden lg:inline">锁定</span>
             </CtrlButton>
           )}
 
@@ -678,31 +677,33 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
             className="shrink-0"
           >
             {fullscreen ? <Minimize2 size={iconSize} /> : <Maximize2 size={iconSize} />}
-            <span className="hidden sm:inline">{fullscreen ? "退出" : "全屏"}</span>
+            {showLabels && <span className="hidden lg:inline">{fullscreen ? "退出" : "全屏"}</span>}
           </CtrlButton>
         </div>
       </div>
 
-      {/* 快捷条：常用参数一键可见，减少进入二级菜单的次数。 */}
-      <div className="txzz-player-quick-row mt-2 flex flex-wrap items-center gap-1.5">
-        <CtrlChip active title="当前清晰度" disabled={disabled || !qualities.length} onClick={onCycleQuality}>
-          <SlidersHorizontal size={11} /> {qualityLabel}
-        </CtrlChip>
-        <CtrlChip title="画面填充" disabled={disabled} onClick={onCycleFill}>
-          <Layers size={11} /> {fillLabel}
-        </CtrlChip>
-        <CtrlChip title="快进步长" disabled={disabled} onClick={() => {
-          const index = seekStepOptions.indexOf(seekStep);
-          onSetSeekStep(seekStepOptions[(index + 1) % seekStepOptions.length]);
-        }}>
-          <SkipForward size={11} /> {seekStep}秒
-        </CtrlChip>
-        {canBackup && (
-          <CtrlChip title="切换备用线路" disabled={disabled || isBackupActive} onClick={onSwitchBackup} className={isBackupActive ? "" : "bg-emerald-500/25"}>
-            <Route size={11} /> 备用
+      {/* 快捷条：横屏矮屏隐藏，避免控制区占掉大半画面。 */}
+      {showQuickRow && (
+        <div className="txzz-player-quick-row mt-2 flex flex-wrap items-center gap-1.5">
+          <CtrlChip active title="当前清晰度" disabled={disabled || !qualities.length} onClick={onCycleQuality}>
+            <SlidersHorizontal size={11} /> {qualityLabel}
           </CtrlChip>
-        )}
-      </div>
+          <CtrlChip title="画面填充" disabled={disabled} onClick={onCycleFill}>
+            <Layers size={11} /> {fillLabel}
+          </CtrlChip>
+          <CtrlChip title="快进步长" disabled={disabled} onClick={() => {
+            const index = seekStepOptions.indexOf(seekStep);
+            onSetSeekStep(seekStepOptions[(index + 1) % seekStepOptions.length]);
+          }}>
+            <SkipForward size={11} /> {seekStep}秒
+          </CtrlChip>
+          {canBackup && (
+            <CtrlChip title="切换备用线路" disabled={disabled || isBackupActive} onClick={onSwitchBackup} className={isBackupActive ? "" : "bg-emerald-500/25"}>
+              <Route size={11} /> 备用
+            </CtrlChip>
+          )}
+        </div>
+      )}
 
       {moreOpen && (
         <div className="txzz-player-more-sheet mt-2 rounded-2xl bg-black/50 p-2 ring-1 ring-white/8 backdrop-blur-sm">

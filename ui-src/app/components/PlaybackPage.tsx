@@ -824,6 +824,10 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const previewBuffered = percent(playerStats.bufferedEnd, playerStats.duration);
   const playerFullscreenActive = playerImmersive || browserFullscreenActive;
   const playerVideoLandscape = playerVideoSize.width > 0 && playerVideoSize.height > 0 && playerVideoSize.width >= playerVideoSize.height * 1.08;
+  // 手机横屏矮屏：Kiwi 等浏览器横屏高度常 < 420，控制栏必须紧凑，否则会占掉半个画面。
+  const isCompactLandscape = playerViewportSize.height > 0
+    && playerViewportSize.width > playerViewportSize.height
+    && playerViewportSize.height <= 520;
   const playerOrientationRequested = playerFullscreenActive && Boolean(wantedScreenOrientation(playerOrientationMode, playerVideoLandscape));
   const playerOrientationLabel = orientationModeLabel(playerOrientationMode, playerOrientationRequested);
   const playerFitLabel = fitModeLabel(playerFitMode, detectedFitMode);
@@ -835,13 +839,13 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     ? (playerQualities.length ? "自动清晰度" : "清晰度自动")
     : playerQualities.find((item) => item.level === playerQualityLevel)?.label || `档位 ${playerQualityLevel + 1}`;
   const controlsShouldStayVisible = !previewUrl || playerStats.paused || playerMoreOpen || playerVolumeOpen || playerRateOpen || Boolean(playerError) || Boolean(holdSeekHint) || playerUiLocked;
-  // 全屏改成贴底渐变控制层，普通模式仍用悬浮圆角面板，减少“画面里再套一层框”的感觉。
-  const playerControlsTone = playerFullscreenActive
-    ? "inset-x-0 bottom-0 rounded-none bg-gradient-to-t from-black/92 via-black/58 to-transparent px-3 pb-[max(14px,env(safe-area-inset-bottom))] pt-12 sm:px-6 sm:pb-6"
+  // 全屏 / 横屏矮屏：贴底渐变沉浸控制层；普通竖屏面板才用悬浮圆角卡片。
+  const playerControlsTone = (playerFullscreenActive || isCompactLandscape)
+    ? "inset-x-0 bottom-0 rounded-none bg-gradient-to-t from-black/92 via-black/55 to-transparent px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-8 sm:px-5 sm:pb-4"
     : "inset-x-2 bottom-2 rounded-2xl bg-black/70 p-2.5 shadow-lg backdrop-blur-md ring-1 ring-white/10";
-  // 全屏观影时主控按钮、图标和进度条整体放大：PC 大屏更醒目，手机横屏更好点按。
-  const playerControlIconSize = playerFullscreenActive ? 17 : 14;
-  const playerControlButtonSize = playerFullscreenActive ? "lg" as const : "md" as const;
+  // 横屏矮屏用更小按钮，避免控制条过高；桌面全屏才放大。
+  const playerControlIconSize = isCompactLandscape ? 15 : playerFullscreenActive ? 17 : 14;
+  const playerControlButtonSize = isCompactLandscape ? "md" as const : playerFullscreenActive ? "lg" as const : "md" as const;
   const playerStageStyle = {
     "--txzz-player-viewport-width": `${playerViewportSize.width || 0}px`,
     "--txzz-player-viewport-height": `${playerViewportSize.height || 0}px`,
@@ -2271,6 +2275,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             locked={playerUiLocked}
             disabled={!previewUrl}
             fullscreen={playerFullscreenActive}
+            compact={isCompactLandscape}
             controlsTone={playerControlsTone}
             iconSize={playerControlIconSize}
             buttonSize={playerControlButtonSize}

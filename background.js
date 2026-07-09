@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2305";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2325";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 23:05 【优化】升级版本到 v3.1.0，强化浏览器沉浸全屏：优先 light DOM 宿主 + navigationUI hide，失败再尝试页面根节点/video/壳层，对齐网站原生全屏体验。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 23:25 【修复】升级版本到 v3.1.1，修复 Kiwi 横屏控制栏变形：去掉中间空白状态区，横屏矮屏紧凑贴底控制层，隐藏快捷条，按钮左右贴边。";
 
 const DEFAULT_STATE = {
   role: "guest",
