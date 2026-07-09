@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2340";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2355";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 23:40 【优化】升级版本到 v3.2.2，基于实测 txh068.com 的 .ad-splash 全屏轮播与右上角倒计时硬杀。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 23:55 【修复】升级版本到 v3.2.3，广告清理改为严格模式：只删实测 .ad-splash，去掉猜测规则避免进不去站。";
 
 const DEFAULT_STATE = {
   role: "guest",

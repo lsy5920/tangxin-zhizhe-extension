@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.2.2",
-  "build": "2026-07-09-2340",
-  "releasedAt": "2026-07-09 23:40",
+  "version": "3.2.3",
+  "build": "2026-07-09-2355",
+  "releasedAt": "2026-07-09 23:55",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2355",
+      "type": "修复",
+      "title": "广告清理严格模式 · 只删实测 .ad-splash",
+      "detail": "撤销过于激进的猜测规则（全站 fixed/popup/overlay/文案/面积启发式、window.open 拦截、右上角纯数字误删等），避免无法进入网站。现仅清理 Playwright 实测到的开屏根节点 .ad-splash / .my-swipe.ad-splash.van-swipe。"
+    },
     {
       "id": "2026-07-09-2340",
       "type": "优化",

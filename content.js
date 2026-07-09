@@ -167,817 +167,22 @@
     "下载失败",
     "操作失败"
   ];
-  // 广告清理规则集中维护。v3.1 基于 Playwright 实测 https://txh068.com/ DOM：
-  // 全屏开屏 = .my-swipe.ad-splash.van-swipe (position:fixed; z-index:1001)
-  //   内含 a.swiper-link[href][title] + 图片轮播；右上角白色圆点倒计时数字。
-  const AD_CLEANER_VERSION = "2026-07-09-ad-clean-v3.1-txh068";
+  // 广告清理：仅基于 Playwright 实测 https://txh068.com/ 的真实 DOM，不做猜测扫描。
+  // 实测结构：
+  //   <div class="my-swipe ad-splash van-swipe" style="position:fixed;z-index:1001">
+  //     <a class="swiper-link" target="_blank" href="https://kktx1.guaxtjy.cn" title="同城约炮">...</a>
+  //   </div>
+  //   右上角白色圆点倒计时数字（位于 .ad-splash 内部或紧邻）
+  const AD_CLEANER_VERSION = "2026-07-09-ad-clean-v3.2-strict";
+  // 只清实测到的开屏根与其子链接，绝不扫全站 fixed/popup/overlay
   const AD_CONTAINER_SELECTORS = [
-    // —— 站点实测关键选择器（最高优先）——
     ".ad-splash",
     ".my-swipe.ad-splash",
     ".ad-splash.van-swipe",
     ".my-swipe.ad-splash.van-swipe",
-    ".ad-apps",
-    ".ad-item",
-    ".ad-splash a.swiper-link",
-    ".ad-splash .swiper-link",
-    // —— 通用开屏/弹层 ——
-    ".splash-ad",
-    ".launch-ad",
-    ".open-ad",
-    ".popup-ad",
-    ".ad-countdown",
-    ".splash-countdown",
-    ".count-down",
-    ".countdown",
-    ".van-overlay:has(+ .ad-splash)",
-    ".van-overlay:has(+ [class*='splash'])",
-    "[class*='ad-splash']",
-    "[class*='ad-app']",
-    "[class*='ad-item']",
-    "[class*='ad_banner']",
-    "[class*='ad-banner']",
-    "[class*='advert']",
-    "[class*='splash-ad']",
-    "[class*='launch-ad']",
-    "[class*='open-ad']",
-    "[class*='popup-ad']",
-    "[class*='ad-count']",
-    "[class*='countdown']",
-    "[class*='count-down']",
-    "[class*='skip-ad']",
-    "[class*='ad-skip']",
-    "[class*='launch-screen']",
-    "[class*='open-screen']",
-    "[class*='kaiping']",
-    "[id*='ad-splash']",
-    "[id*='ad_banner']",
-    "[id*='ad-banner']",
-    "[id*='advert']",
-    "[id*='splash-ad']",
-    "[id*='launch-ad']",
-    "[id*='open-ad']",
-    "[id*='popup-ad']",
-    "[id*='countdown']",
-    "[id*='splash']"
+    "[class~='ad-splash']"
   ];
-  const AD_TEXT_PATTERN = /(广告|推广|赞助|app下载|立即下载|立即打开|同城约|约炮|博彩|棋牌|皇冠|葡京|bet365|telegram|免费看片|免费海角|免费抖阴|限时优惠|点击下载|安装APP|全国空降|一线天)/i;
-  // 开屏/倒计时文案：覆盖「3」「3s」「3秒」「跳过 3」「倒计时」「进入」等右上角形态
-  const AD_LAUNCH_TEXT_PATTERN = /(广告|推广|跳过|进入|倒计时|关闭广告|跳过广告|立即进入|\d+\s*秒|\d+\s*s|立即下载|立即打开|app下载|同城约|约炮)/i;
-  const AD_COUNTDOWN_TEXT_PATTERN = /^(跳过|关闭|进入|跳过广告|关闭广告)?\s*\d{1,2}\s*(秒|s|S)?$|^(跳过|关闭|进入|跳过广告|关闭广告)$|倒计时|^\d{1,2}$/;
-  // 实测外链域名片段：kktx1.guaxtjy.cn 等
-  const AD_HOST_PATTERN = /(aff-|hjsq|douyin|haijiao|bet365|casino|promo|ads?|telegram|t\.me|download|apk|guaxtjy|kktx|tx[0-9]*\.|about:blank)/i;
-  // 首屏强化清理窗口（毫秒）：覆盖倒计时 3~5 秒及延迟挂载
-  const AD_BOOT_SWEEP_MS = 25000;
-  // 永久追杀的选择器（站点实测，Vue 会反复重建）
-  const AD_SPLASH_KILL_SELECTORS = [
-    ".ad-splash",
-    ".my-swipe.ad-splash",
-    ".ad-splash.van-swipe",
-    ".my-swipe.ad-splash.van-swipe",
-    "[class*='ad-splash']",
-    ".ad-apps"
-  ];
-
-  function isCompactViewport() {
-    return window.matchMedia?.("(max-width: 720px)")?.matches || window.innerWidth <= 720;
-  }
-
-  function syncViewportVars() {
-    const visual = window.visualViewport;
-    const width = Math.max(280, Math.round(visual?.width || window.innerWidth || document.documentElement.clientWidth || 390));
-    const height = Math.max(360, Math.round(visual?.height || window.innerHeight || document.documentElement.clientHeight || 640));
-    const left = Math.round(visual?.offsetLeft || 0);
-    const top = Math.round(visual?.offsetTop || 0);
-    panel.style.setProperty("--txzz-vvw", `${width}px`);
-    panel.style.setProperty("--txzz-vvh", `${height}px`);
-    panel.style.setProperty("--txzz-vleft", `${left}px`);
-    panel.style.setProperty("--txzz-vtop", `${top}px`);
-    if (views.flowBadge) {
-      views.flowBadge.style.setProperty("--txzz-vvw", `${width}px`);
-      views.flowBadge.style.setProperty("--txzz-vvh", `${height}px`);
-      views.flowBadge.style.setProperty("--txzz-vleft", `${left}px`);
-      views.flowBadge.style.setProperty("--txzz-vtop", `${top}px`);
-    }
-  }
-
-  const DISPLAY_USER_PATCH = {
-    is_vip: "y",
-    is_dark_vip: "y",
-    group_name: "糖心志者永久会员",
-    group_end_time: "VIP永久有效",
-    balance: "999",
-    balance_income: "999",
-    coin: "999",
-    gold: "999",
-    ticket: "6",
-    vip: "y",
-    dark_vip: "y",
-    has_vip: "y",
-    has_dark_vip: "y",
-    vip_end_time: "VIP永久有效",
-    dark_vip_end_time: "VIP永久有效",
-    __txzz_full_account: true
-  };
-
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  function mask(value) {
-    const s = String(value || "");
-    return s.length > 22 ? `${s.slice(0, 10)}...${s.slice(-8)}` : s;
-  }
-
-  function parseMaybeJson(value) {
-    let current = value;
-    for (let i = 0; i < 3; i += 1) {
-      if (typeof current !== "string") return current;
-      try {
-        current = JSON.parse(current);
-      } catch (_) {
-        return current;
-      }
-    }
-    return current;
-  }
-
-  function tokenFrom(value) {
-    const parsed = parseMaybeJson(value);
-    if (typeof parsed === "string") {
-      const token = parsed.trim();
-      return /^[0-9a-f]{32}_\d+$/i.test(token) ? token : "";
-    }
-    if (parsed && typeof parsed === "object") {
-      for (const key of ["fuck", "token", "access_token", "user_token", "auth_token", "Authorization"]) {
-        const hit = tokenFrom(parsed[key]);
-        if (hit) return hit;
-      }
-    }
-    return "";
-  }
-
-  function labelForRole(role) {
-    return role === "full" ? "账号池会话" : "当前页面会话";
-  }
-
-  function categoryLabel(category) {
-    return CATEGORY_LABELS[category] || category || "记录";
-  }
-
-  function clipText(value, size = 160) {
-    const s = String(value || "");
-    return s.length > size ? `${s.slice(0, size)}...` : s;
-  }
-
-  function normalizeUrl(url) {
-    const value = String(url || "").trim();
-    if (!value) return "";
-    try {
-      if (value.startsWith("//")) return `${location.protocol}${value}`;
-      return new URL(value, location.href).href;
-    } catch (_) {
-      return value;
-    }
-  }
-
-  function formatDownloadBytes(bytes) {
-    const value = Number(bytes || 0);
-    if (!value) return "未记录";
-    const units = ["B", "KB", "MB", "GB"];
-    let size = value;
-    let index = 0;
-    while (size >= 1024 && index < units.length - 1) {
-      size /= 1024;
-      index += 1;
-    }
-    return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
-  }
-
-  function downloadStageLabel(stage) {
-    if (stage === "queued") return "已排队";
-    if (stage === "playlist") return "读取播放列表";
-    if (stage === "segments") return "准备分片";
-    if (stage === "segment") return "下载分片中";
-    if (stage === "ready") return "合并完成，待保存";
-    if (stage === "save-dialog") return "选择保存位置";
-    if (stage === "complete") return "已保存到设备";
-    if (stage === "error") return "失败";
-    return stage || "等待任务";
-  }
-
-  function downloadProgressPercent(task = {}) {
-    const total = Number(task.total || 0);
-    const current = Number(task.current || 0);
-    if (task.stage === "complete" || task.stage === "ready") return 100;
-    if (!total) return task.stage === "queued" ? 2 : task.stage === "playlist" ? 6 : 0;
-    return Math.max(0, Math.min(99, Math.round((current / total) * 100)));
-  }
-
-  function downloadFormatLabel(task = {}) {
-    if (task.format === "mp4" || /\.mp4(?:[?#]|$)/i.test(task.filename || "")) return "MP4";
-    if (task.format === "ts" || /\.ts(?:[?#]|$)/i.test(task.filename || "")) return "TS";
-    return task.mode === "direct" ? "原始格式" : "M3U8";
-  }
-
-  function downloadTaskTitle(task = {}) {
-    return task.titleSnippet || task.movieTitle || task.filename || (task.movieId ? `视频 ${task.movieId}` : "视频任务");
-  }
-
-  function downloadTaskMatchesIdSet(task = {}, idSet = new Set()) {
-    if (!idSet.size) return true;
-    return [task.taskId, task.movieId, task.url].some((value) => value && idSet.has(String(value)));
-  }
-
-  function orderedDownloadTasksByIds(taskIds = []) {
-    const allTasks = downloadTasksArray();
-    const ids = Array.isArray(taskIds) ? taskIds.map((item) => String(item || "")).filter(Boolean) : [];
-    if (!ids.length) return allTasks;
-    const usedTasks = new Set();
-    return ids
-      .map((id) => {
-        const task = allTasks.find((item) => !usedTasks.has(item) && [item.taskId, item.movieId, item.url].some((value) => value && String(value) === id));
-        if (task) usedTasks.add(task);
-        return task;
-      })
-      .filter(Boolean);
-  }
-
-  function currentMovieId() {
-    const match = String(location.pathname || "").match(/\/movie\/detail\/(\d+)/);
-    return match ? match[1] : "";
-  }
-
-  function currentMovieTitle() {
-    const selectors = [
-      ".movie-title",
-      ".video-title",
-      ".detail-title",
-      ".van-nav-bar__title",
-      "h1",
-      "h2"
-    ];
-    for (const selector of selectors) {
-      const text = document.querySelector(selector)?.textContent?.replace(/\s+/g, " ").trim();
-      if (text && !/糖心|下载|播放|详情/.test(text)) return text;
-    }
-    const docTitle = String(document.title || "").replace(/\s*[-|_].*$/, "").replace(/\s+/g, " ").trim();
-    return docTitle && !/糖心|txh/i.test(docTitle) ? docTitle : "";
-  }
-
-  function compactText(value) {
-    return String(value || "").replace(/\s+/g, "").trim();
-  }
-
-  function elementLooksSmallAction(el) {
-    if (!el || el === document.body || el === document.documentElement) return false;
-    const rect = el.getBoundingClientRect?.();
-    if (!rect) return false;
-    if (rect.width <= 0 || rect.height <= 0) return false;
-    return rect.width <= 320 && rect.height <= 220;
-  }
-
-  function isDownloadText(text) {
-    const value = compactText(text);
-    if (!value) return false;
-    if (/^(下载|缓存|下载\/缓存|download|cache)$/i.test(value)) return true;
-    return value.length <= 18 && /(下载|缓存|download|cache)/i.test(value);
-  }
-
-  function findDownloadTrigger(target) {
-    if (!target?.closest || target.closest("#txzz-panel")) return null;
-    const hrefEl = target.closest("a[href*='download'],a[download]");
-    if (hrefEl && elementLooksSmallAction(hrefEl)) return hrefEl;
-
-    const grid = target.closest(".van-grid-item");
-    if (grid && elementLooksSmallAction(grid) && isDownloadText(grid.textContent)) return grid;
-
-    const action = target.closest("button,a,[role='button'],.van-button,.van-cell,.van-grid-item__content,.van-grid-item__text");
-    if (action && elementLooksSmallAction(action)) {
-      const text = action.textContent || action.getAttribute("aria-label") || action.title || "";
-      const href = action.getAttribute?.("href") || "";
-      if (isDownloadText(text) || /download/i.test(href)) return action;
-    }
-
-    let el = target.nodeType === Node.ELEMENT_NODE ? target : target.parentElement;
-    for (let depth = 0; el && depth < 5; depth += 1, el = el.parentElement) {
-      if (el.closest?.("#txzz-panel")) return null;
-      if (elementLooksSmallAction(el) && isDownloadText(el.textContent || el.getAttribute?.("aria-label") || el.title || "")) return el;
-      if (el === document.body || el === document.documentElement) break;
-    }
-    return null;
-  }
-
-  function isDownloadTrigger(target) {
-    return Boolean(findDownloadTrigger(target));
-  }
-
-  function accountTitle(account) {
-    return account?.label || account?.username || account?.id || "账号池账号";
-  }
-
-  function accountNickname(account = {}) {
-    return account?.userInfo?.nickname ||
-      account?.userInfo?.account_name ||
-      account?.userInfo?.username ||
-      account?.label ||
-      account?.username ||
-      account?.id ||
-      "未命名账号";
-  }
-
-  function isNonAccountFailureReason(reason = "") {
-    const text = String(reason || "");
-    return /当前视频已经下架|视频已经下架|播放详情未返回可播放链接|购买后播放详情未返回|购买后仍显示未购买|\/movie\/detail failed|movie\/detail failed|\/movie\/doBuy failed|movie\/doBuy failed|\/system\/menu did not return visitor token|system\/menu did not return visitor token|fetch failed|network|timeout/i.test(text);
-  }
-
-  function isCredentialFailureReason(reason = "") {
-    const text = String(reason || "");
-    if (!text || isNonAccountFailureReason(text)) return false;
-    return /账号没有可用凭据|account has no usable credential|授权过期|saved token invalid|账号身份不匹配|账号密码登录失败|account login failed|账号凭证找回失败|qrcode restore failed|\/user\/info failed|user\/info failed|findByAccount|findQrcode/i.test(text);
-  }
-
-  function accountStatusInfo(account = {}) {
-    if (account.enabled === false) {
-      return { ok: false, label: "不可用", tone: "bad", reason: "账号已停用" };
-    }
-    const hasCredential = Boolean(account.hasPassword || account.password || account.hasQrcode || account.qrcode || account.hasToken || account.userToken);
-    if (!hasCredential) {
-      return { ok: false, label: "不可用", tone: "bad", reason: "账号没有可用凭据" };
-    }
-    if (account.status === "ok") {
-      return { ok: true, label: "可用", tone: "good", reason: account.lastVerifiedAt ? `上次检查 ${account.lastVerifiedAt}` : "账号状态正常" };
-    }
-    if (account.status === "error") {
-      const reason = account.lastError || "最近一次检查失败";
-      const hasTrustedHistory = Boolean(account.lastVerifiedAt || account.userInfo);
-      if (hasTrustedHistory && !isCredentialFailureReason(reason)) {
-        const detail = isNonAccountFailureReason(reason) ? "最近失败来自视频资源或临时接口，不是账号失效" : "账号曾成功检查，建议稍后复查";
-        return { ok: true, label: "可用", tone: "good", reason: `${detail}：${clipText(reason, 90)}` };
-      }
-      return { ok: false, label: "不可用", tone: "bad", reason: account.lastError || "最近一次检查失败" };
-    }
-    if (account.status === "imported") {
-      return { ok: true, label: "本地可用", tone: "good", reason: "已从当前浏览器会话导入" };
-    }
-    return { ok: true, label: "待检查", tone: "warn", reason: "尚未执行检查，可点击检查确认" };
-  }
-
-  function firstFilled(source = {}, keys = []) {
-    for (const key of keys) {
-      const value = source?.[key];
-      if (value !== undefined && value !== null && String(value).trim() !== "") return value;
-    }
-    return "";
-  }
-
-  function parseOpenState(value, fallbackText = "") {
-    const raw = String(value ?? "").trim();
-    const hint = String(fallbackText ?? "").trim();
-    const text = `${raw} ${hint}`.trim().toLowerCase();
-    if (!text) return null;
-    if (/未开通|未购买|已过期|过期|失效|不可用|false|no|none|null/.test(text) || /^(0|n)$/.test(raw.toLowerCase())) return false;
-    if (/永久|已开通|已购买|true|yes|vip|有效/.test(text) || /^(1|y)$/.test(raw.toLowerCase())) return true;
-    if (/^\d+$/.test(raw)) return Number(raw) > 0;
-    if (/\d{4}[-/年]\d{1,2}[-/月]\d{1,2}/.test(raw)) return true;
-    return null;
-  }
-
-  function formatOpenLabel(open, detail = "") {
-    const text = String(detail || "").trim();
-    if (open === true) {
-      if (/永久/.test(text)) return "永久";
-      if (text && !/^[yn10]$/i.test(text)) return clipText(text, 8);
-      return "已开通";
-    }
-    if (open === false) return "未开通";
-    return "未知";
-  }
-
-  function formatCoinValue(value) {
-    if (value === undefined || value === null || String(value).trim() === "") return "未知";
-    const text = String(value).trim();
-    const numeric = Number(text);
-    if (Number.isFinite(numeric)) return String(Number.isInteger(numeric) ? numeric : Number(numeric.toFixed(2)));
-    return clipText(text, 10);
-  }
-
-  function accountRightsInfo(account = {}) {
-    const info = account?.userInfo || {};
-    const vipValue = firstFilled(info, ["is_vip", "vip", "has_vip", "isVip", "vip_status", "vipStatus"]);
-    const vipDetail = firstFilled(info, ["vip_end_time", "group_end_time", "vipEndTime", "groupEndTime", "group_name"]);
-    const darkValue = firstFilled(info, ["is_dark_vip", "dark_vip", "has_dark_vip", "isDarkVip", "darkVip", "dark_vip_status", "darkVipStatus"]);
-    const darkDetail = firstFilled(info, ["dark_vip_end_time", "darkVipEndTime", "dark_group_end_time", "group_end_time", "group_name"]);
-    const coinValue = firstFilled(info, ["coin", "gold", "balance", "balance_income", "money", "amount", "wallet", "ticket"]);
-    const vipOpen = parseOpenState(vipValue, vipDetail);
-    const darkOpen = parseOpenState(darkValue, darkDetail);
-    return {
-      vip: { label: formatOpenLabel(vipOpen, vipDetail || vipValue), tone: vipOpen === true ? "good" : vipOpen === false ? "bad" : "warn" },
-      dark: { label: formatOpenLabel(darkOpen, darkDetail || darkValue), tone: darkOpen === true ? "good" : darkOpen === false ? "bad" : "warn" },
-      coin: { label: formatCoinValue(coinValue), tone: coinValue === undefined || coinValue === null || String(coinValue).trim() === "" ? "warn" : "good" }
-    };
-  }
-
-  function credentialLabel(account = {}) {
-    if (account.hasQrcode || account.qrcode) return "账号凭证";
-    if (account.hasPassword || account.password) return "账号密码";
-    if (account.hasToken || account.userToken) return "token/deviceId";
-    return "无凭据";
-  }
-
-  function credentialModeLabel(mode = "password") {
-    if (mode === "qrcode") return "账号凭证";
-    if (mode === "token") return "token/deviceId";
-    return "账号密码";
-  }
-
-  function selectedAccount() {
-    return state.accountPool.find((item) => item.id === state.selectedFullAccountId) || state.accountPool[0] || null;
-  }
-
-  function latestUsedAccountId() {
-    const latest = state.fullDetails[state.fullDetails.length - 1] || {};
-    return String(latest.accountId || latest.rotation?.accountId || "");
-  }
-
-  function latestUsedAccount() {
-    const id = latestUsedAccountId();
-    return id ? state.accountPool.find((item) => item.id === id) || null : null;
-  }
-
-  function remoteSourceLabel(mode) {
-    if (mode === "local") return "本地选中账号";
-    if (mode === "cloud-first") return "云端优先，本地兜底";
-    return "云端自动轮换";
-  }
-
-  function isCloudAccount(account = {}) {
-    const source = String(account.source || "");
-    return Boolean(account.cloudReadonly || account.isCloud || account.remoteId || account.cloudId)
-      || ["remote", "qrcode"].includes(source);
-  }
-
-  function cloudHasAccount(accountId = "") {
-    return state.accountPool.some((item) => item.id === accountId && isCloudAccount(item));
-  }
-
-  function isUsableCloudAccount(account = {}) {
-    if (!isCloudAccount(account)) return false;
-    const status = accountStatusInfo(account);
-    return Boolean(status.ok && (account.status === "ok" || account.status === "imported" || account.lastVerifiedAt || account.userInfo));
-  }
-
-  function visibleAccountPool() {
-    return state.accountPool.filter((account) => {
-      if (!isCloudAccount(account)) return true;
-      if (uiState.showInvalidCloudAccounts) return true;
-      return isUsableCloudAccount(account);
-    });
-  }
-
-  function accountPoolStats() {
-    const accounts = state.accountPool || [];
-    const cloud = accounts.filter(isCloudAccount);
-    const local = accounts.filter((account) => !isCloudAccount(account));
-    const invalidCloud = cloud.filter((account) => !isUsableCloudAccount(account));
-    return {
-      total: accounts.length,
-      cloud: cloud.length,
-      local: local.length,
-      availableCloud: cloud.length - invalidCloud.length,
-      invalidCloud: invalidCloud.length,
-      visible: visibleAccountPool().length
-    };
-  }
-
-  function setAccountCredentialMode(mode = fields.accountCredentialMode?.value || "password") {
-    if (fields.accountCredentialMode) fields.accountCredentialMode.value = mode;
-    if (views.accountCredentialLabel) views.accountCredentialLabel.textContent = credentialModeLabel(mode);
-    if (views.accountFormHint) {
-      views.accountFormHint.textContent = mode === "qrcode"
-        ? "填写账号昵称和账号凭证内容"
-        : mode === "token"
-          ? "填写账号昵称、deviceId 和 userToken"
-          : "填写账号昵称、用户名和密码";
-    }
-    panel.querySelectorAll("[data-credential]").forEach((item) => {
-      const credential = item.dataset.credential;
-      item.hidden = credential !== mode;
-    });
-  }
-
-  function resetAccountForm() {
-    uiState.editingAccountId = "";
-    setAccountFormReadonly(false);
-    [
-      fields.accountId,
-      fields.accountLabel,
-      fields.accountUsername,
-      fields.accountPassword,
-      fields.accountDeviceId,
-      fields.accountToken,
-      fields.accountQrcode,
-      fields.accountNotes
-    ].filter(Boolean).forEach((field) => {
-      field.value = "";
-    });
-    setAccountCredentialMode("password");
-    if (views.accountFormTitle) views.accountFormTitle.textContent = "添加本地账号";
-  }
-
-  function openAccountForm(account = null, mode = "") {
-    uiState.accountFormOpen = true;
-    uiState.accountTypePicking = !account && !mode;
-    setAccountFormReadonly(false);
-    if (!account) {
-      resetAccountForm();
-      if (mode) {
-        uiState.accountTypePicking = false;
-        setAccountCredentialMode(mode);
-        setTimeout(() => fields.accountLabel?.focus?.(), 0);
-      }
-      renderAccounts();
-      return;
-    }
-    uiState.accountTypePicking = false;
-    uiState.editingAccountId = account.id || "";
-    if (views.accountFormTitle) views.accountFormTitle.textContent = isCloudAccount(account) ? "云端账号摘要" : "编辑本地账号";
-    fields.accountId.value = account.id || "";
-    fields.accountLabel.value = account.label || accountNickname(account);
-    fields.accountUsername.value = account.username || "";
-    fields.accountPassword.value = "";
-    fields.accountDeviceId.value = "";
-    fields.accountToken.value = "";
-    fields.accountQrcode.value = "";
-    fields.accountNotes.value = account.notes || "";
-    setAccountCredentialMode(account.hasQrcode || account.qrcode ? "qrcode" : account.hasToken || account.userToken ? "token" : "password");
-    setAccountFormReadonly(isCloudAccount(account));
-    renderAccounts();
-  }
-
-  function closeAccountForm() {
-    uiState.accountFormOpen = false;
-    uiState.accountTypePicking = true;
-    uiState.editingAccountId = "";
-    views.accountModal.hidden = true;
-    setAccountFormReadonly(false);
-  }
-
-  function backAccountTypePicker() {
-    if (uiState.editingAccountId) return;
-    uiState.accountTypePicking = true;
-    renderAccounts();
-  }
-
-  function setAccountFormReadonly(readonly) {
-    const disabledFields = [
-      fields.accountId,
-      fields.accountLabel,
-      fields.accountUsername,
-      fields.accountPassword,
-      fields.accountDeviceId,
-      fields.accountToken,
-      fields.accountQrcode,
-      fields.accountNotes
-    ].filter(Boolean);
-    disabledFields.forEach((field) => {
-      field.disabled = Boolean(readonly);
-    });
-    panel.querySelectorAll('[data-action="save-account"], [data-action="upload-account-remote"], [data-action="import-current-session"]').forEach((button) => {
-      button.disabled = Boolean(readonly);
-      button.title = readonly ? "云端账号只显示脱敏摘要，不能在插件前端修改" : "";
-    });
-  }
-
-  function isDisplayPatchActive(probe = {}) {
-    return state.displayPatchApplied ||
-      probe.displayPatchApplied ||
-      document.documentElement.dataset.txzzVip === "permanent" ||
-      document.documentElement.dataset.txzzFullAccount === "true";
-  }
-
-  function mergeDisplayUserInfo(info, fallbackUserId = "") {
-    const base = info && typeof info === "object" ? { ...info } : {};
-    const patched = { ...base, ...DISPLAY_USER_PATCH };
-    if (!patched.id && fallbackUserId) patched.id = fallbackUserId;
-    if (!patched.nickname) patched.nickname = base.account_name || base.username || fallbackUserId || "永久会员";
-    return patched;
-  }
-
-  function applySessionDisplayPatch(session = {}) {
-    if (!isDisplayPatchActive()) return session;
-    const userId = session.userId || session.userInfo?.id || "";
-    const userInfo = mergeDisplayUserInfo(session.userInfo, userId);
-    return {
-      ...session,
-      userId: userInfo.id || userId,
-      nickname: session.nickname || userInfo.nickname || userInfo.account_name || userInfo.username || "",
-      userInfo
-    };
-  }
-
-  function ensureVisiblePatchStyle() {
-    if (document.getElementById("txzz-visible-style")) return;
-    const style = document.createElement("style");
-    style.id = "txzz-visible-style";
-    style.textContent = [
-      "#txzz-mine-status-card{margin:10px 16px;padding:12px;border:1px solid rgba(255,211,106,.34);border-radius:12px;background:linear-gradient(135deg,#25151e,#111016 52%,#2a1c16);color:#fff;box-shadow:0 12px 28px rgba(0,0,0,.28);font-family:inherit}",
-      "#txzz-mine-status-card .txzz-row{display:flex;align-items:center;justify-content:space-between;gap:10px}",
-      "#txzz-mine-status-card span{display:block;color:#ffd36a;font-size:12px;line-height:1.2}",
-      "#txzz-mine-status-card strong{display:block;margin-top:4px;font-size:17px;line-height:1.2;color:#fff}",
-      "#txzz-mine-status-card small{display:block;margin-top:6px;color:rgba(255,250,246,.72);font-size:11px}",
-      "#txzz-mine-status-card .txzz-balance{min-width:72px;text-align:right}",
-      "#txzz-mine-status-card .txzz-balance strong{font-size:24px;color:#ffd36a}",
-      "#txzz-dark-status-card{margin:10px 14px 8px;padding:10px 12px;border:1px solid rgba(255,79,115,.34);border-radius:12px;background:linear-gradient(135deg,#27111b,#0d0608 56%,#211526);color:#fff;font-family:inherit;box-shadow:0 12px 26px rgba(0,0,0,.26)}",
-      "#txzz-dark-status-card span{display:block;color:#ff8fa7;font-size:12px}",
-      "#txzz-dark-status-card strong{display:block;margin-top:4px;color:#fff;font-size:16px}",
-      "#txzz-dark-status-card small{display:block;margin-top:5px;color:rgba(255,250,246,.68);font-size:11px}",
-      "html[data-txzz-full-account='true'] .main.blur{filter:none!important}",
-      "html[data-txzz-full-account='true'] .txzz-hidden-vip-dialog{display:none!important;visibility:hidden!important;pointer-events:none!important}"
-    ].join("\n");
-    document.documentElement.appendChild(style);
-  }
-
-  let visibleTextPatchRoute = "";
-  let visibleTextPatchAt = 0;
-  let visibleRoutePatchKey = "";
-
-  function visibleRouteKey() {
-    return `${location.pathname}${location.search}${location.hash}`;
-  }
-
-  function isAccountDisplayRoute() {
-    const path = location.pathname.replace(/\/$/, "") || "/";
-    return path === "/mine" || path === "/dark" || path === "/user" || path === "/user/vip";
-  }
-
-  function removeVisibleStatusCards() {
-    document.querySelectorAll("#txzz-mine-status-card,#txzz-dark-status-card,.txzz-visible-chip").forEach((el) => {
-      try {
-        el.remove();
-      } catch (_) {}
-    });
-  }
-
-  function patchVisibleText(force = false) {
-    const root = document.body;
-    if (!root) return;
-    const routeKey = visibleRouteKey();
-    const now = Date.now();
-    if (!force && visibleTextPatchRoute === routeKey && now - visibleTextPatchAt < 5000) return;
-    visibleTextPatchRoute = routeKey;
-    visibleTextPatchAt = now;
-    const replacements = [
-      [/免费观影\s*\(游客\)\s*[:：]?\s*\d+\s*\/\s*\d+/g, "永久会员观影：999/999"],
-      [/免费观影\s*\(游客\)/g, "永久会员观影"],
-      [/余额\s*[:：]?\s*0\b/g, "余额 999"],
-      [/开通会员/g, "永久会员"],
-      [/立即开通/g, "已开通"],
-      [/未开通/g, "已开通"],
-      [/普通用户/g, "永久会员"],
-      [/游客用户/g, "永久会员"],
-      [/游客/g, "永久会员"],
-      [/VIP已过期/g, "VIP永久有效"],
-      [/会员已过期/g, "会员永久有效"],
-      [/尤物圈未开通/g, "尤物圈永久有效"],
-      [/未开通尤物圈/g, "尤物圈永久有效"],
-      [/开通尤物圈/g, "尤物圈已开通"],
-      [/余额不足/g, "余额 999"]
-    ];
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const nodes = [];
-    let node;
-    let changed = 0;
-    while ((node = walker.nextNode())) {
-      const parent = node.parentElement;
-      if (!parent || parent.closest("#txzz-panel,#txzz-mine-status-card,#txzz-dark-status-card,script,style,textarea,input")) continue;
-      nodes.push(node);
-      let text = node.nodeValue || "";
-      const old = text;
-      for (const [from, to] of replacements) text = text.replace(from, to);
-      if (text !== old) {
-        node.nodeValue = text;
-        changed += 1;
-        if (changed > 100) break;
-      }
-    }
-    for (let i = 0; i < nodes.length; i += 1) {
-      const text = (nodes[i].nodeValue || "").trim();
-      if (!/^余额$|^余额[:：]?$/.test(text)) continue;
-      for (let j = i + 1; j < Math.min(nodes.length, i + 5); j += 1) {
-        const next = (nodes[j].nodeValue || "").trim();
-        if (/^\d+(?:\.\d+)?$/.test(next)) {
-          nodes[j].nodeValue = (nodes[j].nodeValue || "").replace(/\d+(?:\.\d+)?/, "999");
-          break;
-        }
-        if (/^(收益|冻结|动态|关注|粉丝|开通会员|我的钱包)$/.test(next)) break;
-      }
-    }
-  }
-
-  function patchVisibleMine() {
-    removeVisibleStatusCards();
-    return;
-    const existingCard = document.getElementById("txzz-mine-status-card");
-    if (existingCard?.dataset.txzzRendered === "1") return;
-    if (existingCard) existingCard.dataset.txzzRendered = "1";
-    const text = document.body?.innerText || "";
-    if (!/\/mine\/?$/.test(location.pathname) && !/我的|开通会员|我的钱包|免费观影/.test(text)) return;
-    const container = document.querySelector(".bg-page") || document.querySelector(".app-container") || document.body;
-    if (!container) return;
-    let card = document.getElementById("txzz-mine-status-card");
-    if (!card) {
-      card = document.createElement("section");
-      card.id = "txzz-mine-status-card";
-      card.dataset.txzzRendered = "1";
-      const anchor = container.querySelector(".info") || container.querySelector(".nav") || container.firstElementChild;
-      if (anchor?.parentNode) anchor.parentNode.insertBefore(card, anchor.nextSibling);
-      else container.insertBefore(card, container.firstChild);
-    }
-    card.innerHTML = '<div class="txzz-row"><div><span>账号状态</span><strong>永久会员 · 永久尤物圈</strong><small>糖心志者展示覆盖已应用，当前页面按高级账号状态展示</small></div><div class="txzz-balance"><span>余额</span><strong>999</strong></div></div>';
-  }
-
-  function patchVisibleDark() {
-    removeVisibleStatusCards();
-    const text = document.body?.innerText || "";
-    const isDarkPage = location.pathname.replace(/\/$/, "") === "/dark" || /尤物圈/.test(text);
-    if (!isDarkPage) return;
-    document.querySelectorAll(".main.blur").forEach((el) => el.classList.remove("blur"));
-    const container = document.querySelector(".bg-page") || document.querySelector(".app-container") || document.body;
-    if (false && container && !document.getElementById("txzz-dark-status-card")) {
-      const card = document.createElement("section");
-      card.id = "txzz-dark-status-card";
-      card.dataset.txzzRendered = "1";
-      card.innerHTML = '<span>尤物圈权益</span><strong>永久尤物圈已开通</strong><small>访问弹窗与模糊遮罩已处理，可继续浏览当前列表</small>';
-      const anchor = container.querySelector(".main") || container.firstElementChild;
-      if (anchor?.parentNode) anchor.parentNode.insertBefore(card, anchor);
-      else container.insertBefore(card, container.firstChild);
-    }
-    let hidVipDialog = false;
-    document.querySelectorAll(".van-dialog,.van-popup").forEach((el) => {
-      if (/尤物|会员|VIP|开通|权限|暗网/.test(el.innerText || "")) {
-        hidVipDialog = true;
-        el.classList.add("txzz-hidden-vip-dialog");
-        el.style.setProperty("display", "none", "important");
-      }
-    });
-    if (hidVipDialog) {
-      document.querySelectorAll(".van-overlay").forEach((el) => {
-        el.classList.add("txzz-hidden-vip-dialog");
-        el.style.setProperty("display", "none", "important");
-      });
-    }
-    document.body?.classList?.remove("van-overflow-hidden");
-  }
-
-  function applyVisibleDisplayPatch(options = {}) {
-    ensureVisiblePatchStyle();
-    document.documentElement.dataset.txzzVip = "permanent";
-    document.documentElement.dataset.txzzFullAccount = "true";
-    removeVisibleStatusCards();
-    if (isAccountDisplayRoute()) patchVisibleText(Boolean(options.forceText));
-    if (location.pathname.replace(/\/$/, "") === "/mine") patchVisibleMine();
-    patchVisibleDark();
-  }
-
-  function installVisibleDisplayLoop() {
-    if (window.__txzzVisibleLoopInstalled) return;
-    window.__txzzVisibleLoopInstalled = true;
-    let pending = false;
-    let lastRun = 0;
-    const schedule = (forceText = false) => {
-      if (pending) return;
-      pending = true;
-      window.setTimeout(() => {
-        pending = false;
-        const now = Date.now();
-        const routeKey = visibleRouteKey();
-        const routeChanged = routeKey !== visibleRoutePatchKey;
-        if (!forceText && !routeChanged && now - lastRun < 1200) return;
-        visibleRoutePatchKey = routeKey;
-        lastRun = now;
-        applyVisibleDisplayPatch({ forceText: forceText || routeChanged });
-      }, 450);
-    };
-    try {
-      new MutationObserver((mutations) => {
-        const meaningful = mutations.some((mutation) => {
-          if (mutation.target?.closest?.("#txzz-panel,#txzz-mine-status-card,#txzz-dark-status-card")) return false;
-          return Array.from(mutation.addedNodes || []).some((node) => node.nodeType === Node.ELEMENT_NODE);
-        });
-        if (meaningful) schedule(false);
-      }).observe(document.documentElement, { childList: true, subtree: true });
-    } catch (_) {}
-    window.addEventListener("popstate", () => schedule(true), true);
-    window.addEventListener("hashchange", () => schedule(true), true);
-    window.addEventListener("focus", () => schedule(false), true);
-    [250, 1200, 3000].forEach((delay) => window.setTimeout(() => schedule(delay === 250), delay));
-  }
+  const AD_SPLASH_ROOT_SELECTOR = ".ad-splash, .my-swipe.ad-splash, .ad-splash.van-swipe, .my-swipe.ad-splash.van-swipe, [class~='ad-splash']";
 
   function createAdCleanerState() {
     return {
@@ -996,16 +201,14 @@
   }
 
   state.adCleaner = createAdCleanerState();
-  let adBootUntil = Date.now() + AD_BOOT_SWEEP_MS;
   let adCleanerBusy = false;
   let adCleanerQueued = false;
 
-  // 输出给 React 面板的脱敏统计，只记录数量和命中摘要，不保存广告链接的完整跳转上下文。
   function adCleanerStats() {
     return {
       ...state.adCleaner,
       total: Number(state.adCleaner.removed || 0) + Number(state.adCleaner.hidden || 0) + Number(state.adCleaner.blockedClicks || 0),
-      bootActive: Date.now() < adBootUntil
+      bootActive: false
     };
   }
 
@@ -1015,419 +218,135 @@
     state.adCleaner.lastMatched = clipText(matched, 80);
   }
 
-  function elementTextForAd(el) {
-    if (!el) return "";
-    // 倒计时节点常用伪元素/子节点，取自身短文案优先
-    const own = String(el.childNodes && el.childNodes.length <= 3
-      ? Array.from(el.childNodes).map((n) => (n.nodeType === 3 ? n.textContent : (n.innerText || n.textContent || ""))).join(" ")
-      : (el.innerText || el.textContent || ""));
-    return String(own || el.getAttribute?.("aria-label") || el.title || "").replace(/\s+/g, " ").trim().slice(0, 80);
-  }
-
-  function viewportMetrics() {
-    const width = window.innerWidth || document.documentElement.clientWidth || 1;
-    const height = window.innerHeight || document.documentElement.clientHeight || 1;
-    return { width, height, area: Math.max(1, width * height) };
-  }
-
   function isPluginUi(el) {
     return Boolean(el?.closest?.("#txzz-candy-ui-root, #txzz-panel, .txzz-candy-app"));
   }
 
+  /** 仅隐藏实测开屏层，不碰其它 van-popup / overlay / 页面内容 */
   function injectAdCleanerCss() {
     let style = document.getElementById("txzz-ad-cleaner-style");
     if (!style) {
       style = document.createElement("style");
       style.id = "txzz-ad-cleaner-style";
-      const root = document.documentElement || document.head || document.body;
-      if (root) root.appendChild(style);
+      (document.documentElement || document.head || document.body)?.appendChild(style);
     }
-    // 永久规则 + 首屏加强；!important 压过站点内联 style
     style.textContent = `
-/* 糖心志者广告清理 v3.1 · 基于 txh068.com 实测 DOM */
-/* 永久：全屏开屏轮播 .my-swipe.ad-splash.van-swipe */
+/* 糖心志者广告清理 · 严格模式：只处理实测 .ad-splash 开屏 */
 .ad-splash,
 .my-swipe.ad-splash,
 .ad-splash.van-swipe,
 .my-swipe.ad-splash.van-swipe,
-.ad-apps,
-.ad-item,
-.splash-ad,
-.launch-ad,
-.open-ad,
-.popup-ad,
-[class*="ad-splash"],
-[class*="splash-ad"],
-[class*="launch-ad"],
-[class*="open-ad"],
-[class*="popup-ad"],
-[class*="ad-app"],
-[id*="ad-splash"],
-[id*="splash-ad"],
-[id*="launch-ad"],
-[id*="open-ad"],
-.ad-splash a.swiper-link,
-.ad-splash .swiper-link,
-.van-swipe.ad-splash,
-.van-swipe.ad-splash .van-swipe__track,
-.van-swipe.ad-splash .van-swipe-item,
-.van-swipe.ad-splash .swiper-link,
-.van-swipe.ad-splash .aspect-ratio,
-.van-swipe.ad-splash .easy-image {
+[class~="ad-splash"] {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  max-height: 0 !important;
-  max-width: 0 !important;
-  overflow: hidden !important;
-  z-index: -2147483648 !important;
-  transform: scale(0) !important;
-  position: fixed !important;
-  left: -99999px !important;
-  top: -99999px !important;
-}
-/* 首屏额外：遮罩/弹层 */
-html.txzz-ad-boot .van-overlay,
-html.txzz-ad-boot [class*="kaiping"],
-html.txzz-ad-boot [class*="open-screen"],
-html.txzz-ad-boot [class*="launch-screen"] {
-  display: none !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-}
-html.txzz-ad-cleaner-active,
-html.txzz-ad-boot,
-html.txzz-ad-cleaner-active body,
-html.txzz-ad-boot body {
-  overflow: auto !important;
-  height: auto !important;
-  position: static !important;
+  z-index: -1 !important;
 }
 `;
-    try { document.documentElement.classList.add("txzz-ad-boot"); } catch (_) {}
-  }
-
-  /** 主世界永久追杀：Vue 重建 .ad-splash 时立刻 remove（隔离世界有时打不赢站点） */
-  function injectMainWorldSplashKiller() {
-    if (document.documentElement.dataset.txzzSplashKiller === "1") return;
-    document.documentElement.dataset.txzzSplashKiller = "1";
-    const code = `(() => {
-      if (window.__txzzSplashKiller) return;
-      window.__txzzSplashKiller = true;
-      const SEL = ${JSON.stringify(AD_SPLASH_KILL_SELECTORS.join(","))};
-      const kill = () => {
-        try {
-          document.querySelectorAll(SEL).forEach((el) => {
-            try { el.remove(); } catch (_) {
-              try {
-                el.style.setProperty("display","none","important");
-                el.style.setProperty("pointer-events","none","important");
-              } catch(__) {}
-            }
-          });
-          // 右上角纯数字倒计时圆点：fixed/absolute 且宽高接近圆形
-          const vw = innerWidth || 1, vh = innerHeight || 1;
-          document.querySelectorAll("div,span,button,a,p,i,em,b").forEach((el) => {
-            try {
-              const t = String(el.textContent || "").replace(/\\s+/g, "").trim();
-              if (!/^\\d{1,2}$/.test(t) && !/^(跳过|关闭)$/.test(t)) return;
-              const r = el.getBoundingClientRect();
-              if (r.width < 12 || r.height < 12 || r.width > 96 || r.height > 96) return;
-              if (r.top > vh * 0.32 || r.right < vw * 0.55) return;
-              // 向上找 fixed 全屏祖先
-              let cur = el;
-              for (let i = 0; i < 8 && cur; i++) {
-                const st = getComputedStyle(cur);
-                const cr = cur.getBoundingClientRect();
-                const area = cr.width * cr.height;
-                if ((st.position === "fixed" || st.position === "absolute") && area > vw * vh * 0.4) {
-                  cur.remove();
-                  break;
-                }
-                if (cur.classList && (cur.classList.contains("ad-splash") || /ad-splash/.test(cur.className || ""))) {
-                  cur.remove();
-                  break;
-                }
-                cur = cur.parentElement;
-              }
-            } catch (_) {}
-          });
-          document.body && document.body.classList.remove("van-overflow-hidden");
-          document.documentElement && document.documentElement.classList.remove("van-overflow-hidden");
-          if (document.body) {
-            document.body.style.removeProperty("overflow");
-            document.body.style.removeProperty("position");
-            document.body.style.removeProperty("height");
-          }
-        } catch (_) {}
-      };
-      kill();
-      setInterval(kill, 180);
-      try {
-        new MutationObserver(kill).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style"] });
-      } catch (_) {}
-      ["DOMContentLoaded","load","pageshow"].forEach((ev) => window.addEventListener(ev, kill, true));
-    })();`;
-    try {
-      const s = document.createElement("script");
-      s.textContent = code;
-      (document.documentElement || document.head || document.body).appendChild(s);
-      s.remove();
-    } catch (_) {
-      // 部分环境禁止 inline script，退回隔离世界
-    }
-  }
-
-  /** 实测站点开屏：优先硬杀 .ad-splash / swiper 外链 */
-  function killKnownSiteSplash(reason = "站点开屏硬杀") {
-    let changed = 0;
-    try {
-      AD_SPLASH_KILL_SELECTORS.forEach((sel) => {
-        document.querySelectorAll(sel).forEach((el) => {
-          if (isPluginUi(el)) return;
-          if (removeAdElement(el, reason + "·" + sel)) changed += 1;
-        });
-      });
-      // 全屏 fixed + z-index 很高 + 内含 swiper-link 外链
-      document.querySelectorAll("div.van-swipe, div.my-swipe, [class*='van-swipe']").forEach((el) => {
-        if (isPluginUi(el) || el.dataset?.txzzAdCleaned === "1") return;
-        const hasSplashClass = /ad-splash|splash-ad|launch-ad/i.test(String(el.className || ""));
-        const hasAdLink = Boolean(el.querySelector?.("a.swiper-link[href], a[target='_blank'][href*='http']"));
-        let st, rect;
-        try {
-          st = getComputedStyle(el);
-          rect = el.getBoundingClientRect();
-        } catch (_) { return; }
-        const { area: viewportArea } = viewportMetrics();
-        const area = rect.width * rect.height;
-        const z = Number.parseInt(st.zIndex || "0", 10) || 0;
-        if ((hasSplashClass || (hasAdLink && st.position === "fixed" && z >= 100 && area > viewportArea * 0.5))) {
-          if (removeAdElement(el, reason + "·van-swipe全屏")) changed += 1;
-        }
-      });
-    } catch (_) {}
-    return changed;
-  }
-
-  function safeMatchesAdSelector(el) {
-    try {
-      return Boolean(el?.matches?.(AD_CONTAINER_SELECTORS.join(",")));
-    } catch (_) {
-      return AD_CONTAINER_SELECTORS
-        .filter((selector) => !selector.includes(":has"))
-        .some((selector) => {
-          try { return Boolean(el?.matches?.(selector)); } catch (_) { return false; }
-        });
-    }
-  }
-
-  function safeQueryAdContainers() {
-    try {
-      return Array.from(document.querySelectorAll(AD_CONTAINER_SELECTORS.join(",")));
-    } catch (_) {
-      return AD_CONTAINER_SELECTORS
-        .filter((selector) => !selector.includes(":has"))
-        .flatMap((selector) => {
-          try { return Array.from(document.querySelectorAll(selector)); } catch (_) { return []; }
-        });
-    }
-  }
-
-  /** 右上角倒计时/跳过徽标：首屏全屏广告的核心特征 */
-  function isTopRightCountdownBadge(el) {
-    if (!el || isPluginUi(el) || el === document.documentElement || el === document.body) return false;
-    const rect = el.getBoundingClientRect?.();
-    if (!rect || rect.width < 10 || rect.height < 10 || rect.width > 220 || rect.height > 120) return false;
-    const { width: vw, height: vh } = viewportMetrics();
-    // 右上角区域：上 28% + 右 45%
-    const inTopRight = rect.top >= -8 && rect.top < vh * 0.28 && rect.right > vw * 0.55 && rect.left > vw * 0.4;
-    if (!inTopRight) return false;
-    const text = elementTextForAd(el);
-    if (!text || text.length > 24) return false;
-    if (AD_COUNTDOWN_TEXT_PATTERN.test(text)) return true;
-    if (/^\d{1,2}$/.test(text) && rect.width <= 96 && rect.height <= 96) return true;
-    const className = String(el.className || "");
-    const id = String(el.id || "");
-    if (/(count|countdown|skip|timer|秒|跳过)/i.test(`${className} ${id}`)) return true;
-    return false;
-  }
-
-  /** 从倒计时节点向上找全屏广告根节点 */
-  function findSplashRootFrom(el) {
-    if (!el) return null;
-    let cur = el;
-    let best = null;
-    const { area: viewportArea } = viewportMetrics();
-    while (cur && cur !== document.body && cur !== document.documentElement) {
-      if (isPluginUi(cur)) break;
-      if (safeMatchesAdSelector(cur) || isLaunchAdOverlay(cur, true)) return cur;
-      try {
-        const style = getComputedStyle(cur);
-        const rect = cur.getBoundingClientRect();
-        const area = rect.width * rect.height;
-        const zIndex = Number.parseInt(style.zIndex || "0", 10) || 0;
-        const elevated = ["fixed", "sticky", "absolute"].includes(style.position) || zIndex >= 20;
-        if (elevated && area >= viewportArea * 0.35) best = cur;
-        if (elevated && area >= viewportArea * 0.72) return cur;
-      } catch (_) {}
-      cur = cur.parentElement;
-    }
-    return best || el.closest?.(".ad-splash, [class*='ad-splash'], [class*='splash'], [class*='launch'], [class*='popup'], [class*='modal'], .van-popup, .van-dialog") || null;
-  }
-
-  function hasTopRightCountdown(root) {
-    if (!root?.querySelectorAll) return false;
-    try {
-      const nodes = root.querySelectorAll("div,span,button,a,p,i,em,b,strong,label");
-      for (const node of nodes) {
-        if (isTopRightCountdownBadge(node)) return true;
-      }
-    } catch (_) {}
-    return false;
-  }
-
-  function adElementReason(el) {
-    if (!el || el === document.documentElement || el === document.body || isPluginUi(el)) return "";
-    const className = String(el.className || "");
-    const id = String(el.id || "");
-    const text = elementTextForAd(el);
-    const href = String(el.href || el.getAttribute?.("href") || "");
-    const signature = `${id} ${className} ${text} ${href}`;
-    if (safeMatchesAdSelector(el)) return `规则命中：${className || id || el.tagName}`;
-    if (isTopRightCountdownBadge(el)) return `右上角倒计时：${text || className || el.tagName}`;
-    if (href && AD_HOST_PATTERN.test(href)) return `外链命中：${href}`;
-    if (AD_TEXT_PATTERN.test(signature)) {
-      const rect = el.getBoundingClientRect?.();
-      const area = rect ? rect.width * rect.height : 0;
-      if (area > 2400 || /广告/.test(text)) return `文案命中：${text || className || el.tagName}`;
-    }
-    return "";
-  }
-
-  function isLaunchAdOverlay(el, loose = false) {
-    if (!el || el === document.documentElement || el === document.body || isPluginUi(el)) return false;
-    const rect = el.getBoundingClientRect?.();
-    if (!rect) return false;
-    const { area: viewportArea } = viewportMetrics();
-    const area = rect.width * rect.height;
-    if (rect.width < 100 || rect.height < 100 || area < viewportArea * (loose ? 0.12 : 0.16)) return false;
-    let style;
-    try { style = getComputedStyle(el); } catch (_) { return false; }
-    const zIndex = Number.parseInt(style.zIndex || "0", 10) || 0;
-    const elevated = ["fixed", "sticky", "absolute"].includes(style.position) || zIndex >= 40 || area > viewportArea * 0.5;
-    if (!elevated) return false;
-    const text = elementTextForAd(el);
-    const className = String(el.className || "");
-    const id = String(el.id || "");
-    const href = String(el.href || el.getAttribute?.("href") || "");
-    const html = String(el.innerHTML || "").slice(0, 2000);
-    const hasMedia = Boolean(el.querySelector?.("img, picture, video, iframe, canvas, [style*='background-image']"));
-    const hasAdLink = Boolean(el.querySelector?.("a[href]")) || AD_HOST_PATTERN.test(href + " " + html);
-    const hasLaunchText = AD_LAUNCH_TEXT_PATTERN.test(`${text} ${className} ${id}`);
-    const countdown = hasTopRightCountdown(el);
-    const hasEnterButton = Boolean(Array.from(el.querySelectorAll?.("button,a,[role='button'],div,span") || []).slice(0, 80).some((node) => {
-      const t = elementTextForAd(node);
-      return /^(进入|跳过|关闭|立即打开|立即下载|跳过广告|关闭广告|\d+\s*秒|\d+\s*s|\d{1,2})$/i.test(t);
-    }));
-    // 右上角倒计时 + 大遮罩：直接判定为开屏广告（站点常见形态）
-    if (countdown && (hasMedia || hasAdLink || hasEnterButton || area > viewportArea * 0.45 || hasLaunchText)) return true;
-    if (loose && countdown && area > viewportArea * 0.28) return true;
-    return hasLaunchText && (hasMedia || hasAdLink || hasEnterButton || area > viewportArea * 0.72 || countdown);
   }
 
   function unlockAdScrollState() {
     try {
-      document.body?.classList?.remove("van-overflow-hidden", "overflow-hidden");
-      document.documentElement?.classList?.remove("van-overflow-hidden", "overflow-hidden");
-      document.body?.style?.removeProperty("overflow");
-      document.documentElement?.style?.removeProperty("overflow");
-      document.body?.style?.removeProperty("position");
-      document.body?.style?.removeProperty("height");
-      document.documentElement?.style?.removeProperty("height");
+      // 仅在清掉 .ad-splash 后尝试解除 van 滚动锁，不强制改正常页面布局
+      if (document.querySelector(AD_SPLASH_ROOT_SELECTOR)) return;
+      document.body?.classList?.remove("van-overflow-hidden");
+      document.documentElement?.classList?.remove("van-overflow-hidden");
     } catch (_) {}
-  }
-
-  function hideAdElement(el, reason = "广告规则") {
-    if (!el || el.dataset?.txzzAdCleaned === "1" || isPluginUi(el)) return false;
-    el.dataset.txzzAdCleaned = "1";
-    el.setAttribute("aria-hidden", "true");
-    el.style.setProperty("display", "none", "important");
-    el.style.setProperty("visibility", "hidden", "important");
-    el.style.setProperty("opacity", "0", "important");
-    el.style.setProperty("pointer-events", "none", "important");
-    el.style.setProperty("z-index", "-1", "important");
-    state.adCleaner.hidden += 1;
-    markAdCleanerChanged(reason, elementTextForAd(el) || String(el.className || el.tagName));
-    return true;
   }
 
   function removeAdElement(el, reason = "广告规则") {
     if (!el || el.dataset?.txzzAdCleaned === "1" || isPluginUi(el)) return false;
-    const matched = elementTextForAd(el) || String(el.className || el.tagName);
+    // 安全闸：只允许移除带 ad-splash 的节点或其内部节点
+    const ok = el.classList?.contains?.("ad-splash")
+      || /(?:^|\s)ad-splash(?:\s|$)/.test(String(el.className || ""))
+      || Boolean(el.closest?.(".ad-splash, [class~='ad-splash']"));
+    if (!ok) return false;
+    const matched = String(el.className || el.tagName).slice(0, 80);
     el.dataset.txzzAdCleaned = "1";
-    if (/倒计时|countdown|右上角/i.test(reason)) state.adCleaner.countdownHits += 1;
-    if (/开屏|splash|全屏/i.test(reason)) state.adCleaner.splashHits += 1;
+    if (/splash|开屏/i.test(reason)) state.adCleaner.splashHits += 1;
+    if (/倒计时|countdown/i.test(reason)) state.adCleaner.countdownHits += 1;
     try {
-      el.remove();
+      // 优先移除开屏根
+      const root = el.classList?.contains?.("ad-splash") || /(?:^|\s)ad-splash(?:\s|$)/.test(String(el.className || ""))
+        ? el
+        : el.closest?.(".ad-splash, [class~='ad-splash']");
+      (root || el).remove();
       state.adCleaner.removed += 1;
     } catch (_) {
-      hideAdElement(el, reason);
+      try {
+        el.style.setProperty("display", "none", "important");
+        el.style.setProperty("pointer-events", "none", "important");
+        state.adCleaner.hidden += 1;
+      } catch (__) {}
     }
     markAdCleanerChanged(reason, matched);
     unlockAdScrollState();
     return true;
   }
 
-  /** 尝试自动点「跳过/进入/关闭」并清理整层（倒计时结束后按钮仍挡页面的情况） */
-  function tryClickSkipControls(root) {
-    if (!root?.querySelectorAll) return 0;
-    let clicks = 0;
-    try {
-      const candidates = Array.from(root.querySelectorAll("button,a,[role='button'],div,span")).slice(0, 120);
-      for (const node of candidates) {
-        const t = elementTextForAd(node);
-        if (!/^(跳过|进入|关闭|跳过广告|关闭广告|立即进入)$/i.test(t) && !isTopRightCountdownBadge(node)) continue;
-        try {
-          node.click?.();
-          clicks += 1;
-        } catch (_) {}
-      }
-    } catch (_) {}
-    return clicks;
-  }
-
-  function cleanCountdownAndSplash(reason = "开屏倒计时清理") {
+  /** 只清实测到的 .ad-splash 根节点 */
+  function killKnownSiteSplash(reason = "开屏.ad-splash") {
     let changed = 0;
     try {
-      // 0) 站点实测硬杀
-      changed += killKnownSiteSplash(reason);
-
-      // 1) 直接命中右上角倒计时（含纯数字圆点）→ 拔掉整棵全屏广告树
-      const scan = Array.from(document.querySelectorAll("div,span,button,a,p,i,em,b,strong")).slice(0, 1200);
-      const roots = new Set();
-      for (const node of scan) {
-        if (!isTopRightCountdownBadge(node)) continue;
-        const root = findSplashRootFrom(node) || document.querySelector(".ad-splash, .my-swipe.ad-splash");
-        if (root && !isPluginUi(root)) roots.add(root);
-        if (removeAdElement(node, `${reason}·右上角倒计时`)) changed += 1;
-      }
-      roots.forEach((root) => {
-        tryClickSkipControls(root);
-        if (removeAdElement(root, `${reason}·全屏开屏层`)) changed += 1;
-      });
-
-      // 2) 扫描 fixed 全屏层
-      document.querySelectorAll("div,section,aside,dialog").forEach((el) => {
-        if (isPluginUi(el) || el.dataset?.txzzAdCleaned === "1") return;
-        if (!isLaunchAdOverlay(el) && !/ad-splash/.test(String(el.className || ""))) return;
-        tryClickSkipControls(el);
-        if (removeAdElement(el, `${reason}·开屏广告命中`)) changed += 1;
+      document.querySelectorAll(AD_SPLASH_ROOT_SELECTOR).forEach((el) => {
+        if (isPluginUi(el)) return;
+        if (removeAdElement(el, reason)) changed += 1;
       });
     } catch (_) {}
     return changed;
+  }
+
+  /** 主世界只删 .ad-splash，不再猜 fixed 全屏层 */
+  function injectMainWorldSplashKiller() {
+    if (document.documentElement.dataset.txzzSplashKiller === "1") return;
+    document.documentElement.dataset.txzzSplashKiller = "1";
+    const code = `(() => {
+      if (window.__txzzSplashKiller) return;
+      window.__txzzSplashKiller = true;
+      const SEL = ".ad-splash, .my-swipe.ad-splash, .ad-splash.van-swipe, .my-swipe.ad-splash.van-swipe, [class~='ad-splash']";
+      const kill = () => {
+        try {
+          document.querySelectorAll(SEL).forEach((el) => {
+            try { el.remove(); } catch (_) {
+              try {
+                el.style.setProperty("display", "none", "important");
+                el.style.setProperty("pointer-events", "none", "important");
+              } catch (__) {}
+            }
+          });
+          if (!document.querySelector(SEL)) {
+            document.body && document.body.classList.remove("van-overflow-hidden");
+            document.documentElement && document.documentElement.classList.remove("van-overflow-hidden");
+          }
+        } catch (_) {}
+      };
+      kill();
+      setInterval(kill, 400);
+      try {
+        new MutationObserver((muts) => {
+          for (const m of muts) {
+            if (m.type === "attributes" && m.target && /ad-splash/.test(String(m.target.className || ""))) {
+              kill();
+              return;
+            }
+            for (const n of m.addedNodes) {
+              if (!(n instanceof Element)) continue;
+              if (/ad-splash/.test(String(n.className || "")) || n.querySelector?.(".ad-splash, [class~='ad-splash']")) {
+                kill();
+                return;
+              }
+            }
+          }
+        }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+      } catch (_) {}
+    })();`;
+    try {
+      const s = document.createElement("script");
+      s.textContent = code;
+      (document.documentElement || document.head || document.body).appendChild(s);
+      s.remove();
+    } catch (_) {}
   }
 
   function cleanAdElements(reason = "自动清理") {
@@ -1441,35 +360,7 @@ html.txzz-ad-boot body {
     try {
       injectAdCleanerCss();
       injectMainWorldSplashKiller();
-      // 优先：站点硬杀 + 倒计时 + 全屏开屏
-      changed += cleanCountdownAndSplash(reason);
-
-      safeQueryAdContainers().forEach((el) => {
-        if (removeAdElement(el, reason)) changed += 1;
-      });
-      document.querySelectorAll("a[href], iframe, [style*='fixed'], [style*='sticky'], .van-popup, .van-dialog, [class*='popup'], [class*='modal'], [class*='splash'], [class*='launch'], [class*='mask'], [class*='overlay'], [class*='countdown'], [class*='count-down']").forEach((el) => {
-        if (isPluginUi(el)) return;
-        const hit = adElementReason(el);
-        const launchHit = isLaunchAdOverlay(el) ? "开屏广告命中" : "";
-        if (!hit && !launchHit) return;
-        const rect = el.getBoundingClientRect?.();
-        if (!rect || rect.width <= 8 || rect.height <= 8) return;
-        const style = getComputedStyle(el);
-        const isLargeOverlay = ["fixed", "sticky", "absolute"].includes(style.position) && rect.width * rect.height > window.innerWidth * window.innerHeight * 0.08;
-        const text = elementTextForAd(el);
-        const href = String(el.href || el.getAttribute?.("href") || "");
-        if (el.tagName === "IFRAME" || launchHit || isLargeOverlay || /广告/.test(text) || AD_HOST_PATTERN.test(href) || isTopRightCountdownBadge(el)) {
-          if (removeAdElement(el, launchHit || hit)) changed += 1;
-        }
-      });
-      document.querySelectorAll(".van-overlay, [class*='overlay'], [class*='mask']").forEach((el) => {
-        if (isPluginUi(el)) return;
-        const next = el.nextElementSibling;
-        const prev = el.previousElementSibling;
-        if (adElementReason(next) || adElementReason(prev) || isLaunchAdOverlay(next) || isLaunchAdOverlay(prev) || isLaunchAdOverlay(el, true)) {
-          if (hideAdElement(el, "广告遮罩")) changed += 1;
-        }
-      });
+      changed += killKnownSiteSplash(reason);
       unlockAdScrollState();
     } catch (_) {}
     adCleanerBusy = false;
@@ -1479,33 +370,21 @@ html.txzz-ad-boot body {
     }
     if (adCleanerQueued) {
       adCleanerQueued = false;
-      window.setTimeout(() => cleanAdElements("队列补扫"), 30);
+      window.setTimeout(() => cleanAdElements("队列补扫"), 50);
     }
     return changed;
   }
 
+  /** 只拦截 .ad-splash 内部的点击，避免误伤正常导航 */
   function blockAdClick(event) {
-    const target = event.target?.closest?.("a[href], [onclick], button, [role='button'], .ad-item, [class*='ad-'], [class*='splash'], [class*='countdown']");
-    if (!target || isPluginUi(target)) return;
-    const overlay = target.closest?.("[class*='splash'], [class*='launch'], [class*='popup'], [class*='modal'], [class*='overlay'], [class*='countdown'], .van-popup, .van-dialog, .ad-splash");
-    const countdown = isTopRightCountdownBadge(target) || isTopRightCountdownBadge(target.parentElement);
-    const reason = adElementReason(target)
-      || (countdown ? "拦截右上角倒计时点击" : "")
-      || (isLaunchAdOverlay(overlay) ? "拦截开屏广告入口" : "");
-    if (!reason) return;
+    const splash = event.target?.closest?.(".ad-splash, [class~='ad-splash']");
+    if (!splash || isPluginUi(splash)) return;
     event.preventDefault();
     event.stopPropagation();
     if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-    if (countdown) {
-      const root = findSplashRootFrom(target);
-      if (root) removeAdElement(root, "点击倒计时清理开屏");
-      else removeAdElement(target, "点击倒计时徽标");
-    } else if (overlay && isLaunchAdOverlay(overlay)) {
-      removeAdElement(overlay, "点击前清理开屏广告");
-    }
+    removeAdElement(splash, "点击拦截开屏.ad-splash");
     state.adCleaner.blockedClicks += 1;
-    markAdCleanerChanged("拦截广告点击", reason);
-    showToast("已拦截广告跳转", "ok");
+    markAdCleanerChanged("拦截开屏点击", String(splash.className || "").slice(0, 60));
     publishState();
   }
 
@@ -1514,112 +393,36 @@ html.txzz-ad-boot body {
     window.__txzzAdCleanerInstalled = true;
     injectAdCleanerCss();
     injectMainWorldSplashKiller();
-    adBootUntil = Date.now() + AD_BOOT_SWEEP_MS;
-    // 尽早硬杀一次（nuxt loading 结束后 Vue 会挂 .ad-splash）
-    killKnownSiteSplash("安装时硬杀");
+    cleanAdElements("安装清理");
 
-    // 点击 + 触摸都拦，避免移动端点透
     document.addEventListener("click", blockAdClick, true);
     document.addEventListener("pointerdown", blockAdClick, true);
-    document.addEventListener("touchstart", blockAdClick, true);
 
-    // 拦截 window.open 广告跳转（swiper-link 常用）
-    try {
-      const rawOpen = window.open;
-      window.open = function (url, ...rest) {
-        try {
-          const u = String(url || "");
-          if (AD_HOST_PATTERN.test(u) || /guaxtjy|kktx|同城|约炮/i.test(u)) {
-            state.adCleaner.blockedClicks += 1;
-            markAdCleanerChanged("拦截 window.open 广告", u.slice(0, 80));
-            publishState();
-            return null;
-          }
-        } catch (_) {}
-        return rawOpen.apply(this, [url, ...rest]);
-      };
-    } catch (_) {}
-
-    // 首屏：rAF 连续扫 3 秒，尽量在倒计时出现当帧干掉
-    let rafFrames = 0;
-    const bootRaf = () => {
-      cleanAdElements(rafFrames < 5 ? "首帧开屏清理" : "首屏强化清理");
-      rafFrames += 1;
-      if (Date.now() < adBootUntil && rafFrames < 180) {
-        window.requestAnimationFrame(bootRaf);
-      }
-    };
-    try { window.requestAnimationFrame(bootRaf); } catch (_) { cleanAdElements("首屏清理"); }
-
-    // 密集延迟表：覆盖 0~18s 倒计时常见区间
-    const delays = [
-      0, 16, 32, 50, 80, 120, 180, 260, 360, 500, 700, 900,
-      1200, 1500, 1800, 2200, 2800, 3500, 4200, 5000, 6000,
-      7500, 9000, 11000, 13000, 15000, 18000
-    ];
-    delays.forEach((delay) => {
-      window.setTimeout(() => cleanAdElements(delay ? `开屏延迟清理+${delay}ms` : "首屏清理"), delay);
-    });
-
-    // Mutation：只要出现 ad-splash / my-swipe 立即硬杀（不防抖）
-    let moTimer = 0;
+    // 仅当插入/变更涉及 ad-splash 时清理
     try {
       new MutationObserver((mutations) => {
-        let splashLike = false;
         for (const m of mutations) {
-          // class 变成 ad-splash
-          if (m.type === "attributes" && m.target instanceof Element) {
-            const cls = String(m.target.className || "");
-            if (/ad-splash|my-swipe|ad-apps/i.test(cls)) {
-              killKnownSiteSplash("属性突变硬杀");
-              splashLike = true;
-            }
+          if (m.type === "attributes" && m.target instanceof Element && /ad-splash/.test(String(m.target.className || ""))) {
+            cleanAdElements("ad-splash 属性变化");
+            return;
           }
           for (const node of m.addedNodes) {
             if (!(node instanceof Element)) continue;
-            const cls = String(node.className || node.id || "");
-            if (/ad-splash|my-swipe|ad-apps|swiper-link/i.test(cls)
-              || node.querySelector?.(".ad-splash, .my-swipe.ad-splash, a.swiper-link")
-              || isLaunchAdOverlay(node, true)) {
-              killKnownSiteSplash("节点插入硬杀");
-              splashLike = true;
-              break;
+            if (/ad-splash/.test(String(node.className || "")) || node.querySelector?.(".ad-splash, [class~='ad-splash']")) {
+              cleanAdElements("ad-splash 插入");
+              return;
             }
           }
-          if (splashLike) break;
         }
-        if (splashLike) {
-          cleanAdElements("DOM突变开屏清理");
-          return;
-        }
-        window.clearTimeout(moTimer);
-        moTimer = window.setTimeout(() => cleanAdElements("页面变化清理"), 80);
-      }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "id"] });
+      }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
     } catch (_) {}
 
-    // 路由/显示切换：重新开启一段首屏强化
-    const rearmBoot = () => {
-      adBootUntil = Date.now() + Math.min(AD_BOOT_SWEEP_MS, 10000);
-      try { document.documentElement.classList.add("txzz-ad-boot"); } catch (_) {}
-      cleanAdElements("路由再入清理");
-      [0, 100, 300, 800, 1500, 3000].forEach((d) => window.setTimeout(() => cleanAdElements("路由延迟清理"), d));
-      window.setTimeout(() => {
-        try { document.documentElement.classList.remove("txzz-ad-boot"); } catch (_) {}
-      }, 10000);
-    };
-    window.addEventListener("popstate", rearmBoot);
-    window.addEventListener("hashchange", rearmBoot);
-    window.addEventListener("pageshow", rearmBoot);
-    // 常规巡检：永久追杀 .ad-splash（站点会反复重建）+ 通用清理
-    window.setInterval(() => {
-      killKnownSiteSplash("定时硬杀");
-      cleanAdElements(Date.now() < adBootUntil ? "首屏巡检" : "巡检清理");
-    }, 400);
-    // 首屏 CSS 强制隐藏到期后恢复，避免误伤正常 overlay
-    window.setTimeout(() => {
-      try { document.documentElement.classList.remove("txzz-ad-boot"); } catch (_) {}
-      cleanAdElements("首屏结束复扫");
-    }, AD_BOOT_SWEEP_MS);
+    // 轻量巡检：只对付 Vue 重建 .ad-splash
+    window.setInterval(() => cleanAdElements("巡检.ad-splash"), 1200);
+    // 开屏常在 loading 后几秒挂载，补几次定点扫描
+    [0, 500, 1500, 3000, 5000, 8000].forEach((d) => {
+      window.setTimeout(() => cleanAdElements("延迟.ad-splash"), d);
+    });
   }
 
   function publicSession(session = {}) {
