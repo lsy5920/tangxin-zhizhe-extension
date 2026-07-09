@@ -1899,6 +1899,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     const order: PlayerFillMode[] = ["contain", "cover", "fill"];
     const next = order[(order.indexOf(playerFillMode) + 1) % order.length];
     setPlayerFillMode(next);
+    applyAdaptiveVideoLayout(videoRef.current, next);
     window.localStorage.setItem(playerFillStorageKey, next);
     const art = artRef.current;
     if (art) art.notice.show = `填充：${fillModeLabel(next)}`;
