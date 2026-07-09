@@ -168,7 +168,8 @@
     "操作失败"
   ];
   // 广告清理规则集中维护，后续新增站点样式时只扩展这里，避免清理逻辑散落到播放器或面板中。
-  const AD_CLEANER_VERSION = "2026-07-08-ad-clean-v2";
+  // v3：重点强化「首次进入全屏弹窗 + 右上角倒计时」识别与首屏瞬时清理。
+  const AD_CLEANER_VERSION = "2026-07-09-ad-clean-v3";
   const AD_CONTAINER_SELECTORS = [
     ".ad-splash",
     ".ad-apps",
@@ -177,7 +178,12 @@
     ".launch-ad",
     ".open-ad",
     ".popup-ad",
+    ".ad-countdown",
+    ".splash-countdown",
+    ".count-down",
+    ".countdown",
     ".van-overlay:has(+ .ad-splash)",
+    ".van-overlay:has(+ [class*='splash'])",
     "[class*='ad-splash']",
     "[class*='ad-app']",
     "[class*='ad-item']",
@@ -188,6 +194,15 @@
     "[class*='launch-ad']",
     "[class*='open-ad']",
     "[class*='popup-ad']",
+    "[class*='ad-count']",
+    "[class*='countdown']",
+    "[class*='count-down']",
+    "[class*='skip-ad']",
+    "[class*='ad-skip']",
+    "[class*='splash']",
+    "[class*='launch-screen']",
+    "[class*='open-screen']",
+    "[class*='kaiping']",
     "[id*='ad-splash']",
     "[id*='ad_banner']",
     "[id*='ad-banner']",
@@ -195,11 +210,17 @@
     "[id*='splash-ad']",
     "[id*='launch-ad']",
     "[id*='open-ad']",
-    "[id*='popup-ad']"
+    "[id*='popup-ad']",
+    "[id*='countdown']",
+    "[id*='splash']"
   ];
-  const AD_TEXT_PATTERN = /(广告|推广|赞助|app下载|立即下载|立即打开|同城约|博彩|棋牌|皇冠|葡京|bet365|telegram|免费看片|免费海角|免费抖阴)/i;
-  const AD_LAUNCH_TEXT_PATTERN = /(广告|推广|跳过|进入|倒计时|\d+\s*秒|立即下载|立即打开|app下载)/i;
-  const AD_HOST_PATTERN = /(aff-|hjsq|douyin|haijiao|bet365|casino|promo|ads?|telegram|t\.me)/i;
+  const AD_TEXT_PATTERN = /(广告|推广|赞助|app下载|立即下载|立即打开|同城约|博彩|棋牌|皇冠|葡京|bet365|telegram|免费看片|免费海角|免费抖阴|限时优惠|点击下载|安装APP)/i;
+  // 开屏/倒计时文案：覆盖「3」「3s」「3秒」「跳过 3」「倒计时」「进入」等右上角形态
+  const AD_LAUNCH_TEXT_PATTERN = /(广告|推广|跳过|进入|倒计时|关闭广告|跳过广告|立即进入|\d+\s*秒|\d+\s*s|立即下载|立即打开|app下载)/i;
+  const AD_COUNTDOWN_TEXT_PATTERN = /^(跳过|关闭|进入|跳过广告|关闭广告)?\s*\d{1,2}\s*(秒|s|S)?$|^(跳过|关闭|进入|跳过广告|关闭广告)$|倒计时|^\d{1,2}$/;
+  const AD_HOST_PATTERN = /(aff-|hjsq|douyin|haijiao|bet365|casino|promo|ads?|telegram|t\.me|download|apk)/i;
+  // 首屏强化清理窗口（毫秒）：覆盖倒计时 3~5 秒常见区间
+  const AD_BOOT_SWEEP_MS = 18000;
 
   function isCompactViewport() {
     return window.matchMedia?.("(max-width: 720px)")?.matches || window.innerWidth <= 720;
@@ -948,6 +969,8 @@
       removed: 0,
       hidden: 0,
       blockedClicks: 0,
+      countdownHits: 0,
+      splashHits: 0,
       lastRunAt: "",
       lastReason: "",
       lastMatched: "",
@@ -956,12 +979,16 @@
   }
 
   state.adCleaner = createAdCleanerState();
+  let adBootUntil = Date.now() + AD_BOOT_SWEEP_MS;
+  let adCleanerBusy = false;
+  let adCleanerQueued = false;
 
   // 输出给 React 面板的脱敏统计，只记录数量和命中摘要，不保存广告链接的完整跳转上下文。
   function adCleanerStats() {
     return {
       ...state.adCleaner,
-      total: Number(state.adCleaner.removed || 0) + Number(state.adCleaner.hidden || 0) + Number(state.adCleaner.blockedClicks || 0)
+      total: Number(state.adCleaner.removed || 0) + Number(state.adCleaner.hidden || 0) + Number(state.adCleaner.blockedClicks || 0),
+      bootActive: Date.now() < adBootUntil
     };
   }
 
@@ -973,7 +1000,58 @@
 
   function elementTextForAd(el) {
     if (!el) return "";
-    return String(el.innerText || el.textContent || el.getAttribute?.("aria-label") || el.title || "").replace(/\s+/g, " ").trim();
+    // 倒计时节点常用伪元素/子节点，取自身短文案优先
+    const own = String(el.childNodes && el.childNodes.length <= 3
+      ? Array.from(el.childNodes).map((n) => (n.nodeType === 3 ? n.textContent : (n.innerText || n.textContent || ""))).join(" ")
+      : (el.innerText || el.textContent || ""));
+    return String(own || el.getAttribute?.("aria-label") || el.title || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  }
+
+  function viewportMetrics() {
+    const width = window.innerWidth || document.documentElement.clientWidth || 1;
+    const height = window.innerHeight || document.documentElement.clientHeight || 1;
+    return { width, height, area: Math.max(1, width * height) };
+  }
+
+  function isPluginUi(el) {
+    return Boolean(el?.closest?.("#txzz-candy-ui-root, #txzz-panel, .txzz-candy-app"));
+  }
+
+  function injectAdCleanerCss() {
+    if (document.getElementById("txzz-ad-cleaner-style")) return;
+    const style = document.createElement("style");
+    style.id = "txzz-ad-cleaner-style";
+    style.textContent = `
+/* 糖心志者广告清理 v3：优先隐藏开屏/倒计时层，避免首屏闪一下 */
+.ad-splash, .ad-apps, .splash-ad, .launch-ad, .open-ad, .popup-ad,
+[class*="ad-splash"], [class*="splash-ad"], [class*="launch-ad"], [class*="open-ad"],
+[class*="popup-ad"], [class*="ad-app"], [id*="ad-splash"], [id*="splash-ad"],
+[id*="launch-ad"], [id*="open-ad"],
+html.txzz-ad-boot .van-overlay,
+html.txzz-ad-boot [class*="splash"],
+html.txzz-ad-boot [class*="launch"],
+html.txzz-ad-boot [class*="kaiping"],
+html.txzz-ad-boot [class*="open-screen"],
+html.txzz-ad-boot [class*="launch-screen"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  max-height: 0 !important;
+  max-width: 0 !important;
+  overflow: hidden !important;
+  z-index: -1 !important;
+}
+html.txzz-ad-cleaner-active, html.txzz-ad-boot {
+  overflow: auto !important;
+}
+html.txzz-ad-cleaner-active body, html.txzz-ad-boot body {
+  overflow: auto !important;
+}
+`;
+    const root = document.documentElement || document.head || document.body;
+    if (root) root.appendChild(style);
+    try { document.documentElement.classList.add("txzz-ad-boot"); } catch (_) {}
   }
 
   function safeMatchesAdSelector(el) {
@@ -1000,14 +1078,68 @@
     }
   }
 
+  /** 右上角倒计时/跳过徽标：首屏全屏广告的核心特征 */
+  function isTopRightCountdownBadge(el) {
+    if (!el || isPluginUi(el) || el === document.documentElement || el === document.body) return false;
+    const rect = el.getBoundingClientRect?.();
+    if (!rect || rect.width < 10 || rect.height < 10 || rect.width > 220 || rect.height > 120) return false;
+    const { width: vw, height: vh } = viewportMetrics();
+    // 右上角区域：上 28% + 右 45%
+    const inTopRight = rect.top >= -8 && rect.top < vh * 0.28 && rect.right > vw * 0.55 && rect.left > vw * 0.4;
+    if (!inTopRight) return false;
+    const text = elementTextForAd(el);
+    if (!text || text.length > 24) return false;
+    if (AD_COUNTDOWN_TEXT_PATTERN.test(text)) return true;
+    if (/^\d{1,2}$/.test(text) && rect.width <= 96 && rect.height <= 96) return true;
+    const className = String(el.className || "");
+    const id = String(el.id || "");
+    if (/(count|countdown|skip|timer|秒|跳过)/i.test(`${className} ${id}`)) return true;
+    return false;
+  }
+
+  /** 从倒计时节点向上找全屏广告根节点 */
+  function findSplashRootFrom(el) {
+    if (!el) return null;
+    let cur = el;
+    let best = null;
+    const { area: viewportArea } = viewportMetrics();
+    while (cur && cur !== document.body && cur !== document.documentElement) {
+      if (isPluginUi(cur)) break;
+      if (safeMatchesAdSelector(cur) || isLaunchAdOverlay(cur, true)) return cur;
+      try {
+        const style = getComputedStyle(cur);
+        const rect = cur.getBoundingClientRect();
+        const area = rect.width * rect.height;
+        const zIndex = Number.parseInt(style.zIndex || "0", 10) || 0;
+        const elevated = ["fixed", "sticky", "absolute"].includes(style.position) || zIndex >= 20;
+        if (elevated && area >= viewportArea * 0.35) best = cur;
+        if (elevated && area >= viewportArea * 0.72) return cur;
+      } catch (_) {}
+      cur = cur.parentElement;
+    }
+    return best || el.closest?.(".ad-splash, [class*='ad-splash'], [class*='splash'], [class*='launch'], [class*='popup'], [class*='modal'], .van-popup, .van-dialog") || null;
+  }
+
+  function hasTopRightCountdown(root) {
+    if (!root?.querySelectorAll) return false;
+    try {
+      const nodes = root.querySelectorAll("div,span,button,a,p,i,em,b,strong,label");
+      for (const node of nodes) {
+        if (isTopRightCountdownBadge(node)) return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   function adElementReason(el) {
-    if (!el || el === document.documentElement || el === document.body || el.closest?.("#txzz-candy-ui-root")) return "";
+    if (!el || el === document.documentElement || el === document.body || isPluginUi(el)) return "";
     const className = String(el.className || "");
     const id = String(el.id || "");
     const text = elementTextForAd(el);
     const href = String(el.href || el.getAttribute?.("href") || "");
     const signature = `${id} ${className} ${text} ${href}`;
     if (safeMatchesAdSelector(el)) return `规则命中：${className || id || el.tagName}`;
+    if (isTopRightCountdownBadge(el)) return `右上角倒计时：${text || className || el.tagName}`;
     if (href && AD_HOST_PATTERN.test(href)) return `外链命中：${href}`;
     if (AD_TEXT_PATTERN.test(signature)) {
       const rect = el.getBoundingClientRect?.();
@@ -1017,54 +1149,69 @@
     return "";
   }
 
-  function isLaunchAdOverlay(el) {
-    if (!el || el === document.documentElement || el === document.body || el.closest?.("#txzz-candy-ui-root")) return false;
+  function isLaunchAdOverlay(el, loose = false) {
+    if (!el || el === document.documentElement || el === document.body || isPluginUi(el)) return false;
     const rect = el.getBoundingClientRect?.();
     if (!rect) return false;
-    const viewportArea = Math.max(1, (window.innerWidth || document.documentElement.clientWidth || 1) * (window.innerHeight || document.documentElement.clientHeight || 1));
+    const { area: viewportArea } = viewportMetrics();
     const area = rect.width * rect.height;
-    if (rect.width < 120 || rect.height < 120 || area < viewportArea * 0.18) return false;
-    const style = getComputedStyle(el);
+    if (rect.width < 100 || rect.height < 100 || area < viewportArea * (loose ? 0.12 : 0.16)) return false;
+    let style;
+    try { style = getComputedStyle(el); } catch (_) { return false; }
     const zIndex = Number.parseInt(style.zIndex || "0", 10) || 0;
-    const elevated = ["fixed", "sticky", "absolute"].includes(style.position) || zIndex >= 50 || area > viewportArea * 0.55;
+    const elevated = ["fixed", "sticky", "absolute"].includes(style.position) || zIndex >= 40 || area > viewportArea * 0.5;
     if (!elevated) return false;
     const text = elementTextForAd(el);
     const className = String(el.className || "");
     const id = String(el.id || "");
     const href = String(el.href || el.getAttribute?.("href") || "");
-    const html = String(el.innerHTML || "").slice(0, 1600);
+    const html = String(el.innerHTML || "").slice(0, 2000);
     const hasMedia = Boolean(el.querySelector?.("img, picture, video, iframe, canvas, [style*='background-image']"));
     const hasAdLink = Boolean(el.querySelector?.("a[href]")) || AD_HOST_PATTERN.test(href + " " + html);
     const hasLaunchText = AD_LAUNCH_TEXT_PATTERN.test(`${text} ${className} ${id}`);
-    const hasEnterButton = Boolean(Array.from(el.querySelectorAll?.("button,a,[role='button'],div,span") || []).some((node) => /^(进入|跳过|关闭|立即打开|立即下载|\d+\s*秒)$/.test(elementTextForAd(node))));
-    return hasLaunchText && (hasMedia || hasAdLink || hasEnterButton || area > viewportArea * 0.72);
+    const countdown = hasTopRightCountdown(el);
+    const hasEnterButton = Boolean(Array.from(el.querySelectorAll?.("button,a,[role='button'],div,span") || []).slice(0, 80).some((node) => {
+      const t = elementTextForAd(node);
+      return /^(进入|跳过|关闭|立即打开|立即下载|跳过广告|关闭广告|\d+\s*秒|\d+\s*s|\d{1,2})$/i.test(t);
+    }));
+    // 右上角倒计时 + 大遮罩：直接判定为开屏广告（站点常见形态）
+    if (countdown && (hasMedia || hasAdLink || hasEnterButton || area > viewportArea * 0.45 || hasLaunchText)) return true;
+    if (loose && countdown && area > viewportArea * 0.28) return true;
+    return hasLaunchText && (hasMedia || hasAdLink || hasEnterButton || area > viewportArea * 0.72 || countdown);
   }
 
   function unlockAdScrollState() {
     try {
-      document.body?.classList?.remove("van-overflow-hidden");
-      document.documentElement?.classList?.remove("van-overflow-hidden");
+      document.body?.classList?.remove("van-overflow-hidden", "overflow-hidden");
+      document.documentElement?.classList?.remove("van-overflow-hidden", "overflow-hidden");
       document.body?.style?.removeProperty("overflow");
       document.documentElement?.style?.removeProperty("overflow");
+      document.body?.style?.removeProperty("position");
+      document.body?.style?.removeProperty("height");
+      document.documentElement?.style?.removeProperty("height");
     } catch (_) {}
   }
 
   function hideAdElement(el, reason = "广告规则") {
-    if (!el || el.dataset?.txzzAdCleaned === "1") return false;
+    if (!el || el.dataset?.txzzAdCleaned === "1" || isPluginUi(el)) return false;
     el.dataset.txzzAdCleaned = "1";
     el.setAttribute("aria-hidden", "true");
     el.style.setProperty("display", "none", "important");
     el.style.setProperty("visibility", "hidden", "important");
+    el.style.setProperty("opacity", "0", "important");
     el.style.setProperty("pointer-events", "none", "important");
+    el.style.setProperty("z-index", "-1", "important");
     state.adCleaner.hidden += 1;
     markAdCleanerChanged(reason, elementTextForAd(el) || String(el.className || el.tagName));
     return true;
   }
 
   function removeAdElement(el, reason = "广告规则") {
-    if (!el || el.dataset?.txzzAdCleaned === "1") return false;
+    if (!el || el.dataset?.txzzAdCleaned === "1" || isPluginUi(el)) return false;
     const matched = elementTextForAd(el) || String(el.className || el.tagName);
     el.dataset.txzzAdCleaned = "1";
+    if (/倒计时|countdown|右上角/i.test(reason)) state.adCleaner.countdownHits += 1;
+    if (/开屏|splash|全屏/i.test(reason)) state.adCleaner.splashHits += 1;
     try {
       el.remove();
       state.adCleaner.removed += 1;
@@ -1076,14 +1223,71 @@
     return true;
   }
 
-  function cleanAdElements(reason = "自动清理") {
-    if (!state.adCleaner.enabled) return 0;
+  /** 尝试自动点「跳过/进入/关闭」并清理整层（倒计时结束后按钮仍挡页面的情况） */
+  function tryClickSkipControls(root) {
+    if (!root?.querySelectorAll) return 0;
+    let clicks = 0;
+    try {
+      const candidates = Array.from(root.querySelectorAll("button,a,[role='button'],div,span")).slice(0, 120);
+      for (const node of candidates) {
+        const t = elementTextForAd(node);
+        if (!/^(跳过|进入|关闭|跳过广告|关闭广告|立即进入)$/i.test(t) && !isTopRightCountdownBadge(node)) continue;
+        try {
+          node.click?.();
+          clicks += 1;
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return clicks;
+  }
+
+  function cleanCountdownAndSplash(reason = "开屏倒计时清理") {
     let changed = 0;
     try {
+      // 1) 直接命中右上角倒计时 → 拔掉整棵全屏广告树
+      const scan = Array.from(document.querySelectorAll("div,span,button,a,p,i,em,b,strong")).slice(0, 800);
+      const roots = new Set();
+      for (const node of scan) {
+        if (!isTopRightCountdownBadge(node)) continue;
+        const root = findSplashRootFrom(node);
+        if (root && !isPluginUi(root)) roots.add(root);
+        // 单独徽标也干掉，防止残留数字浮层
+        if (removeAdElement(node, `${reason}·右上角倒计时`)) changed += 1;
+      }
+      roots.forEach((root) => {
+        tryClickSkipControls(root);
+        if (removeAdElement(root, `${reason}·全屏开屏层`)) changed += 1;
+      });
+
+      // 2) 扫描 fixed 全屏层
+      document.querySelectorAll("div,section,aside,dialog").forEach((el) => {
+        if (isPluginUi(el) || el.dataset?.txzzAdCleaned === "1") return;
+        if (!isLaunchAdOverlay(el)) return;
+        tryClickSkipControls(el);
+        if (removeAdElement(el, `${reason}·开屏广告命中`)) changed += 1;
+      });
+    } catch (_) {}
+    return changed;
+  }
+
+  function cleanAdElements(reason = "自动清理") {
+    if (!state.adCleaner.enabled) return 0;
+    if (adCleanerBusy) {
+      adCleanerQueued = true;
+      return 0;
+    }
+    adCleanerBusy = true;
+    let changed = 0;
+    try {
+      injectAdCleanerCss();
+      // 优先：倒计时 + 全屏开屏
+      changed += cleanCountdownAndSplash(reason);
+
       safeQueryAdContainers().forEach((el) => {
         if (removeAdElement(el, reason)) changed += 1;
       });
-      document.querySelectorAll("a[href], iframe, [style*='fixed'], [style*='sticky'], .van-popup, .van-dialog, [class*='popup'], [class*='modal'], [class*='splash'], [class*='launch'], [class*='mask'], [class*='overlay']").forEach((el) => {
+      document.querySelectorAll("a[href], iframe, [style*='fixed'], [style*='sticky'], .van-popup, .van-dialog, [class*='popup'], [class*='modal'], [class*='splash'], [class*='launch'], [class*='mask'], [class*='overlay'], [class*='countdown'], [class*='count-down']").forEach((el) => {
+        if (isPluginUi(el)) return;
         const hit = adElementReason(el);
         const launchHit = isLaunchAdOverlay(el) ? "开屏广告命中" : "";
         if (!hit && !launchHit) return;
@@ -1093,34 +1297,51 @@
         const isLargeOverlay = ["fixed", "sticky", "absolute"].includes(style.position) && rect.width * rect.height > window.innerWidth * window.innerHeight * 0.08;
         const text = elementTextForAd(el);
         const href = String(el.href || el.getAttribute?.("href") || "");
-        if (el.tagName === "IFRAME" || launchHit || isLargeOverlay || /广告/.test(text) || AD_HOST_PATTERN.test(href)) {
+        if (el.tagName === "IFRAME" || launchHit || isLargeOverlay || /广告/.test(text) || AD_HOST_PATTERN.test(href) || isTopRightCountdownBadge(el)) {
           if (removeAdElement(el, launchHit || hit)) changed += 1;
         }
       });
-      document.querySelectorAll(".van-overlay").forEach((el) => {
+      document.querySelectorAll(".van-overlay, [class*='overlay'], [class*='mask']").forEach((el) => {
+        if (isPluginUi(el)) return;
         const next = el.nextElementSibling;
         const prev = el.previousElementSibling;
-        if (adElementReason(next) || adElementReason(prev) || isLaunchAdOverlay(next) || isLaunchAdOverlay(prev)) {
+        if (adElementReason(next) || adElementReason(prev) || isLaunchAdOverlay(next) || isLaunchAdOverlay(prev) || isLaunchAdOverlay(el, true)) {
           if (hideAdElement(el, "广告遮罩")) changed += 1;
         }
       });
+      unlockAdScrollState();
     } catch (_) {}
+    adCleanerBusy = false;
     if (changed) {
       document.documentElement.classList.add("txzz-ad-cleaner-active");
       publishState();
+    }
+    if (adCleanerQueued) {
+      adCleanerQueued = false;
+      window.setTimeout(() => cleanAdElements("队列补扫"), 30);
     }
     return changed;
   }
 
   function blockAdClick(event) {
-    const target = event.target?.closest?.("a[href], [onclick], button, [role='button'], .ad-item");
-    const overlay = target?.closest?.("[class*='splash'], [class*='launch'], [class*='popup'], [class*='modal'], [class*='overlay'], .van-popup, .van-dialog");
-    const reason = adElementReason(target) || (isLaunchAdOverlay(overlay) ? "拦截开屏广告入口" : "");
+    const target = event.target?.closest?.("a[href], [onclick], button, [role='button'], .ad-item, [class*='ad-'], [class*='splash'], [class*='countdown']");
+    if (!target || isPluginUi(target)) return;
+    const overlay = target.closest?.("[class*='splash'], [class*='launch'], [class*='popup'], [class*='modal'], [class*='overlay'], [class*='countdown'], .van-popup, .van-dialog, .ad-splash");
+    const countdown = isTopRightCountdownBadge(target) || isTopRightCountdownBadge(target.parentElement);
+    const reason = adElementReason(target)
+      || (countdown ? "拦截右上角倒计时点击" : "")
+      || (isLaunchAdOverlay(overlay) ? "拦截开屏广告入口" : "");
     if (!reason) return;
     event.preventDefault();
     event.stopPropagation();
     if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-    if (overlay && isLaunchAdOverlay(overlay)) removeAdElement(overlay, "点击前清理开屏广告");
+    if (countdown) {
+      const root = findSplashRootFrom(target);
+      if (root) removeAdElement(root, "点击倒计时清理开屏");
+      else removeAdElement(target, "点击倒计时徽标");
+    } else if (overlay && isLaunchAdOverlay(overlay)) {
+      removeAdElement(overlay, "点击前清理开屏广告");
+    }
     state.adCleaner.blockedClicks += 1;
     markAdCleanerChanged("拦截广告点击", reason);
     showToast("已拦截广告跳转", "ok");
@@ -1130,13 +1351,85 @@
   function installAdCleaner() {
     if (window.__txzzAdCleanerInstalled) return;
     window.__txzzAdCleanerInstalled = true;
+    injectAdCleanerCss();
+    adBootUntil = Date.now() + AD_BOOT_SWEEP_MS;
+
+    // 点击 + 触摸都拦，避免移动端点透
     document.addEventListener("click", blockAdClick, true);
-    const schedule = () => window.setTimeout(() => cleanAdElements("页面变化清理"), 60);
+    document.addEventListener("pointerdown", blockAdClick, true);
+    document.addEventListener("touchstart", blockAdClick, true);
+
+    // 首屏：rAF 连续扫 3 秒，尽量在倒计时出现当帧干掉
+    let rafFrames = 0;
+    const bootRaf = () => {
+      cleanAdElements(rafFrames < 5 ? "首帧开屏清理" : "首屏强化清理");
+      rafFrames += 1;
+      if (Date.now() < adBootUntil && rafFrames < 180) {
+        window.requestAnimationFrame(bootRaf);
+      }
+    };
+    try { window.requestAnimationFrame(bootRaf); } catch (_) { cleanAdElements("首屏清理"); }
+
+    // 密集延迟表：覆盖 0~18s 倒计时常见区间
+    const delays = [
+      0, 16, 32, 50, 80, 120, 180, 260, 360, 500, 700, 900,
+      1200, 1500, 1800, 2200, 2800, 3500, 4200, 5000, 6000,
+      7500, 9000, 11000, 13000, 15000, 18000
+    ];
+    delays.forEach((delay) => {
+      window.setTimeout(() => cleanAdElements(delay ? `开屏延迟清理+${delay}ms` : "首屏清理"), delay);
+    });
+
+    // Mutation：首屏窗口内立即清理；之后轻量防抖
+    let moTimer = 0;
     try {
-      new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+      new MutationObserver((mutations) => {
+        const boot = Date.now() < adBootUntil;
+        let splashLike = boot;
+        if (!splashLike) {
+          for (const m of mutations) {
+            for (const node of m.addedNodes) {
+              if (!(node instanceof Element)) continue;
+              const cls = String(node.className || node.id || "");
+              if (/(splash|launch|ad-|countdown|overlay|popup|modal)/i.test(cls) || isLaunchAdOverlay(node, true)) {
+                splashLike = true;
+                break;
+              }
+            }
+            if (splashLike) break;
+          }
+        }
+        if (splashLike) {
+          cleanAdElements("DOM突变开屏清理");
+          return;
+        }
+        window.clearTimeout(moTimer);
+        moTimer = window.setTimeout(() => cleanAdElements("页面变化清理"), 80);
+      }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "id"] });
     } catch (_) {}
-    [0, 120, 300, 700, 1200, 2000, 3000, 4500, 6000, 9000, 12000].forEach((delay) => window.setTimeout(() => cleanAdElements(delay ? "开屏广告延迟清理" : "首屏清理"), delay));
-    window.setInterval(() => cleanAdElements("巡检清理"), 2500);
+
+    // 路由/显示切换：重新开启一段首屏强化
+    const rearmBoot = () => {
+      adBootUntil = Date.now() + Math.min(AD_BOOT_SWEEP_MS, 10000);
+      try { document.documentElement.classList.add("txzz-ad-boot"); } catch (_) {}
+      cleanAdElements("路由再入清理");
+      [0, 100, 300, 800, 1500, 3000].forEach((d) => window.setTimeout(() => cleanAdElements("路由延迟清理"), d));
+      window.setTimeout(() => {
+        try { document.documentElement.classList.remove("txzz-ad-boot"); } catch (_) {}
+      }, 10000);
+    };
+    window.addEventListener("popstate", rearmBoot);
+    window.addEventListener("hashchange", rearmBoot);
+    window.addEventListener("pageshow", rearmBoot);
+    // 常规巡检：首屏过后也保持清扫连环弹窗（间隔固定，避免 setInterval 只取一次 delay）
+    window.setInterval(() => {
+      cleanAdElements(Date.now() < adBootUntil ? "首屏巡检" : "巡检清理");
+    }, 700);
+    // 首屏 CSS 强制隐藏到期后恢复，避免误伤正常 overlay
+    window.setTimeout(() => {
+      try { document.documentElement.classList.remove("txzz-ad-boot"); } catch (_) {}
+      cleanAdElements("首屏结束复扫");
+    }, AD_BOOT_SWEEP_MS);
   }
 
   function publicSession(session = {}) {

@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.2.0",
-  "build": "2026-07-09-2305",
-  "releasedAt": "2026-07-09 23:05",
+  "version": "3.2.1",
+  "build": "2026-07-09-2320",
+  "releasedAt": "2026-07-09 23:20",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2320",
+      "type": "优化",
+      "title": "广告清理 v3 · 首屏全屏倒计时弹窗强化",
+      "detail": "重点优化首次进入时的全屏广告：新增右上角倒计时/跳过徽标识别，向上定位整层开屏根节点并移除；首屏 18 秒 rAF+密集延迟+Mutation 即时清扫；注入 CSS 先藏 splash；点击/触摸拦截倒计时与开屏入口；设置页展示开屏层/倒计时命中统计。"
+    },
     {
       "id": "2026-07-09-2305",
       "type": "删除",

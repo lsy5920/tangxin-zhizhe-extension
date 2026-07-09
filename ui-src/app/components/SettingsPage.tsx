@@ -459,7 +459,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
 
       <div className="space-y-3 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
         <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><Ban size={14} className="text-emerald-500" /> 广告清理</h3>
-        <p className="text-xs leading-relaxed text-purple-400">自动处理开屏倒计时广告、进入按钮、连环弹窗、页面广告宫格、可疑广告外链和遮挡层，减少进入视频详情前的干扰。</p>
+        <p className="text-xs leading-relaxed text-purple-400">v3 强化首屏全屏弹窗：重点识别右上角倒计时/跳过徽标并整层移除，同时清理进入按钮、连环弹窗、广告宫格和外链遮挡。</p>
         <div className="grid grid-cols-3 gap-2 text-center">
           {[
             { label: "总处理", value: adCleanerTotal },
@@ -472,9 +472,19 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
             </div>
           ))}
         </div>
+        <div className="grid grid-cols-2 gap-2 text-center">
+          <div className="rounded-xl bg-sky-50 px-2 py-2">
+            <p className="text-[10px] text-sky-500">开屏层</p>
+            <p className="text-base font-bold text-purple-800">{Number(adCleaner.splashHits || 0)}</p>
+          </div>
+          <div className="rounded-xl bg-amber-50 px-2 py-2">
+            <p className="text-[10px] text-amber-500">倒计时</p>
+            <p className="text-base font-bold text-purple-800">{Number(adCleaner.countdownHits || 0)}</p>
+          </div>
+        </div>
         <div className="rounded-xl bg-purple-50 px-3 py-2 text-[10px] leading-relaxed text-purple-400">
-          <p>规则数量：{Number(adCleaner.selectors || 0)} 条</p>
-          <p>最近清理：{adCleanerLastRun}</p>
+          <p>规则数量：{Number(adCleaner.selectors || 0)} 条 · 引擎 {String(adCleaner.version || "v3")}</p>
+          <p>最近清理：{adCleanerLastRun}{adCleaner.bootActive ? " · 首屏强化中" : ""}</p>
           <p className="line-clamp-2">命中原因：{adCleaner.lastReason || "暂无"}{adCleaner.lastMatched ? ` / ${adCleaner.lastMatched}` : ""}</p>
         </div>
         <button onClick={() => onAction("clean-ads")} className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-400 to-sky-500 py-2 text-xs font-medium text-white shadow-sm transition-transform active:scale-95">
