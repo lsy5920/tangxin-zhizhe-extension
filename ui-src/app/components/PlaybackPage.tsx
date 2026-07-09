@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Artplayer from "artplayer";
 import Hls from "hls.js";
-import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, Maximize2, Minimize2, MoreHorizontal, Pause, Play, Ratio, RectangleHorizontal, RectangleVertical, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SkipBack, SkipForward, SlidersHorizontal, SortDesc, Sun, Timer, Volume2, VolumeX, Wifi, Zap } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle, ChevronLeft, ChevronRight, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, Lock, Maximize2, Minimize2, MoreHorizontal, Pause, Play, Ratio, RectangleHorizontal, RectangleVertical, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SkipBack, SkipForward, SlidersHorizontal, SortDesc, Sun, Timer, Unlock, Volume2, VolumeX, Wifi, Zap } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 
@@ -66,6 +66,13 @@ type PlayerFullscreenTune = {
   safeLeft: number;
   safeRight: number;
   label: string;
+};
+
+// 全屏手势提示层：音量、亮度、快进快退统一用同一套视觉反馈，减少画面遮挡。
+type PlayerGestureHud = {
+  kind: "volume" | "brightness" | "seek-back" | "seek-forward" | "lock" | "unlock" | "";
+  text: string;
+  percent?: number;
 };
 
 type FullscreenTarget = HTMLElement & {
@@ -687,6 +694,11 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const [playerFullscreenDiagnostic, setPlayerFullscreenDiagnostic] = useState<PlayerFullscreenDiagnostic>(emptyFullscreenDiagnostic);
   const [playerFullscreenTune, setPlayerFullscreenTune] = useState<PlayerFullscreenTune>(emptyFullscreenTune);
   const [playerBuffering, setPlayerBuffering] = useState(false);
+  // 全屏锁屏：锁住后只保留解锁按钮，避免横屏躺着看时误触控制层。
+  const [playerUiLocked, setPlayerUiLocked] = useState(false);
+  // 全屏顶部诊断徽标默认短时显示，随后收起，减少观影干扰。
+  const [playerFullscreenMetaVisible, setPlayerFullscreenMetaVisible] = useState(true);
+  const [playerGestureHud, setPlayerGestureHud] = useState<PlayerGestureHud>({ kind: "", text: "" });
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerShellRef = useRef<HTMLDivElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
@@ -702,6 +714,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const controlsRevealSuppressedUntilRef = useRef(0);
   const controlsTimerRef = useRef<number | undefined>();
   const cursorTimerRef = useRef<number | undefined>();
+  const gestureHudTimerRef = useRef<number | undefined>();
+  const fullscreenMetaTimerRef = useRef<number | undefined>();
   const playerDiagnosticReportRef = useRef("");
   const fullscreenIntentRef = useRef(0);
   // 播放器运行时快照：给 ArtPlayer 事件回调和右键菜单读取最新界面状态，避免闭包里的旧值。
@@ -752,11 +766,14 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const currentQualityLabel = playerQualityLevel < 0
     ? (playerQualities.length ? "自动清晰度" : "清晰度自动")
     : playerQualities.find((item) => item.level === playerQualityLevel)?.label || `档位 ${playerQualityLevel + 1}`;
-  const controlsShouldStayVisible = !previewUrl || playerStats.paused || playerMoreOpen || Boolean(playerError) || Boolean(holdSeekHint);
-  const playerControlsTone = playerFullscreenActive ? "inset-x-3 bottom-3 sm:inset-x-8 sm:bottom-6" : "inset-x-2 bottom-2";
+  const controlsShouldStayVisible = !previewUrl || playerStats.paused || playerMoreOpen || Boolean(playerError) || Boolean(holdSeekHint) || playerUiLocked;
+  // 全屏改成贴底渐变控制层，普通模式仍用悬浮圆角面板，减少“画面里再套一层框”的感觉。
+  const playerControlsTone = playerFullscreenActive
+    ? "inset-x-0 bottom-0 rounded-none bg-gradient-to-t from-black/92 via-black/58 to-transparent px-3 pb-[max(14px,env(safe-area-inset-bottom))] pt-12 sm:px-6 sm:pb-6"
+    : "inset-x-2 bottom-2 rounded-2xl bg-black/68 p-2 shadow-lg backdrop-blur-md ring-1 ring-white/10";
   // 全屏观影时主控按钮、图标和进度条整体放大：PC 大屏更醒目，手机横屏更好点按。
-  const playerControlButtonTone = playerFullscreenActive ? "min-h-11 text-xs" : "min-h-9 text-[11px]";
-  const playerControlIconSize = playerFullscreenActive ? 15 : 12;
+  const playerControlButtonTone = playerFullscreenActive ? "min-h-12 text-xs sm:min-h-11" : "min-h-9 text-[11px]";
+  const playerControlIconSize = playerFullscreenActive ? 17 : 12;
   const playerStageStyle = {
     "--txzz-player-viewport-width": `${playerViewportSize.width || 0}px`,
     "--txzz-player-viewport-height": `${playerViewportSize.height || 0}px`,
@@ -818,6 +835,25 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     }
   };
 
+  const showPlayerGestureHud = (next: PlayerGestureHud, duration = 900) => {
+    if (gestureHudTimerRef.current) window.clearTimeout(gestureHudTimerRef.current);
+    setPlayerGestureHud(next);
+    if (!next.kind) return;
+    gestureHudTimerRef.current = window.setTimeout(() => {
+      setPlayerGestureHud({ kind: "", text: "" });
+      gestureHudTimerRef.current = undefined;
+    }, duration);
+  };
+
+  const scheduleFullscreenMetaHide = () => {
+    if (fullscreenMetaTimerRef.current) window.clearTimeout(fullscreenMetaTimerRef.current);
+    setPlayerFullscreenMetaVisible(true);
+    fullscreenMetaTimerRef.current = window.setTimeout(() => {
+      setPlayerFullscreenMetaVisible(false);
+      fullscreenMetaTimerRef.current = undefined;
+    }, 2800);
+  };
+
   const refreshFullscreenDiagnostic = () => {
     setPlayerFullscreenDiagnostic(
       measureFullscreenDiagnostic(playerShellRef.current, fullscreenHostElement(), playerImmersive || browserFullscreenActive, videoRef.current)
@@ -849,7 +885,12 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       art.notice.show = nextMuted ? "已静音" : `音量：${Math.round(volume * 100)}%`;
       setPlayerStats(playerSnapshot(art.video));
     }
-    revealPlayerControls(true);
+    showPlayerGestureHud({
+      kind: "volume",
+      text: nextMuted || volume <= 0.001 ? "已静音" : `音量 ${Math.round(volume * 100)}%`,
+      percent: nextMuted ? 0 : Math.round(volume * 100)
+    });
+    if (!playerUiLocked) revealPlayerControls(true);
   };
 
   const applyPlayerBrightness = (nextBrightness: number) => {
@@ -857,18 +898,31 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     setPlayerBrightness(brightness);
     window.localStorage.setItem(playerBrightnessStorageKey, String(brightness));
     if (artRef.current) artRef.current.notice.show = `亮度：${brightness}%`;
-    revealPlayerControls(true);
+    showPlayerGestureHud({
+      kind: "brightness",
+      text: `亮度 ${brightness}%`,
+      percent: Math.round(((brightness - 60) / 80) * 100)
+    });
+    if (!playerUiLocked) revealPlayerControls(true);
   };
 
   const revealPlayerControls = (keepVisible = false) => {
+    // 锁屏时不展开完整控制层，只允许解锁入口出现。
+    if (playerUiLocked) {
+      setPlayerControlsVisible(false);
+      setPlayerCursorHidden(playerFullscreenActive);
+      clearControlsTimer();
+      return;
+    }
     // 播放时控制层短暂停留，暂停、报错或菜单展开时保持显示，避免按钮长期遮挡画面。
     setPlayerControlsVisible(true);
     setPlayerCursorHidden(false);
     clearControlsTimer();
     if (cursorTimerRef.current) window.clearTimeout(cursorTimerRef.current);
+    if (playerFullscreenActive) scheduleFullscreenMetaHide();
     if (keepVisible || controlsPinnedByClickRef.current || controlsShouldStayVisible || !previewUrl) return;
-    controlsTimerRef.current = window.setTimeout(() => setPlayerControlsVisible(false), playerFullscreenActive ? 2400 : 3200);
-    if (playerFullscreenActive) cursorTimerRef.current = window.setTimeout(() => setPlayerCursorHidden(true), 2600);
+    controlsTimerRef.current = window.setTimeout(() => setPlayerControlsVisible(false), playerFullscreenActive ? 2200 : 3000);
+    if (playerFullscreenActive) cursorTimerRef.current = window.setTimeout(() => setPlayerCursorHidden(true), 2400);
   };
 
   const hidePlayerControlsBySurfaceClick = () => {
@@ -878,26 +932,48 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     clearControlsTimer();
     if (cursorTimerRef.current) window.clearTimeout(cursorTimerRef.current);
     setPlayerMoreOpen(false);
-    if (!previewUrl || playerError || holdSeekHint) {
-      setPlayerControlsVisible(true);
-      setPlayerCursorHidden(false);
+    if (!previewUrl || playerError || holdSeekHint || playerUiLocked) {
+      setPlayerControlsVisible(playerUiLocked ? false : true);
+      setPlayerCursorHidden(playerFullscreenActive && (playerUiLocked || Boolean(previewUrl)));
       return;
     }
     setPlayerControlsVisible(false);
     setPlayerCursorHidden(playerFullscreenActive);
+    setPlayerFullscreenMetaVisible(false);
   };
 
   const revealPlayerControlsBySurfaceClick = () => {
     // 单击唤醒采用固定显示，下一次点击画面再隐藏，避免刚点开菜单就被自动隐藏打断。
+    if (playerUiLocked) return;
     controlsPinnedByClickRef.current = true;
     controlsRevealSuppressedUntilRef.current = 0;
     revealPlayerControls(true);
   };
 
   const maybeRevealPlayerControls = () => {
+    if (playerUiLocked) return;
     if (Date.now() < controlsRevealSuppressedUntilRef.current) return;
     if (!playerControlsVisible && previewUrl && !playerError && !holdSeekHint) return;
     revealPlayerControls();
+  };
+
+  const setPlayerControlsLock = (locked: boolean) => {
+    setPlayerUiLocked(locked);
+    setPlayerMoreOpen(false);
+    controlsPinnedByClickRef.current = false;
+    if (locked) {
+      clearControlsTimer();
+      if (cursorTimerRef.current) window.clearTimeout(cursorTimerRef.current);
+      setPlayerControlsVisible(false);
+      setPlayerCursorHidden(true);
+      setPlayerFullscreenMetaVisible(false);
+      showPlayerGestureHud({ kind: "lock", text: "已锁定控制层", percent: 100 }, 1200);
+      setPlayerStatus("控制层已锁定，点击右下角解锁");
+    } else {
+      showPlayerGestureHud({ kind: "unlock", text: "已解锁控制层", percent: 100 }, 1000);
+      revealPlayerControls(true);
+      setPlayerStatus("控制层已解锁");
+    }
   };
 
   useEffect(() => {
@@ -995,16 +1071,34 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
 
   useEffect(() => {
     clearControlsTimer();
+    if (playerUiLocked) {
+      setPlayerControlsVisible(false);
+      setPlayerCursorHidden(true);
+      return () => {
+        clearControlsTimer();
+        if (cursorTimerRef.current) window.clearTimeout(cursorTimerRef.current);
+      };
+    }
     setPlayerControlsVisible(true);
+    if (playerFullscreenActive) scheduleFullscreenMetaHide();
     if (!controlsShouldStayVisible && previewUrl) {
-      controlsTimerRef.current = window.setTimeout(() => setPlayerControlsVisible(false), playerFullscreenActive ? 2400 : 3200);
-      if (playerFullscreenActive) cursorTimerRef.current = window.setTimeout(() => setPlayerCursorHidden(true), 2600);
+      controlsTimerRef.current = window.setTimeout(() => setPlayerControlsVisible(false), playerFullscreenActive ? 2200 : 3000);
+      if (playerFullscreenActive) cursorTimerRef.current = window.setTimeout(() => setPlayerCursorHidden(true), 2400);
     }
     return () => {
       clearControlsTimer();
       if (cursorTimerRef.current) window.clearTimeout(cursorTimerRef.current);
     };
-  }, [controlsShouldStayVisible, previewUrl, playerFullscreenActive]);
+  }, [controlsShouldStayVisible, previewUrl, playerFullscreenActive, playerUiLocked]);
+
+  useEffect(() => {
+    // 退出全屏时自动解除锁屏，避免普通面板模式下控制层被锁死。
+    if (!playerFullscreenActive && playerUiLocked) setPlayerUiLocked(false);
+    if (playerFullscreenActive) scheduleFullscreenMetaHide();
+    return () => {
+      if (fullscreenMetaTimerRef.current) window.clearTimeout(fullscreenMetaTimerRef.current);
+    };
+  }, [playerFullscreenActive]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -1013,10 +1107,16 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       const key = event.key.toLowerCase();
       if (key === "escape" && playerFullscreenActive) {
         event.preventDefault();
+        // 锁屏时先解锁，再按一次 Esc 才退出全屏，避免躺着看片误触立刻退出。
+        if (playerUiLocked) {
+          setPlayerControlsLock(false);
+          return;
+        }
         exitPlayerFullscreen().catch(() => setPlayerImmersive(false));
         return;
       }
       if (!previewUrl || !artRef.current) return;
+      if (playerUiLocked && key !== "l") return;
       if (key === " " || key === "k") {
         event.preventDefault();
         togglePlayerPlay();
@@ -1038,6 +1138,9 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       } else if (key === "m") {
         event.preventDefault();
         applyPlayerVolume(playerVolume || 0.8, !playerMuted);
+      } else if (key === "l" && playerFullscreenActive) {
+        event.preventDefault();
+        setPlayerControlsLock(!playerUiLocked);
       } else if (key === "f") {
         event.preventDefault();
         togglePlayerFullscreen().catch((err) => setPlayerError(err instanceof Error ? err.message : String(err)));
@@ -1045,7 +1148,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [playerFullscreenActive, playerMuted, playerSeekStep, playerVolume, previewUrl]);
+  }, [playerFullscreenActive, playerMuted, playerSeekStep, playerVolume, playerUiLocked, previewUrl]);
 
   useEffect(() => {
     // 全屏播放时申请屏幕常亮（Wake Lock），避免手机看片途中自动息屏打断观影；退出全屏或暂停后立即释放。
@@ -1460,6 +1563,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const exitPlayerFullscreen = async () => {
     const art = artRef.current;
     releaseScreenOrientation();
+    setPlayerUiLocked(false);
     setPlayerImmersive(false);
     if (art?.fullscreenWeb) art.fullscreenWeb = false;
     const fullscreenNode = fullscreenElement();
@@ -1597,7 +1701,13 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     if (!art) return;
     if (seconds < 0) art.backward = Math.abs(seconds);
     else art.forward = seconds;
-    art.notice.show = seconds < 0 ? `后退 ${Math.abs(seconds)} 秒` : `前进 ${seconds} 秒`;
+    const label = seconds < 0 ? `后退 ${Math.abs(seconds)} 秒` : `前进 ${seconds} 秒`;
+    art.notice.show = label;
+    showPlayerGestureHud({
+      kind: seconds < 0 ? "seek-back" : "seek-forward",
+      text: label,
+      percent: percent(art.currentTime || 0, art.duration || 0)
+    }, 780);
     setPlayerStats(playerSnapshot(art.video));
   };
 
@@ -1637,6 +1747,28 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     }
     const target = event.target as HTMLElement;
     if (!previewUrl || target.closest("button,[role='slider'],.art-bottom,.art-controls,.art-progress,.art-settings,.art-contextmenus")) return;
+    // 锁屏后单击不展开控制层，避免误触；双击左右仍允许快退快进，方便不解锁也能跳进度。
+    if (playerUiLocked) {
+      const state = clickSeekRef.current;
+      state.count += 1;
+      state.clientX = event.clientX;
+      if (state.timer) window.clearTimeout(state.timer);
+      state.timer = window.setTimeout(() => {
+        const count = state.count;
+        const clientX = state.clientX;
+        clickSeekRef.current = { count: 0, clientX: 0 };
+        if (count < 2) {
+          showPlayerGestureHud({ kind: "lock", text: "控制层已锁定", percent: 100 }, 900);
+          return;
+        }
+        const rect = event.currentTarget.getBoundingClientRect();
+        const zone = (clientX - rect.left) / rect.width;
+        if (zone < 0.33) seekPlayer(-playerSeekStep);
+        else if (zone > 0.67) seekPlayer(playerSeekStep);
+        else showPlayerGestureHud({ kind: "lock", text: "点击右下角解锁", percent: 100 }, 1000);
+      }, 240);
+      return;
+    }
     const state = clickSeekRef.current;
     state.count += 1;
     state.clientX = event.clientX;
@@ -1675,6 +1807,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     const target = event.target as HTMLElement;
     lastPointerTypeRef.current = event.pointerType || "mouse";
     controlsVisibleBeforePointerRef.current = playerControlsVisible;
+    // 锁屏时禁用长按倍速和滑动调音量，避免躺着看片误触。
+    if (playerUiLocked) return;
     if (!previewUrl || target.closest("button,[role='slider'],.art-bottom,.art-controls,.art-progress,.art-settings,.art-contextmenus")) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const pressLeft = event.clientX < rect.left + rect.width / 2;
@@ -1736,12 +1870,13 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     const ratio = -deltaY / Math.max(160, gesture.height * 0.8);
     if (gesture.side === "volume") {
       const nextVolume = Math.max(0, Math.min(1, gesture.startVolume + ratio));
+      // 滑动调音量时只更新 HUD，避免频繁写 notice 打断观影；松手后音量已落盘。
       applyPlayerVolume(nextVolume, nextVolume <= 0.001);
-      setHoldSeekHint(`音量 ${Math.round(nextVolume * 100)}%`);
+      setHoldSeekHint("");
     } else {
       const nextBrightness = Math.max(60, Math.min(140, Math.round(gesture.startBrightness + ratio * 80)));
       applyPlayerBrightness(nextBrightness);
-      setHoldSeekHint(`亮度 ${nextBrightness}%`);
+      setHoldSeekHint("");
     }
   };
 
@@ -1985,12 +2120,12 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700">
               <Film size={14} className="text-sky-400" /> 完整播放器
             </h3>
-            <p className="mt-1 truncate text-xs text-purple-400">{previewTitle} · 支持热键、倍速、截图、画中画和全屏</p>
+            <p className="mt-1 truncate text-xs text-purple-400">{previewTitle} · 全屏贴底控制层 · 手势反馈 · 可锁屏防误触</p>
           </div>
         </div>
         <div
           ref={playerShellRef}
-          className={`txzz-player-shell txzz-candy-interactive select-none ${playerCursorHidden ? "cursor-none" : ""} ${playerFullscreenActive ? "txzz-player-fullscreen-shell fixed inset-0 z-[2147483647] overflow-hidden rounded-none bg-black" : "relative overflow-hidden rounded-2xl bg-black shadow-inner"}`}
+          className={`txzz-player-shell txzz-candy-interactive select-none ${playerCursorHidden ? "cursor-none" : ""} ${playerFullscreenActive ? "txzz-player-fullscreen-shell txzz-fullscreen-active fixed inset-0 z-[2147483647] overflow-hidden rounded-none bg-black" : "relative overflow-hidden rounded-2xl bg-black shadow-inner ring-1 ring-black/20"}`}
           style={playerShellAspect ? { ...playerStageStyle, aspectRatio: playerShellAspect } : playerStageStyle}
           onPointerDown={startHoldSeek}
           onPointerMove={handleShellPointerMove}
@@ -2016,8 +2151,38 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
           />
           {holdSeekHint && (
             <div className="pointer-events-none absolute inset-0 z-[25] flex items-center justify-center">
-              <div className="rounded-2xl bg-black/75 px-4 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur">
+              <div className="txzz-player-gesture-chip rounded-2xl bg-black/75 px-4 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur">
                 {holdSeekHint}
+              </div>
+            </div>
+          )}
+          {/* 手势 HUD：音量、亮度、快进快退统一大图标反馈，避免只依赖细小文字提示。 */}
+          {playerGestureHud.kind && !holdSeekHint && (
+            <div className="pointer-events-none absolute inset-0 z-[24] flex items-center justify-center">
+              <div className="txzz-player-gesture-hud flex min-w-[7.5rem] flex-col items-center gap-2 rounded-3xl bg-black/70 px-5 py-4 text-white shadow-2xl backdrop-blur">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/12">
+                  {playerGestureHud.kind === "volume" && (playerMuted || (playerGestureHud.percent || 0) <= 0 ? <VolumeX size={22} /> : <Volume2 size={22} />)}
+                  {playerGestureHud.kind === "brightness" && <Sun size={22} />}
+                  {playerGestureHud.kind === "seek-back" && <ChevronLeft size={24} />}
+                  {playerGestureHud.kind === "seek-forward" && <ChevronRight size={24} />}
+                  {playerGestureHud.kind === "lock" && <Lock size={20} />}
+                  {playerGestureHud.kind === "unlock" && <Unlock size={20} />}
+                </div>
+                <span className="text-xs font-semibold tracking-wide">{playerGestureHud.text}</span>
+                {typeof playerGestureHud.percent === "number" && (
+                  <div className="h-1.5 w-24 overflow-hidden rounded-full bg-white/20">
+                    <div
+                      className={`h-full rounded-full transition-all duration-100 ${
+                        playerGestureHud.kind === "brightness"
+                          ? "bg-amber-300"
+                          : playerGestureHud.kind === "seek-back" || playerGestureHud.kind === "seek-forward"
+                            ? "bg-emerald-300"
+                            : "bg-sky-400"
+                      }`}
+                      style={{ width: `${Math.max(0, Math.min(100, playerGestureHud.percent))}%` }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2025,13 +2190,13 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
           {playerBuffering && previewUrl && !playerError && (
             <div className="pointer-events-none absolute inset-0 z-[15] flex items-center justify-center">
               <div className="flex flex-col items-center gap-2 rounded-2xl bg-black/55 px-5 py-4 backdrop-blur">
-                <div className="h-9 w-9 animate-spin rounded-full border-4 border-white/25 border-t-sky-400" />
+                <div className="txzz-player-spinner" />
                 <span className="text-[11px] font-medium text-white/85">缓冲中…</span>
               </div>
             </div>
           )}
           {/* 中央播放按钮：暂停时显示大播放键，符合主流播放器习惯，移动端更好点按。 */}
-          {previewUrl && playerStats.paused && !playerBuffering && !playerError && (
+          {previewUrl && playerStats.paused && !playerBuffering && !playerError && !playerUiLocked && (
             <div className="pointer-events-none absolute inset-0 z-[15] flex items-center justify-center">
               <button
                 type="button"
@@ -2039,7 +2204,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                   togglePlayerPlay();
                   revealPlayerControls();
                 }}
-                className="pointer-events-auto flex h-16 w-16 items-center justify-center rounded-full bg-black/55 text-white shadow-xl backdrop-blur transition-transform hover:scale-105 active:scale-95"
+                className="pointer-events-auto flex h-16 w-16 items-center justify-center rounded-full bg-black/55 text-white shadow-xl ring-1 ring-white/20 backdrop-blur transition-transform hover:scale-105 active:scale-95"
                 title="播放"
               >
                 <Play size={26} className="ml-1 fill-white" />
@@ -2047,7 +2212,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
             </div>
           )}
           {/* 播放异常恢复卡片：致命错误时给出最近的自救入口，减少用户翻菜单排查。 */}
-          {previewUrl && playerError && playerStats.paused && !playerBuffering && (
+          {previewUrl && playerError && playerStats.paused && !playerBuffering && !playerUiLocked && (
             <div className="pointer-events-none absolute inset-0 z-[16] flex items-center justify-center p-4">
               <div className="pointer-events-auto w-full max-w-xs rounded-2xl bg-black/75 p-4 text-center shadow-2xl backdrop-blur">
                 <AlertCircle size={22} className="mx-auto mb-2 text-amber-300" />
@@ -2075,17 +2240,46 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
               </div>
             </div>
           )}
-          <div className={`txzz-player-top-bar pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent p-2 text-white transition-opacity duration-200 ${playerControlsVisible ? "opacity-100" : "opacity-0"}`}>
+          {/* 全屏锁屏入口：锁住后只保留解锁按钮，躺着看片更不容易误触。 */}
+          {playerFullscreenActive && playerUiLocked && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                setPlayerControlsLock(false);
+              }}
+              className="txzz-player-unlock-fab absolute bottom-[max(18px,env(safe-area-inset-bottom))] right-[max(16px,env(safe-area-inset-right))] z-30 flex h-12 w-12 items-center justify-center rounded-full bg-black/55 text-white shadow-xl ring-1 ring-white/25 backdrop-blur transition-transform active:scale-95"
+              title="解锁控制层"
+            >
+              <Unlock size={18} />
+            </button>
+          )}
+          <div className={`txzz-player-top-bar pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/80 via-black/28 to-transparent px-3 pb-10 pt-[max(10px,env(safe-area-inset-top))] text-white transition-opacity duration-200 sm:px-5 ${playerControlsVisible && !playerUiLocked ? "opacity-100" : "opacity-0"}`}>
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 rounded-full bg-black/45 px-2.5 py-1 text-[10px] font-medium backdrop-blur">
-                <span className="block max-w-[14rem] truncate sm:max-w-[26rem]">{previewTitle}</span>
+              <div className="flex min-w-0 items-center gap-2">
+                {playerFullscreenActive && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      togglePlayerFullscreen().catch((err) => setPlayerError(err instanceof Error ? err.message : String(err)));
+                    }}
+                    className="pointer-events-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/45 text-white shadow-sm ring-1 ring-white/15 backdrop-blur transition-transform active:scale-95"
+                    title="退出全屏"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                )}
+                <div className="min-w-0 rounded-full bg-black/40 px-3 py-1.5 text-[11px] font-medium shadow-sm backdrop-blur">
+                  <span className="block max-w-[12rem] truncate sm:max-w-[28rem]">{previewTitle}</span>
+                </div>
               </div>
-              <div className="flex shrink-0 flex-wrap justify-end gap-1">
-                <span className={`rounded-full px-2 py-1 text-[10px] backdrop-blur ${previewUrl ? "bg-emerald-500/75" : "bg-rose-500/75"}`}>{playerStatus}</span>
-                {playerFullscreenActive && <span className="rounded-full bg-sky-500/75 px-2 py-1 text-[10px] backdrop-blur">全屏 · {fillModeLabel(playerFillMode)}</span>}
+              <div className={`flex shrink-0 flex-wrap justify-end gap-1 transition-opacity duration-200 ${playerFullscreenActive && !playerFullscreenMetaVisible && !playerError ? "opacity-0" : "opacity-100"}`}>
+                <span className={`rounded-full px-2.5 py-1 text-[10px] backdrop-blur ${previewUrl ? "bg-emerald-500/75" : "bg-rose-500/75"}`}>{playerStatus}</span>
+                {playerFullscreenActive && <span className="rounded-full bg-sky-500/75 px-2.5 py-1 text-[10px] backdrop-blur">全屏 · {fillModeLabel(playerFillMode)}</span>}
                 {playerFullscreenActive && (
                   <span
-                    className={`rounded-full px-2 py-1 text-[10px] backdrop-blur ${playerFullscreenDiagnostic.ok ? "bg-black/45" : "bg-amber-500/85"}`}
+                    className={`rounded-full px-2.5 py-1 text-[10px] backdrop-blur ${playerFullscreenDiagnostic.ok ? "bg-black/40" : "bg-amber-500/85"}`}
                     title={`容器 ${playerFullscreenDiagnostic.shellSize} / 视口 ${playerFullscreenDiagnostic.viewportSize}`}
                   >
                     {fullscreenDiagnosticLabel}
@@ -2094,18 +2288,18 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
               </div>
             </div>
             {(playerResumeTip || playerError) && (
-              <div className="mt-1 max-w-full rounded-xl bg-black/45 px-2 py-1 text-[10px] leading-relaxed text-white/85 backdrop-blur">
+              <div className="mt-1.5 max-w-full rounded-xl bg-black/45 px-2.5 py-1.5 text-[10px] leading-relaxed text-white/85 backdrop-blur">
                 {playerResumeTip && <span className="mr-2 text-emerald-200">{playerResumeTip}</span>}
                 {playerError && <span className="text-rose-200">{playerError}</span>}
               </div>
             )}
           </div>
-          <div className={`txzz-player-control-panel absolute ${playerControlsTone} z-20 rounded-2xl bg-black/65 p-2 text-white shadow-lg backdrop-blur transition-all duration-200 ${playerControlsVisible ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"}`}>
+          <div className={`txzz-player-control-panel absolute ${playerControlsTone} z-20 text-white transition-all duration-200 ${playerControlsVisible && !playerUiLocked ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"}`}>
             <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px] text-white/75">
               <span className={progressPreviewTime !== null ? "font-semibold text-sky-300" : ""}>
                 {formatDuration(progressPreviewTime !== null ? progressPreviewTime : playerStats.currentTime)}
               </span>
-              <span>{playerStats.duration ? formatDuration(playerStats.duration) : "时长未知"} · 缓冲 {previewBuffered}%</span>
+              <span className="truncate">{playerStats.duration ? formatDuration(playerStats.duration) : "时长未知"} · 缓冲 {previewBuffered}%</span>
             </div>
             <div
               role="slider"
@@ -2155,7 +2349,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                 setProgressPreviewTime(null);
               }}
               onClick={(event) => event.stopPropagation()}
-              className={`txzz-player-progress relative mb-2 cursor-pointer rounded-full bg-white/20 transition-all duration-100 ${isDraggingProgress ? "h-3" : "h-2 hover:h-3"}`}
+              className={`txzz-player-progress relative mb-2.5 cursor-pointer rounded-full bg-white/20 transition-all duration-100 ${isDraggingProgress ? "h-3.5" : playerFullscreenActive ? "h-3 hover:h-3.5" : "h-2 hover:h-3"}`}
             >
               {/* 拖动时间气泡：跟随拖动位置显示目标时间，松手前即可确认要跳到哪里。 */}
               {isDraggingProgress && progressPreviewTime !== null && playerStats.duration > 0 && (
@@ -2168,16 +2362,16 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
               )}
               <div className="absolute inset-y-0 left-0 overflow-hidden rounded-full bg-white/25" style={{ width: `${previewBuffered}%` }} />
               <div
-                className="absolute inset-y-0 left-0 rounded-full bg-sky-400"
+                className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-sky-400 to-cyan-300 shadow-[0_0_12px_rgba(56,189,248,0.45)]"
                 style={{ width: `${progressPreviewTime !== null && playerStats.duration ? percent(progressPreviewTime, playerStats.duration) : previewProgress}%` }}
               />
-              {/* 拖拽手柄：悬停或拖动时显示，方便识别可拖动区域。 */}
+              {/* 控制层可见时始终显示拖拽手柄，降低“点不到进度”的挫败感。 */}
               <div
-                className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-md transition-opacity ${isDraggingProgress ? "opacity-100" : "opacity-0"}`}
+                className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-md ring-2 ring-sky-300/40 transition-opacity ${playerControlsVisible || isDraggingProgress ? "opacity-100" : "opacity-0"}`}
                 style={{ left: `${progressPreviewTime !== null && playerStats.duration ? percent(progressPreviewTime, playerStats.duration) : previewProgress}%` }}
               />
             </div>
-            <div className="txzz-player-control-grid grid grid-cols-5 gap-1.5">
+            <div className={`txzz-player-control-grid grid gap-1.5 ${playerFullscreenActive ? "grid-cols-6" : "grid-cols-5"}`}>
               <button
                 onClick={() => {
                   togglePlayerPlay();
@@ -2222,10 +2416,20 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
               >
                 <MoreHorizontal size={playerControlIconSize} /> 菜单
               </button>
+              {playerFullscreenActive && (
+                <button
+                  onClick={() => setPlayerControlsLock(true)}
+                  disabled={!previewUrl}
+                  className={`txzz-player-control-button flex ${playerControlButtonTone} items-center justify-center gap-1 rounded-xl bg-white/15 px-1.5 font-medium text-white transition-transform active:scale-95 disabled:opacity-40`}
+                  title="锁定控制层，防止误触"
+                >
+                  <Lock size={playerControlIconSize} /> <span className="hidden sm:inline">锁定</span>
+                </button>
+              )}
               <button
                 onClick={() => togglePlayerFullscreen().catch((err) => setPlayerError(err instanceof Error ? err.message : String(err)))}
                 disabled={!previewUrl}
-                className={`txzz-player-control-button flex ${playerControlButtonTone} items-center justify-center gap-1 rounded-xl bg-sky-500 px-1.5 font-medium text-white transition-transform active:scale-95 disabled:opacity-40`}
+                className={`txzz-player-control-button flex ${playerControlButtonTone} items-center justify-center gap-1 rounded-xl bg-sky-500 px-1.5 font-medium text-white shadow-sm shadow-sky-500/30 transition-transform active:scale-95 disabled:opacity-40`}
                 title={playerFullscreenActive ? "退出全屏" : "进入全屏观看"}
               >
                 {playerFullscreenActive ? <Minimize2 size={playerControlIconSize} /> : <Maximize2 size={playerControlIconSize} />} <span className="hidden sm:inline">{playerFullscreenActive ? "退出" : "全屏"}</span>

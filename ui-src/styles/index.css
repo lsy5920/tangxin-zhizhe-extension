@@ -400,11 +400,28 @@
   background: #000;
   overflow: hidden;
   border-radius: 0.75rem;
+  isolation: isolate;
 }
 
 .txzz-player-shell--fullscreen,
-.txzz-player-shell--immersive {
+.txzz-player-shell--immersive,
+.txzz-player-fullscreen-shell {
   border-radius: 0 !important;
+}
+
+/* 控制按钮按下反馈，移动端更有“点到了”的手感。 */
+.txzz-player-control-button {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.txzz-player-control-button:active {
+  transform: scale(0.96);
+}
+
+/* 普通模式控制层也略微提升可读性 */
+.txzz-player-shell:not(.txzz-player-fullscreen-shell) .txzz-player-control-panel {
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 /* 播放器舞台只负责动效和承载，不再负责旋转控件，方向交给系统横竖屏能力。 */
@@ -446,10 +463,61 @@
   border-radius: 0 !important;
 }
 
+/* 全屏贴底控制层：安全区、渐变遮罩和触摸反馈统一收口。 */
+.txzz-player-fullscreen-shell .txzz-player-control-panel {
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.txzz-player-fullscreen-shell .txzz-player-progress {
+  height: 10px !important;
+}
+
+.txzz-player-gesture-hud,
+.txzz-player-gesture-chip {
+  animation: txzz-gesture-pop 0.18s ease-out;
+}
+
+.txzz-player-unlock-fab {
+  animation: txzz-gesture-pop 0.2s ease-out, txzz-unlock-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes txzz-unlock-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.18);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+  }
+}
+
+/* 全屏顶部返回按钮：安全区与可点区域统一。 */
+.txzz-player-fullscreen-shell .txzz-player-top-bar button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 全屏进度条加粗后手柄同步放大，手机更好拖。 */
+.txzz-player-fullscreen-shell .txzz-player-progress {
+  touch-action: none;
+}
+
+@keyframes txzz-gesture-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* 手机横屏全屏时控制层必须轻，不遮挡主体画面。 */
 @media (orientation: landscape) and (max-height: 520px) {
   :host(.txzz-player-fullscreen-mode) .txzz-player-top-bar {
-    padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 34px max(10px, env(safe-area-inset-left)) !important;
+    padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 28px max(10px, env(safe-area-inset-left)) !important;
   }
 
   :host(.txzz-player-fullscreen-mode) .txzz-player-top-bar span,
@@ -459,39 +527,45 @@
   }
 
   :host(.txzz-player-fullscreen-mode) .txzz-player-control-panel {
-    left: max(10px, env(safe-area-inset-left)) !important;
-    right: max(10px, env(safe-area-inset-right)) !important;
-    bottom: max(8px, env(safe-area-inset-bottom)) !important;
-    padding: 8px !important;
-    border-radius: 16px !important;
-    background: rgba(0, 0, 0, 0.52) !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    padding: 28px max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)) !important;
+    border-radius: 0 !important;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.45), transparent) !important;
+    box-shadow: none !important;
   }
 
   :host(.txzz-player-fullscreen-mode) .txzz-player-control-panel > div:first-child {
-    margin-bottom: 5px !important;
+    margin-bottom: 4px !important;
     font-size: 10px !important;
   }
 
   :host(.txzz-player-fullscreen-mode) .txzz-player-progress {
-    height: 6px !important;
+    height: 7px !important;
     margin-bottom: 8px !important;
   }
 
   :host(.txzz-player-fullscreen-mode) .txzz-player-control-grid {
-    gap: 8px !important;
+    gap: 6px !important;
   }
 
   :host(.txzz-player-fullscreen-mode) .txzz-player-control-button {
-    min-height: 38px !important;
-    border-radius: 14px !important;
-    padding: 0 8px !important;
-    font-size: 13px !important;
+    min-height: 36px !important;
+    border-radius: 12px !important;
+    padding: 0 6px !important;
+    font-size: 12px !important;
     line-height: 1 !important;
   }
 
   :host(.txzz-player-fullscreen-mode) .txzz-player-control-button svg {
     width: 13px !important;
     height: 13px !important;
+  }
+
+  :host(.txzz-player-fullscreen-mode) .txzz-player-unlock-fab {
+    width: 42px !important;
+    height: 42px !important;
   }
 }
 

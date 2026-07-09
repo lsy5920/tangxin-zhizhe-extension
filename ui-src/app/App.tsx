@@ -190,8 +190,12 @@ export default function App() {
     <div className="txzz-candy-app size-full relative overflow-hidden">
       {!open && showFlow && (
         <div
-          className={`txzz-candy-interactive fixed top-4 left-4 z-40 flex items-center gap-2 bg-gradient-to-r ${flowGradient} text-white text-[11px] font-medium px-3 py-1.5 rounded-full shadow-lg cursor-pointer`}
-          style={{ maxWidth: "calc(100vw - 80px)" }}
+          className={`txzz-candy-interactive fixed z-40 flex items-center gap-2 bg-gradient-to-r ${flowGradient} text-white text-[11px] font-medium px-3 py-1.5 rounded-full shadow-lg shadow-black/10 ring-1 ring-white/25 cursor-pointer`}
+          style={{
+            top: "max(1rem, env(safe-area-inset-top))",
+            left: "max(1rem, env(safe-area-inset-left))",
+            maxWidth: "calc(100vw - 5rem)"
+          }}
           onClick={() => setShowFlow(false)}
           title="点击关闭提示条"
         >
@@ -205,21 +209,25 @@ export default function App() {
           onPointerDown={onBallPointerDown}
           onPointerMove={onBallPointerMove}
           onPointerUp={onBallPointerUp}
-          className="txzz-candy-interactive fixed bottom-20 right-5 z-50 cursor-pointer select-none touch-none"
-          style={{ transform: `translate(${ballPos.x}px, ${ballPos.y}px)` }}
+          className="txzz-candy-interactive fixed z-50 cursor-pointer select-none touch-none"
+          style={{
+            right: "max(1.25rem, env(safe-area-inset-right))",
+            bottom: "max(5rem, calc(env(safe-area-inset-bottom) + 4.5rem))",
+            transform: `translate(${ballPos.x}px, ${ballPos.y}px)`
+          }}
           title="点击打开糖心志者面板"
         >
-          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-pink-400 via-rose-400 to-purple-600 shadow-xl flex items-center justify-center relative active:scale-95 transition-transform duration-150">
-            <span className="text-white text-xl font-bold select-none">志</span>
+          <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-pink-400 via-rose-400 to-purple-600 shadow-xl shadow-pink-500/35 ring-2 ring-white/45 transition-transform duration-150 active:scale-95 after:absolute after:inset-0 after:rounded-full after:bg-gradient-to-t after:from-black/10 after:to-white/10 after:pointer-events-none">
+            <span className="relative z-[1] select-none text-xl font-bold text-white drop-shadow-sm">志</span>
             <div
-              className={`absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white transition-colors ${
+              className={`absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white shadow-sm transition-colors ${
                 updateAvailable ? "bg-amber-400 animate-pulse" : activeDownloads > 0 ? "bg-orange-400 animate-pulse" : "bg-emerald-400"
               }`}
             />
           </div>
           {activeDownloads > 0 && (
-            <div className="absolute -bottom-1 -left-1 w-5 h-5 rounded-full bg-orange-500 border-2 border-white flex items-center justify-center">
-              <span className="text-white text-[9px] font-bold">{activeDownloads}</span>
+            <div className="absolute -bottom-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-orange-500 shadow-sm">
+              <span className="text-[9px] font-bold text-white">{activeDownloads}</span>
             </div>
           )}
         </div>
@@ -229,24 +237,28 @@ export default function App() {
         <button
           type="button"
           onClick={openFloatingPlayback}
-          className="txzz-candy-interactive fixed bottom-40 right-5 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 via-cyan-400 to-emerald-500 text-white shadow-xl transition-transform active:scale-95"
+          className="txzz-candy-interactive fixed z-50 flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 via-cyan-400 to-emerald-500 text-white shadow-xl shadow-cyan-500/35 ring-2 ring-white/40 transition-transform active:scale-95"
+          style={{
+            right: "max(1.25rem, env(safe-area-inset-right))",
+            bottom: "max(10rem, calc(env(safe-area-inset-bottom) + 9rem))"
+          }}
           title="使用插件播放器全屏播放，并暂停网页原视频"
         >
-          <Video size={20} />
-          <span className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400 animate-pulse" />
+          <Video size={20} className="drop-shadow-sm" />
+          <span className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-400 animate-pulse shadow-sm" />
         </button>
       )}
 
       {open && (
-        <div className="txzz-app-panel-overlay txzz-candy-interactive fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-          <div className="txzz-app-panel-backdrop absolute inset-0 bg-black/25 backdrop-blur-sm" onClick={closePanel} />
-          <div className="txzz-app-panel-frame relative w-full h-full sm:h-auto sm:max-h-[90vh] sm:w-[720px] sm:max-w-full bg-white/95 backdrop-blur-xl rounded-none sm:rounded-3xl shadow-2xl flex flex-col sm:flex-row overflow-hidden border border-pink-100">
+        <div className="txzz-app-panel-overlay txzz-candy-interactive fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6">
+          <div className="txzz-app-panel-backdrop absolute inset-0 bg-black/32 backdrop-blur-[8px]" onClick={closePanel} />
+          <div className="txzz-app-panel-frame relative flex h-full w-full flex-col overflow-hidden rounded-none border border-pink-100/90 bg-white/97 shadow-[0_24px_80px_rgba(147,51,234,0.18)] backdrop-blur-xl sm:h-auto sm:max-h-[90vh] sm:w-[760px] sm:max-w-full sm:flex-row sm:rounded-[1.75rem]">
 
-            <aside className="txzz-app-sidebar hidden sm:flex flex-col w-20 bg-gradient-to-b from-pink-400 via-rose-400 to-purple-600 py-5 items-center gap-1 shrink-0">
-              <div className="w-12 h-12 rounded-2xl bg-white/25 backdrop-blur flex items-center justify-center mb-2 shadow-inner">
-                <span className="text-white text-xl font-bold">志</span>
+            <aside className="txzz-app-sidebar hidden w-[5.25rem] shrink-0 flex-col items-center gap-1 bg-gradient-to-b from-pink-400 via-rose-400 to-purple-600 py-5 sm:flex">
+              <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/25 shadow-inner ring-1 ring-white/30 backdrop-blur">
+                <span className="text-xl font-bold text-white drop-shadow-sm">志</span>
               </div>
-              <span className="text-white/70 text-[9px] font-medium mb-3">{APP_VERSION_LABEL}</span>
+              <span className="mb-3 text-[9px] font-medium text-white/75">{APP_VERSION_LABEL}</span>
 
               {navItems.map((item) => {
                 const active = page === item.id;
@@ -255,12 +267,12 @@ export default function App() {
                   <button
                     key={item.id}
                     onClick={() => setPage(item.id)}
-                    className={`relative w-14 flex flex-col items-center gap-1 py-2.5 rounded-2xl transition-all ${active ? "bg-white/25 shadow-inner" : "hover:bg-white/10"}`}
+                    className={`relative flex w-14 flex-col items-center gap-1 rounded-2xl py-2.5 transition-all ${active ? "bg-white/25 shadow-inner ring-1 ring-white/20" : "hover:bg-white/10"}`}
                   >
                     <item.icon size={20} className="text-white" />
-                    <span className="text-[9px] text-white font-medium">{item.label}</span>
+                    <span className="text-[9px] font-medium text-white">{item.label}</span>
                     {hasBadge && (
-                      <span className="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded-full bg-orange-400 border border-white/80 flex items-center justify-center text-[8px] text-white font-bold">
+                      <span className="absolute top-1.5 right-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/80 bg-orange-400 text-[8px] font-bold text-white">
                         {activeDownloads}
                       </span>
                     )}
@@ -270,48 +282,48 @@ export default function App() {
 
               <button
                 onClick={closePanel}
-                className="mt-auto w-10 h-10 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center transition-all"
+                className="mt-auto flex h-10 w-10 items-center justify-center rounded-full bg-white/15 transition-all hover:bg-white/25"
                 title="关闭面板 (Esc)"
               >
                 <X size={16} className="text-white" />
               </button>
             </aside>
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <header className="txzz-app-header flex items-center justify-between px-4 py-3 border-b border-pink-100 shrink-0 bg-white/80">
-                <div className="flex items-center gap-2">
-                  <div className="sm:hidden w-8 h-8 rounded-xl bg-gradient-to-br from-pink-400 to-purple-600 flex items-center justify-center">
-                    <span className="text-white text-sm font-bold">志</span>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-white via-white to-pink-50/30">
+              <header className="txzz-app-header flex shrink-0 items-center justify-between border-b border-pink-100/90 bg-white/90 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-md">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-pink-400 to-purple-600 shadow-sm shadow-pink-400/25 sm:hidden">
+                    <span className="text-sm font-bold text-white">志</span>
                   </div>
                   <div>
-                    <h1 className="text-sm font-bold text-purple-800">{pageTitles[page]}</h1>
-                    <p className="text-[10px] text-purple-400 hidden sm:block">糖心志者控制台 · {APP_VERSION_LABEL}</p>
+                    <h1 className="text-sm font-bold tracking-wide text-purple-800">{pageTitles[page]}</h1>
+                    <p className="hidden text-[10px] text-purple-400 sm:block">糖心志者控制台 · {APP_VERSION_LABEL}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   {showUpdateBanner && (
                     <button
                       onClick={() => updateAvailable ? setShowUpdateModal(true) : setPage("settings")}
-                      className={`hidden sm:flex items-center gap-1.5 border rounded-full px-3 py-1 text-[11px] ${updateAvailable ? "bg-amber-50 border-amber-200 text-amber-600" : "bg-pink-50 border-pink-100 text-purple-400"}`}
+                      className={`hidden items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] transition-colors sm:flex ${updateAvailable ? "border-amber-200 bg-amber-50 text-amber-600" : "border-pink-100 bg-pink-50 text-purple-400"}`}
                     >
                       {updateAvailable ? <Bell size={11} /> : <Zap size={11} />}
                       <span>{updateAvailable ? "有新版本可用" : "版本最新"}</span>
                     </button>
                   )}
-                  <button onClick={() => action("about")} className="rounded-full p-1.5 text-purple-400 hover:bg-purple-50" title="打开项目主页">
+                  <button onClick={() => action("about")} className="rounded-full p-1.5 text-purple-400 transition-colors hover:bg-purple-50" title="打开项目主页">
                     <Info size={16} />
                   </button>
-                  <button onClick={closePanel} className="rounded-full p-1.5 text-purple-400 hover:bg-pink-50 sm:hidden">
+                  <button onClick={closePanel} className="rounded-full p-1.5 text-purple-400 transition-colors hover:bg-pink-50 sm:hidden">
                     <X size={16} />
                   </button>
                 </div>
               </header>
 
               {showUpdateBanner && updateAvailable && (
-                <div className="flex shrink-0 items-center gap-2 border-b border-amber-100 bg-amber-50 px-4 py-2 text-[11px] text-amber-600 sm:hidden">
+                <div className="flex shrink-0 items-center gap-2 border-b border-amber-100 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-2 text-[11px] text-amber-600 sm:hidden">
                   <Bell size={11} className="shrink-0" />
-                  <button className="flex-1 text-left" onClick={() => setShowUpdateModal(true)}>发现新版本，点击查看更新内容并下载</button>
-                  <button onClick={() => setShowUpdateBanner(false)}><X size={12} /></button>
+                  <button className="flex-1 text-left font-medium" onClick={() => setShowUpdateModal(true)}>发现新版本，点击查看更新内容并下载</button>
+                  <button onClick={() => setShowUpdateBanner(false)} className="rounded-full p-0.5 hover:bg-amber-100"><X size={12} /></button>
                 </div>
               )}
 
@@ -319,7 +331,7 @@ export default function App() {
                 {renderPage()}
               </main>
 
-              <nav className="txzz-app-mobile-nav flex shrink-0 items-center border-t border-pink-100 bg-white/90 sm:hidden">
+              <nav className="txzz-app-mobile-nav flex shrink-0 items-center border-t border-pink-100/90 bg-white/96 pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-0.5 backdrop-blur-md sm:hidden">
                 {navItems.map((item) => {
                   const active = page === item.id;
                   const hasBadge = item.id === "downloads" && activeDownloads > 0;
@@ -327,14 +339,14 @@ export default function App() {
                     <button
                       key={item.id}
                       onClick={() => setPage(item.id)}
-                      className={`relative flex flex-1 flex-col items-center gap-0.5 py-2.5 transition-all ${active ? "text-pink-500" : "text-purple-300"}`}
+                      className={`relative flex flex-1 flex-col items-center gap-0.5 py-2 transition-all ${active ? "text-pink-500" : "text-purple-300"}`}
                     >
-                      <div className={`rounded-xl p-1.5 transition-all ${active ? "bg-gradient-to-br from-pink-400 to-purple-500 shadow-md" : ""}`}>
+                      <div className={`rounded-xl p-1.5 transition-all ${active ? "bg-gradient-to-br from-pink-400 to-purple-500 shadow-md shadow-pink-400/30 scale-105" : "hover:bg-pink-50"}`}>
                         <item.icon size={18} className={active ? "text-white" : ""} />
                       </div>
-                      <span className="text-[9px] font-medium">{item.label}</span>
+                      <span className={`text-[9px] font-medium ${active ? "text-pink-500" : ""}`}>{item.label}</span>
                       {hasBadge && (
-                        <span className="absolute top-2 right-2 w-3 h-3 rounded-full bg-orange-400 border border-white" />
+                        <span className="absolute top-1.5 right-[calc(50%-1.1rem)] h-2.5 w-2.5 rounded-full border border-white bg-orange-400 shadow-sm" />
                       )}
                     </button>
                   );
