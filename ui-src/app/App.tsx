@@ -8,6 +8,8 @@ import { PlaybackPage } from "./components/PlaybackPage";
 import { DownloadsPage } from "./components/DownloadsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
+import { UpdateModal } from "./update/UpdateModal";
+import { buildUpdateViewModel } from "./update/helpers";
 import { APP_VERSION_LABEL } from "./constants";
 import { flowItemText } from "./helpers";
 import {
@@ -74,6 +76,8 @@ export default function App() {
   const [accountsIntent, setAccountsIntent] = useState<AccountsPageIntent>({});
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [dismissedUpdateId, setDismissedUpdateId] = useState("");
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const dragging = useRef(false);
   const dragStart = useRef({ mx: 0, my: 0, bx: 0, by: 0 });
   const moved = useRef(false);
@@ -106,7 +110,29 @@ export default function App() {
     const updateId = String(remote?.id || `${remote?.version || ""}|${remote?.build || ""}`);
     if (!bridgeState.repositoryUpdate?.updateAvailable || !updateId || dismissedUpdateId === updateId) return;
     setShowUpdateModal(true);
-  }, [bridgeState.repositoryUpdate?.updateAvailable, bridgeState.repositoryUpdate?.remote?.id, bridgeState.repositoryUpdate?.remote?.version, bridgeState.repositoryUpdate?.remote?.build, dismissedUpdateId]);
+  }, [
+    bridgeState.repositoryUpdate?.updateAvailable,
+    bridgeState.repositoryUpdate?.remote?.id,
+    bridgeState.repositoryUpdate?.remote?.version,
+    bridgeState.repositoryUpdate?.remote?.build,
+    dismissedUpdateId
+  ]);
+
+  // 检测结果返回后结束“检查中”态，避免弹窗状态卡住。
+  useEffect(() => {
+    if (!checkingUpdate) return;
+    const checkedAt = bridgeState.repositoryUpdate?.checkedAt;
+    if (!checkedAt) return;
+    setCheckingUpdate(false);
+  }, [bridgeState.repositoryUpdate?.checkedAt, checkingUpdate]);
+
+  // 下载状态写入后结束“下载中”态。
+  useEffect(() => {
+    if (!downloadingUpdate) return;
+    const status = bridgeState.repositoryUpdate?.downloadStatus || "";
+    if (!status) return;
+    setDownloadingUpdate(false);
+  }, [bridgeState.repositoryUpdate?.downloadStatus, downloadingUpdate]);
 
   const openPanel = () => {
     // 打开普通面板时清掉残留全屏宿主类，避免上次异常全屏后面板整页消失。
@@ -139,6 +165,18 @@ export default function App() {
     setPage(target);
   };
 
+  const handleCheckUpdate = () => {
+    setCheckingUpdate(true);
+    action("check-update");
+    window.setTimeout(() => setCheckingUpdate(false), 9000);
+  };
+
+  const handleDownloadUpdate = () => {
+    setDownloadingUpdate(true);
+    action("download-latest");
+    window.setTimeout(() => setDownloadingUpdate(false), 10000);
+  };
+
   const renderPage = () => {
     // 每个业务页包一层错误边界：单页崩溃时保留悬浮球与面板外壳，避免整站 UI 消失。
     const body = page === "overview"
@@ -157,18 +195,11 @@ export default function App() {
     );
   };
 
-  const updateAvailable = Boolean(bridgeState.repositoryUpdate?.updateAvailable);
-  const remoteUpdate = bridgeState.repositoryUpdate?.remote;
-  const currentUpdateId = String(remoteUpdate?.id || `${remoteUpdate?.version || ""}|${remoteUpdate?.build || ""}`);
-  const updateSummary = bridgeState.repositoryUpdate?.ok === false
-    ? `更新检测失败：${bridgeState.repositoryUpdate?.error || "请稍后重试"}`
-    : remoteUpdate?.detail || remoteUpdate?.notes || remoteUpdate?.text || remoteUpdate?.line || remoteUpdate?.title || "检测到新版本，建议下载最新版。";
-  const updateMeta = [
-    remoteUpdate?.version ? `远程版本 v${remoteUpdate.version}` : "",
-    remoteUpdate?.build ? `构建 ${remoteUpdate.build}` : "",
-    remoteUpdate?.releasedAt ? `发布 ${remoteUpdate.releasedAt}` : "",
-    remoteUpdate?.detectionSource ? `来源 ${remoteUpdate.detectionSource}` : bridgeState.repositoryUpdate?.source ? `来源 ${bridgeState.repositoryUpdate.source}` : ""
-  ].filter(Boolean).join(" · ");
+  const updateVm = buildUpdateViewModel(bridgeState, {
+    checking: checkingUpdate,
+    downloading: downloadingUpdate
+  });
+  const updateAvailable = updateVm.status === "available";
   const activeDownloads = Object.values(bridgeState.downloadTasks || {})
     .filter((t) => t && ["queued", "playlist", "segments", "segment", "ready"].includes(
       String((t as { stage?: string }).stage || "")
@@ -277,11 +308,28 @@ export default function App() {
                 <div className="flex items-center gap-1.5">
                   {showUpdateBanner && (
                     <button
-                      onClick={() => updateAvailable ? setShowUpdateModal(true) : setPage("settings")}
-                      className={`hidden items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] transition-colors sm:flex ${updateAvailable ? "border-amber-200 bg-amber-50 text-amber-600" : "border-pink-100 bg-pink-50 text-purple-400"}`}
+                      onClick={() => {
+                        if (updateAvailable) setShowUpdateModal(true);
+                        else setPage("settings");
+                      }}
+                      className={`hidden items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] transition-colors sm:flex ${
+                        updateAvailable
+                          ? "border-amber-200 bg-amber-50 text-amber-600"
+                          : updateVm.status === "error"
+                            ? "border-rose-200 bg-rose-50 text-rose-600"
+                            : "border-pink-100 bg-pink-50 text-purple-400"
+                      }`}
                     >
                       {updateAvailable ? <Bell size={11} /> : <Zap size={11} />}
-                      <span>{updateAvailable ? "有新版本可用" : "版本最新"}</span>
+                      <span>
+                        {updateAvailable
+                          ? "有新版本可用"
+                          : updateVm.status === "error"
+                            ? "更新检测失败"
+                            : updateVm.status === "checking"
+                              ? "正在检测更新"
+                              : "版本最新"}
+                      </span>
                     </button>
                   )}
                   <button onClick={() => action("about")} className="rounded-full p-1.5 text-purple-400 transition-colors hover:bg-purple-50" title="打开项目主页">
@@ -296,7 +344,9 @@ export default function App() {
               {showUpdateBanner && updateAvailable && (
                 <div className="flex shrink-0 items-center gap-2 border-b border-amber-100 bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-2 text-[11px] text-amber-600 sm:hidden">
                   <Bell size={11} className="shrink-0" />
-                  <button className="flex-1 text-left font-medium" onClick={() => setShowUpdateModal(true)}>发现新版本，点击查看更新内容并下载</button>
+                  <button className="flex-1 text-left font-medium" onClick={() => setShowUpdateModal(true)}>
+                    发现新版本 {updateVm.remoteVersion}，点击查看并下载
+                  </button>
                   <button onClick={() => setShowUpdateBanner(false)} className="rounded-full p-0.5 hover:bg-amber-100"><X size={12} /></button>
                 </div>
               )}
@@ -331,62 +381,26 @@ export default function App() {
         </div>
       )}
 
-      {showUpdateModal && updateAvailable && (
-        <div className="txzz-candy-interactive fixed inset-0 z-[2147483646] flex items-center justify-center bg-black/35 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl border border-amber-100 bg-white p-5 shadow-2xl">
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
-                  <Bell size={12} /> 检测到新版本
-                </div>
-                <h3 className="text-base font-bold text-purple-800">
-                  {remoteUpdate?.version ? `糖心志者 v${remoteUpdate.version}` : "糖心志者新版本"}
-                </h3>
-                {updateMeta && <p className="mt-1 text-[11px] leading-relaxed text-purple-300">{updateMeta}</p>}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setDismissedUpdateId(currentUpdateId);
-                  setShowUpdateModal(false);
-                }}
-                className="rounded-full p-1.5 text-purple-300 hover:bg-purple-50"
-                title="关闭更新弹窗"
-              >
-                <X size={17} />
-              </button>
-            </div>
-            <div className="mb-4 max-h-40 overflow-y-auto rounded-2xl bg-amber-50/70 px-3 py-2 text-xs leading-relaxed text-purple-700">
-              {updateSummary}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(true);
-                  setPage("settings");
-                  setShowUpdateModal(false);
-                  action("toggle", { force: true });
-                }}
-                className="rounded-xl border border-purple-200 py-2 text-sm font-medium text-purple-500 transition-transform active:scale-95"
-              >
-                查看详情
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  action("download-latest");
-                  setDismissedUpdateId(currentUpdateId);
-                  setShowUpdateModal(false);
-                }}
-                className="flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 py-2 text-sm font-medium text-white shadow-md transition-transform active:scale-95"
-              >
-                <Download size={15} /> 下载
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <UpdateModal
+        state={bridgeState}
+        open={showUpdateModal}
+        checking={checkingUpdate}
+        downloading={downloadingUpdate}
+        onClose={() => setShowUpdateModal(false)}
+        onDismiss={(updateId) => {
+          if (updateId) setDismissedUpdateId(updateId);
+          setShowUpdateModal(false);
+          action("dismiss-update", { updateId });
+        }}
+        onOpenSettings={() => {
+          setOpen(true);
+          setPage("settings");
+          setShowUpdateModal(false);
+          action("toggle", { force: true });
+        }}
+        onDownload={handleDownloadUpdate}
+        onCheck={handleCheckUpdate}
+      />
     </div>
   );
 }

@@ -8,7 +8,7 @@ const API_CONFIG = {
 };
 
 const STORAGE_SCHEMA_VERSION = "2026-07-08-upgrade-system-v3";
-const UPDATE_STATE_SCHEMA_VERSION = "2026-07-08-update-system-v3";
+const UPDATE_STATE_SCHEMA_VERSION = "2026-07-10-update-system-v4";
 const LEGACY_REMOTE_BASE_URLS = [
   "https://txzz.lsy20.top",
   "https://txzz-secure-pool.3199912548.workers.dev"
@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0010";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0100";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 00:10 【修复】升级版本到 v3.2.4，紧急恢复 content.js 核心功能，广告清理仅保留实测 .ad-splash。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 01:00 【优化】升级版本到 v3.3.0，完全重构升级系统：统一状态机、升级中心、专业更新弹窗、清单更新日志可视化与多候选下载兜底。";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1614,6 +1614,19 @@ function repositoryDownloadAttempts(remoteManifest = {}, meta = {}) {
   return uniqueTextList(repositoryArchiveCandidates(remoteManifest, meta).map((url) => appendUrlCacheBuster(url)));
 }
 
+function normalizeChangelogItems(list = []) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, 12).map((item, index) => ({
+    id: String(item?.id || item?.title || `log-${index}`),
+    type: String(item?.type || "更新").replace(/[【】]/g, ""),
+    title: String(item?.title || item?.text || "更新记录"),
+    detail: String(item?.detail || item?.notes || item?.line || ""),
+    notes: String(item?.notes || ""),
+    line: String(item?.line || ""),
+    releasedAt: String(item?.releasedAt || item?.time || "")
+  }));
+}
+
 function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
   const localVersion = localExtensionVersion();
   const localBuild = LOCAL_UPDATE_BUILD;
@@ -1623,6 +1636,7 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
   const latest = remoteManifest.latest || {};
   const downloadCandidates = repositoryArchiveCandidates(remoteManifest);
   const downloadUrl = downloadCandidates[0] || currentArchiveUrl(remoteManifest);
+  const changelog = normalizeChangelogItems(remoteManifest.changelog || []);
   const remote = {
     id: updateId,
     line: readmeFallback?.line || `${remoteManifest.releasedAt || remoteManifest.build} 【${latest.type || "更新"}】${latest.title || "发现新版本"}`,
@@ -1630,19 +1644,28 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
     type: readmeFallback?.type || `【${latest.type || "更新"}】`,
     text: readmeFallback?.detail || latest.detail || latest.title || "远程版本清单已发布新版本。",
     title: readmeFallback?.title || latest.title || (updateAvailable ? "发现新版本" : "当前已是最新版本"),
-    detail: readmeFallback?.detail || latest.detail || "",
+    detail: readmeFallback?.detail || latest.detail || latest.title || (updateAvailable
+      ? "远程已发布新版本，建议下载并重新加载扩展。"
+      : "远程版本与本地一致，可继续使用。"),
     version: readmeFallback?.version || remoteManifest.version,
     build: readmeFallback?.build || remoteManifest.build,
     releasedAt: readmeFallback?.releasedAt || remoteManifest.releasedAt,
     archiveUrl: downloadUrl,
     downloadCandidates,
-    detectionSource: readmeFallback ? "README 更新日志兜底" : "update.json"
+    detectionSource: readmeFallback ? "README 更新日志兜底" : "update.json",
+    changelog: changelog.length
+      ? changelog
+      : (readmeFallback
+        ? [{ id: readmeFallback.id, type: String(readmeFallback.type || "更新").replace(/[【】]/g, ""), title: readmeFallback.title, detail: readmeFallback.detail }]
+        : [])
   };
+  const status = updateAvailable ? "available" : "latest";
   return {
     ok: true,
     source: readmeFallback ? "update.json + README" : "update.json",
     checkedAt: nowIso(),
     checkMode: options.realtime ? "实时检测" : "自动检测",
+    status,
     updateAvailable,
     shouldNotify: Boolean(updateAvailable),
     repositoryUrl: remoteManifest.homepage || REPOSITORY_CONFIG.url,
@@ -1655,10 +1678,11 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
     readmeFallback,
     updateSystem: {
       schemaVersion: UPDATE_STATE_SCHEMA_VERSION,
+      engine: "upgrade-system-v4",
       cacheTtlMs: REPOSITORY_CONFIG.checkIntervalMs,
       ignoredLegacyCache: Boolean(options.ignoredLegacyCache),
-      cachePolicy: "本版本不再复用旧更新缓存，手动和自动检测都会重新读取远程清单。",
-      downloadPolicy: "下载前重新检测远程清单，实际下载地址会追加时间戳并自动尝试候选地址。"
+      cachePolicy: "升级系统 v4：每次检查都实时拉取 update.json，不复用旧缓存。",
+      downloadPolicy: "下载前重新检测清单；地址追加时间戳；自动尝试 GitHub 多候选源。"
     },
     ...(options.extra || {})
   };
@@ -1788,6 +1812,7 @@ async function checkRepositoryUpdate(options = {}) {
       source: "update.json",
       checkedAt: nowIso(),
       checkMode: options.realtime || options.force ? "实时检测" : "自动检测",
+      status: "error",
       updateAvailable: false,
       shouldNotify: false,
       error: `远程版本清单读取失败：${errorText}`,
@@ -1800,10 +1825,11 @@ async function checkRepositoryUpdate(options = {}) {
       updateManifest: null,
       updateSystem: {
         schemaVersion: UPDATE_STATE_SCHEMA_VERSION,
+        engine: "upgrade-system-v4",
         cacheTtlMs: REPOSITORY_CONFIG.checkIntervalMs,
         ignoredLegacyCache: !stateSchemaOk,
-        cachePolicy: "本版本不再复用旧更新缓存，检测失败时也会记录最新失败原因。",
-        downloadPolicy: "下载最新版仍会尝试固定 GitHub 压缩包候选地址。"
+        cachePolicy: "升级系统 v4：检测失败也会记录原因，可立即重试。",
+        downloadPolicy: "即使清单失败，仍可尝试固定 GitHub 压缩包候选地址。"
       }
     };
     const nextUpdateState = {

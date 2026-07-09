@@ -1,5 +1,63 @@
 export type Page = "overview" | "accounts" | "playback" | "downloads" | "settings";
 
+/** 远程版本清单中的单条更新记录 */
+export type UpdateChangelogItem = {
+  id?: string;
+  type?: string;
+  title?: string;
+  detail?: string;
+  notes?: string;
+  line?: string;
+  releasedAt?: string;
+};
+
+/** 升级系统统一状态（background → content → React） */
+export type RepositoryUpdateState = {
+  ok?: boolean;
+  source?: string;
+  checkedAt?: string;
+  checkMode?: string;
+  error?: string;
+  repositoryUrl?: string;
+  manifestUrl?: string;
+  downloadUrl?: string;
+  downloadCandidates?: string[];
+  downloadAttemptUrls?: string[];
+  downloadStatus?: string;
+  downloadError?: string;
+  updateAvailable?: boolean;
+  shouldNotify?: boolean;
+  status?: string;
+  updateSystem?: {
+    schemaVersion?: string;
+    cacheTtlMs?: number;
+    ignoredLegacyCache?: boolean;
+    cachePolicy?: string;
+    downloadPolicy?: string;
+    engine?: string;
+  };
+  local?: {
+    version?: string;
+    build?: string;
+  };
+  remote?: {
+    id?: string;
+    version?: string;
+    build?: string;
+    releasedAt?: string;
+    title?: string;
+    detail?: string;
+    notes?: string;
+    line?: string;
+    text?: string;
+    type?: string;
+    archiveUrl?: string;
+    downloadCandidates?: string[];
+    detectionSource?: string;
+    changelog?: UpdateChangelogItem[];
+  };
+};
+
 export type FlowItem = {
   title?: string;
   detail?: string;
@@ -138,45 +196,7 @@ export type BridgeState = {
     lastSyncAt?: string;
     lastError?: string;
   } | null;
-  repositoryUpdate?: {
-    ok?: boolean;
-    source?: string;
-    checkedAt?: string;
-    checkMode?: string;
-    error?: string;
-    manifestUrl?: string;
-    downloadUrl?: string;
-    downloadCandidates?: string[];
-    downloadAttemptUrls?: string[];
-    downloadStatus?: string;
-    downloadError?: string;
-    updateAvailable?: boolean;
-    updateSystem?: {
-      schemaVersion?: string;
-      cacheTtlMs?: number;
-      ignoredLegacyCache?: boolean;
-      cachePolicy?: string;
-      downloadPolicy?: string;
-    };
-    local?: {
-      version?: string;
-      build?: string;
-    };
-    remote?: {
-      id?: string;
-      version?: string;
-      build?: string;
-      releasedAt?: string;
-      title?: string;
-      detail?: string;
-      notes?: string;
-      line?: string;
-      text?: string;
-      archiveUrl?: string;
-      downloadCandidates?: string[];
-      detectionSource?: string;
-    };
-  } | null;
+  repositoryUpdate?: RepositoryUpdateState | null;
   adCleaner?: {
     enabled?: boolean;
     version?: string;
@@ -188,6 +208,9 @@ export type BridgeState = {
     lastReason?: string;
     lastMatched?: string;
     selectors?: number;
+    splashHits?: number;
+    countdownHits?: number;
+    bootActive?: boolean;
   };
   publishedAt?: string;
 };

@@ -2281,6 +2281,14 @@
         emitFlow("广告清理", cleaned ? `本次清理 ${cleaned} 个广告元素` : "当前页面没有新的广告元素", cleaned ? "ok" : "info");
       }
       if (action === "check-update") await checkRepositoryUpdate(true, { realtime: true });
+      if (action === "dismiss-update") {
+        const updateId = String(payload?.updateId || uiState.repositoryUpdate?.remote?.id || "");
+        await closeRepositoryUpdateDialog("dismissed");
+        if (updateId) {
+          await sendRuntime("markRepositoryUpdateNotified", { updateId, mode: "dismissed" }).catch(() => {});
+        }
+        emitFlow("更新提醒", "已忽略本次更新提醒，可在设置页升级中心随时查看", "info");
+      }
       if (action === "download-latest") {
         const latest = await checkRepositoryUpdate(true, { realtime: true, silent: true });
         let response = null;

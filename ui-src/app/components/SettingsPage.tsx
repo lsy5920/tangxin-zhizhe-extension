@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Ban, CheckCircle, Copy, Download, ExternalLink, Info, Lightbulb, Package, Radio, RefreshCw, Sparkles, Trash2, Users, X } from "lucide-react";
+import { Activity, AlertTriangle, Ban, CheckCircle, Copy, ExternalLink, Info, Lightbulb, Package, Radio, RefreshCw, Sparkles, Trash2, Users } from "lucide-react";
 import type { BridgeState, Page, WorkerDiagnostics } from "../types";
 import { formatRelativeTime } from "../helpers";
-import { APP_BUILD, APP_VERSION, APP_VERSION_LABEL, ART_PLAYER_VERSION, HLS_CORE_VERSION } from "../constants";
+import { APP_BUILD, APP_VERSION_LABEL, ART_PLAYER_VERSION, HLS_CORE_VERSION } from "../constants";
+import { UpdateCenter } from "../update/UpdateCenter";
 
 type Props = {
   state: BridgeState;
@@ -150,11 +151,7 @@ function clearCachedDiagnostics() {
 }
 
 export function SettingsPage({ state, onAction, onPage }: Props) {
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
-  const [updateCheckStartedAt, setUpdateCheckStartedAt] = useState(0);
-  const [previousUpdateCheckedAt, setPreviousUpdateCheckedAt] = useState("");
   const [cacheChecked, setCacheChecked] = useState(cacheItems.map((_, i) => i !== 3));
   const [serviceCheck, setServiceCheck] = useState<CloudServiceCheck | null>(null);
   const [checkingService, setCheckingService] = useState(false);
@@ -168,32 +165,6 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
     });
     return () => { alive = false; };
   }, [state.remote?.baseUrl]);
-
-  useEffect(() => {
-    if (!checkingUpdate || !updateCheckStartedAt) return;
-    const currentCheckedAt = String(state.repositoryUpdate?.checkedAt || "");
-    const checkedAt = Date.parse(currentCheckedAt);
-    if (!currentCheckedAt || currentCheckedAt === previousUpdateCheckedAt || !Number.isFinite(checkedAt) || checkedAt < updateCheckStartedAt - 1000) return;
-    setCheckingUpdate(false);
-    setShowUpdateModal(true);
-  }, [checkingUpdate, updateCheckStartedAt, previousUpdateCheckedAt, state.repositoryUpdate?.checkedAt]);
-
-  useEffect(() => {
-    if (!checkingUpdate) return;
-    const timer = window.setTimeout(() => {
-      setCheckingUpdate(false);
-      setCopyStatus("检测还没返回，请稍后查看或再次检查");
-      window.setTimeout(() => setCopyStatus(""), 1800);
-    }, 9000);
-    return () => window.clearTimeout(timer);
-  }, [checkingUpdate, updateCheckStartedAt]);
-
-  const checkUpdate = () => {
-    setCheckingUpdate(true);
-    setPreviousUpdateCheckedAt(String(state.repositoryUpdate?.checkedAt || ""));
-    setUpdateCheckStartedAt(Date.now());
-    onAction("check-update");
-  };
 
   const checkWorkerHealth = async () => {
     const url = state.remote?.baseUrl || "";
@@ -222,85 +193,6 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
     window.setTimeout(() => setCopyStatus(""), 1600);
   };
 
-  const copyUpdateInfo = async () => {
-    const lines = [
-      "糖心志者更新信息",
-      `本地版本：${APP_VERSION_LABEL}`,
-      `本地构建：${APP_BUILD}`,
-      `远程版本：${remoteVersionText}`,
-      `远程构建：${remoteBuildText}`,
-      `发布时间：${remoteUpdate?.releasedAt || "未检测"}`,
-      `检测模式：${updateCheckMode}`,
-      `检测来源：${updateSourceText}`,
-      `清单地址：${updateManifestUrl || "未检测"}`,
-      `检测时间：${updateCheckedText}`,
-      `下载地址：${updateDownloadUrl || "未检测"}`,
-      `候选地址：${updateCandidates.length ? updateCandidates.join(" | ") : "未检测"}`,
-      `实际尝试地址：${updateAttemptUrls.length ? updateAttemptUrls.join(" | ") : "未开始下载"}`,
-      `下载状态：${state.repositoryUpdate?.downloadStatus || "未开始"}`,
-      `下载错误：${state.repositoryUpdate?.downloadError || state.repositoryUpdate?.error || "无"}`,
-      `缓存策略：${updateCacheTip}`,
-      `下载策略：${updateDownloadPolicy}`,
-      `更新状态：${updateAvailable ? "发现新版本" : "当前版本可用"}`,
-      `更新说明：${updateSummary}`
-    ];
-    try {
-      await navigator.clipboard.writeText(lines.join("\n"));
-      setCopyStatus("更新信息已复制");
-    } catch (_) {
-      setCopyStatus("复制失败，请稍后重试");
-    }
-    window.setTimeout(() => setCopyStatus(""), 1600);
-  };
-
-  const copyUpdateDownloadUrl = async () => {
-    // 单独复制最新版压缩包地址，下载按钮受浏览器限制时也能手动保存。
-    if (!updateDownloadUrl) return;
-    try {
-      await navigator.clipboard.writeText(updateDownloadUrl);
-      setCopyStatus("下载地址已复制");
-    } catch (_) {
-      setCopyStatus("复制失败，请稍后重试");
-    }
-    window.setTimeout(() => setCopyStatus(""), 1600);
-  };
-
-  const openUpdateDownloadUrl = () => {
-    if (!updateDownloadUrl) return;
-    window.open(updateDownloadUrl, "_blank", "noopener,noreferrer");
-  };
-
-  const updateAvailable = Boolean(state.repositoryUpdate?.updateAvailable);
-  const remoteUpdate = state.repositoryUpdate?.remote;
-  const updateFailed = state.repositoryUpdate?.ok === false;
-  const remoteVersionText = remoteUpdate?.version ? `v${remoteUpdate.version}` : "未检测";
-  const remoteBuildText = remoteUpdate?.build || "未检测";
-  const updateCheckedText = state.repositoryUpdate?.checkedAt ? formatRelativeTime(state.repositoryUpdate.checkedAt) : "未检测";
-  const updateSourceText = state.repositoryUpdate?.source === "update.json" ? "远程版本清单" : state.repositoryUpdate?.source || "未检测";
-  const updateManifestUrl = state.repositoryUpdate?.manifestUrl || "";
-  const updateCheckMode = state.repositoryUpdate?.checkMode || "实时检测";
-  const updateCandidates = Array.from(new Set([
-    ...(state.repositoryUpdate?.downloadCandidates || []),
-    ...(remoteUpdate?.downloadCandidates || []),
-    state.repositoryUpdate?.downloadUrl || "",
-    remoteUpdate?.archiveUrl || ""
-  ].filter(Boolean)));
-  const updateDownloadUrl = state.repositoryUpdate?.downloadUrl || remoteUpdate?.archiveUrl || updateCandidates[0] || "";
-  const updateAttemptUrls = Array.from(new Set([...(state.repositoryUpdate?.downloadAttemptUrls || [])].filter(Boolean)));
-  const updateSummary = updateFailed
-    ? `更新检测失败：${state.repositoryUpdate?.error || "请稍后重试"}`
-    : remoteUpdate?.detail || remoteUpdate?.notes || remoteUpdate?.text || remoteUpdate?.line || remoteUpdate?.title || (remoteUpdate?.version ? "远程版本与本地一致。" : "请点击检查更新获取远程版本。");
-  const hasRemoteUpdateInfo = Boolean(remoteUpdate?.version || state.repositoryUpdate?.checkedAt);
-  const updateDownloadButtonText = hasRemoteUpdateInfo ? "下载" : "检测并下载";
-  const updateSystemTip = state.repositoryUpdate?.updateSystem?.ignoredLegacyCache
-    ? "已忽略旧版更新缓存，本次按新版清单重新检测。"
-    : "新版升级系统会实时读取远程清单，并保留候选下载地址用于兜底。";
-  const updateCacheTip = state.repositoryUpdate?.updateSystem?.cachePolicy
-    || (state.repositoryUpdate?.updateSystem?.cacheTtlMs
-      ? `自动检测保护间隔约 ${Math.max(1, Math.round(Number(state.repositoryUpdate.updateSystem.cacheTtlMs) / 1000))} 秒，手动检查会立即绕过缓存。`
-      : "本版本检查更新会重新读取远程清单，不再沿用旧更新缓存。");
-  const updateDownloadPolicy = state.repositoryUpdate?.updateSystem?.downloadPolicy || "下载前会重新检测远程清单，并按候选地址自动兜底。";
-  const updateSourceDetail = remoteUpdate?.detectionSource || updateSourceText;
   const diagnostics = serviceCheck?.diagnostics;
   const diagnosticTone = levelClasses(diagnostics?.level);
   const accountProblem = hasDiagnosticKey(diagnostics, ["accounts", "usable", "risk", "unverified"]);
@@ -322,7 +214,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
             { label: "播放器", value: `ArtPlayer ${ART_PLAYER_VERSION}` },
             { label: "HLS内核", value: `hls.js ${HLS_CORE_VERSION}` },
             { label: "mux.js", value: "7.0.0" },
-            { label: "升级系统", value: "v3" },
+            { label: "升级系统", value: "v4" },
             { label: "React", value: "18 + TSX" }
           ].map((item) => (
             <div key={item.label} className="rounded-xl bg-white/20 px-3 py-1.5 backdrop-blur">
@@ -492,63 +384,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
         </button>
       </div>
 
-      <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
-        <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><RefreshCw size={14} className="text-sky-400" /> 更新管理</h3>
-        <div className={`rounded-2xl px-3 py-2 ${updateFailed ? "bg-rose-50" : updateAvailable ? "bg-amber-50" : "bg-emerald-50"}`}>
-          <div className="flex items-center justify-between gap-2">
-            <p className={`text-xs font-semibold ${updateFailed ? "text-rose-600" : updateAvailable ? "text-amber-600" : "text-emerald-600"}`}>{updateFailed ? "检测失败" : updateAvailable ? "发现新版本" : remoteUpdate?.version ? "当前版本可用" : "等待检测"}</p>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] ${updateFailed ? "bg-white text-rose-600" : updateAvailable ? "bg-white text-amber-600" : "bg-white text-emerald-600"}`}>{APP_VERSION_LABEL}</span>
-          </div>
-          <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
-            <div className="rounded-xl bg-white/80 px-2 py-1.5">
-              <p className="text-purple-300">本地版本</p>
-              <p className="truncate font-semibold text-purple-700">v{APP_VERSION}</p>
-              <p className="truncate font-mono text-purple-300">{APP_BUILD}</p>
-            </div>
-            <div className="rounded-xl bg-white/80 px-2 py-1.5">
-              <p className="text-purple-300">远程版本</p>
-              <p className="truncate font-semibold text-purple-700">{remoteVersionText}</p>
-              <p className="truncate font-mono text-purple-300">{remoteBuildText}</p>
-            </div>
-          </div>
-          <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-purple-400">{updateSummary}</p>
-          <div className="mt-2 grid gap-1 text-[10px] text-purple-300 sm:grid-cols-2">
-            <p>检测来源：{updateSourceDetail}</p>
-            <p>检测模式：{updateCheckMode}</p>
-            <p>检测时间：{checkingUpdate ? "实时检测中..." : updateCheckedText}</p>
-            {remoteUpdate?.releasedAt && <p>发布时间：{remoteUpdate.releasedAt}</p>}
-            {updateManifestUrl && <p className="truncate">清单地址：{updateManifestUrl}</p>}
-            {updateDownloadUrl && <p className="truncate">下载地址：{updateDownloadUrl}</p>}
-          </div>
-          <div className="mt-2 rounded-xl bg-white/70 px-2 py-1.5 text-[10px] leading-relaxed text-purple-400">
-            <p>{updateSystemTip}</p>
-            <p className="mt-1">{updateCacheTip}</p>
-            <p className="mt-1">{updateDownloadPolicy}</p>
-            {updateCandidates.length > 1 && <p className="mt-1 truncate">候选地址：{updateCandidates.join(" ｜ ")}</p>}
-            {updateAttemptUrls.length > 0 && <p className="mt-1 truncate">上次尝试：{updateAttemptUrls.join(" ｜ ")}</p>}
-            {state.repositoryUpdate?.downloadStatus && <p className="mt-1">上次下载：{state.repositoryUpdate.downloadStatus}</p>}
-            {state.repositoryUpdate?.downloadError && <p className="mt-1 text-rose-500">下载错误：{state.repositoryUpdate.downloadError}</p>}
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          <button onClick={checkUpdate} disabled={checkingUpdate} className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 py-2 text-xs font-medium text-white shadow-sm transition-all active:scale-95 disabled:opacity-70">
-            {checkingUpdate ? <><RefreshCw size={13} className="animate-spin" /> 检查中…</> : <><RefreshCw size={13} /> 检查更新</>}
-          </button>
-          <button onClick={copyUpdateInfo} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-sky-200 py-2 text-xs font-medium text-sky-500 transition-transform active:scale-95">
-            <Copy size={13} /> 复制信息
-          </button>
-          <button onClick={copyUpdateDownloadUrl} disabled={!updateDownloadUrl} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-emerald-200 py-2 text-xs font-medium text-emerald-500 transition-transform active:scale-95 disabled:opacity-45">
-            <Copy size={13} /> 复制地址
-          </button>
-          <button onClick={openUpdateDownloadUrl} disabled={!updateDownloadUrl} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-amber-200 py-2 text-xs font-medium text-amber-500 transition-transform active:scale-95 disabled:opacity-45">
-            <ExternalLink size={13} /> 打开地址
-          </button>
-          <button onClick={() => onAction("download-latest")} className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95">
-            <Download size={13} /> {updateDownloadButtonText}
-          </button>
-        </div>
-        {copyStatus && <p className="text-center text-[10px] text-purple-400">{copyStatus}</p>}
-      </div>
+      <UpdateCenter state={state} onAction={onAction} />
 
       <div className="space-y-3 rounded-2xl border border-pink-100 bg-white p-4 shadow-sm">
         <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><Trash2 size={14} className="text-rose-400" /> 清除数据缓存</h3>
@@ -575,43 +411,6 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
           <ExternalLink size={13} /> 打开项目主页
         </button>
       </div>
-
-      {showUpdateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className={`flex h-8 w-8 items-center justify-center rounded-full ${updateFailed ? "bg-gradient-to-br from-rose-400 to-red-500" : updateAvailable ? "bg-gradient-to-br from-amber-400 to-orange-500" : "bg-gradient-to-br from-emerald-400 to-sky-500"}`}>
-                  {updateFailed ? <AlertTriangle size={16} className="text-white" /> : updateAvailable ? <Download size={16} className="text-white" /> : <CheckCircle size={16} className="text-white" />}
-                </div>
-                <h3 className="font-bold text-purple-800">{updateFailed ? "检测失败" : updateAvailable ? "发现新版本" : "已是最新版本"}</h3>
-              </div>
-              <button onClick={() => setShowUpdateModal(false)}><X size={18} className="text-purple-400" /></button>
-            </div>
-            <div className="mb-4 space-y-2">
-              <p className="text-xs leading-relaxed text-purple-500">{checkingUpdate ? "正在实时读取远程 update.json，请稍候。" : updateFailed ? updateSummary : updateAvailable ? updateSummary : `当前版本 ${APP_VERSION_LABEL} 已完成本地校验，可继续使用。`}</p>
-              <div className="rounded-2xl bg-purple-50 px-3 py-2 text-[10px] leading-relaxed text-purple-400">
-                <p>远程版本：{remoteVersionText} / 构建：{remoteBuildText}</p>
-                {remoteUpdate?.releasedAt && <p>发布时间：{remoteUpdate.releasedAt}</p>}
-                <p>检测来源：{updateSourceDetail}</p>
-                {updateDownloadUrl && <p className="truncate">下载地址：{updateDownloadUrl}</p>}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setShowUpdateModal(false)} className="flex-1 rounded-xl border border-pink-200 py-2 text-sm font-medium text-purple-500">稍后</button>
-              <button
-                onClick={() => {
-                  onAction("download-latest");
-                  setShowUpdateModal(false);
-                }}
-                className="flex-1 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 py-2 text-sm font-medium text-white shadow-md"
-              >
-                {updateDownloadButtonText}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showClearConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm">
