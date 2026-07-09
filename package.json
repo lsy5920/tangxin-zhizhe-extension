@@ -1,7 +1,7 @@
 {
   "name": "tangxin-zhizhe-extension",
   "private": true,
-  "version": "3.5.4",
+  "version": "3.5.5",
   "type": "module",
   "scripts": {
     "deps:check": "node scripts/check-deps.mjs",
@@ -9,7 +9,9 @@
     "prebuild": "node scripts/check-deps.mjs",
     "build": "vite build",
     "precheck": "node scripts/check-deps.mjs",
-    "check": "vite build"
+    "check": "vite build",
+    "pack": "node scripts/pack-crx.mjs",
+    "release": "npm run build && npm run pack"
   },
   "dependencies": {
     "artplayer": "5.4.0",
@@ -21,6 +23,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "4.3.1",
     "@vitejs/plugin-react": "6.0.2",
+    "crx": "5.0.1",
     "tailwindcss": "4.1.12",
     "vite": "8.0.16"
   }

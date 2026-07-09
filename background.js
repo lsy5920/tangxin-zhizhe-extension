@@ -26,9 +26,15 @@ const REPOSITORY_CONFIG = {
   owner: "lsy5920",
   repo: "tangxin-zhizhe-extension",
   url: "https://github.com/lsy5920/tangxin-zhizhe-extension",
+  // 正式分发格式为 CRX；zip 仅作极端兜底，优先全部走 releases 下的 crx。
+  packageFormat: "crx",
+  crxFileName: "tangxin-zhizhe-latest.crx",
   archiveUrls: [
-    "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
-    "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
+    "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
+    "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx",
+    "https://cdn.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/releases/tangxin-zhizhe-latest.crx",
+    "https://fastly.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/releases/tangxin-zhizhe-latest.crx",
+    "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   /*
     更新清单多源策略（升级系统 v5）：
@@ -57,9 +63,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 8000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0505";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0520";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 05:05 【修复】升级版本到 v3.5.4，更新检测改为多源并发并取最新 version/build，修复 jsDelivr 缓存导致云端显示旧版、检测不到更新。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 05:20 【新增】升级版本到 v3.5.5，正式分发改为 CRX 安装包；检查更新下载优先获取 releases 下的 .crx 文件。";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1723,16 +1729,28 @@ function currentArchiveUrl(remoteManifest = {}) {
   return safeHttpUrl(remoteManifest.archiveUrl)
     || safeHttpUrl(remoteManifest.downloadUrl)
     || safeHttpUrl(REPOSITORY_CONFIG.archiveUrls[0])
-    || `https://codeload.github.com/${REPOSITORY_CONFIG.owner}/${REPOSITORY_CONFIG.repo}/zip/refs/heads/main`;
+    || `https://github.com/${REPOSITORY_CONFIG.owner}/${REPOSITORY_CONFIG.repo}/raw/main/releases/${REPOSITORY_CONFIG.crxFileName || "tangxin-zhizhe-latest.crx"}`;
 }
 
 function githubArchiveFallbackCandidates() {
+  const file = REPOSITORY_CONFIG.crxFileName || "tangxin-zhizhe-latest.crx";
+  const owner = REPOSITORY_CONFIG.owner;
+  const repo = REPOSITORY_CONFIG.repo;
   return [
-    `https://codeload.github.com/${REPOSITORY_CONFIG.owner}/${REPOSITORY_CONFIG.repo}/zip/refs/heads/main`,
-    `https://github.com/${REPOSITORY_CONFIG.owner}/${REPOSITORY_CONFIG.repo}/archive/refs/heads/main.zip`,
-    `https://api.github.com/repos/${REPOSITORY_CONFIG.owner}/${REPOSITORY_CONFIG.repo}/zipball/main`,
+    `https://github.com/${owner}/${repo}/raw/main/releases/${file}`,
+    `https://raw.githubusercontent.com/${owner}/${repo}/main/releases/${file}`,
+    `https://cdn.jsdelivr.net/gh/${owner}/${repo}@main/releases/${file}`,
+    `https://fastly.jsdelivr.net/gh/${owner}/${repo}@main/releases/${file}`,
+    `https://ghproxy.net/https://raw.githubusercontent.com/${owner}/${repo}/main/releases/${file}`,
     ...REPOSITORY_CONFIG.archiveUrls
   ];
+}
+
+function packageFileExtension(urlOrName = "") {
+  const text = String(urlOrName || "").toLowerCase();
+  if (text.includes(".crx")) return "crx";
+  if (text.includes(".zip")) return "zip";
+  return REPOSITORY_CONFIG.packageFormat === "zip" ? "zip" : "crx";
 }
 
 function readmeFallbackUpdate(remoteManifest = {}, remoteReadmeHead = null, localReadmeHead = null) {
@@ -1883,7 +1901,8 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
       cacheTtlMs: REPOSITORY_CONFIG.checkIntervalMs,
       ignoredLegacyCache: Boolean(options.ignoredLegacyCache),
       cachePolicy: "升级系统 v5：并发探测全部镜像，按 version/build 取最新清单，忽略过期 CDN 缓存。",
-      downloadPolicy: "下载前重新检测清单；地址追加时间戳；自动尝试 GitHub 多候选源。",
+      downloadPolicy: "下载前重新检测清单；优先下载 CRX 安装包；地址追加时间戳；多镜像候选。",
+      packageFormat: REPOSITORY_CONFIG.packageFormat || "crx",
       mirrorCount: (REPOSITORY_CONFIG.updateManifestUrls || []).length
     },
     ...(options.extra || {})
@@ -2163,7 +2182,6 @@ async function buildLatestArchiveDownloadPlan(meta = {}) {
   const manifest = update?.updateManifest || {};
   const version = safeFileName(String(meta.version || remote.version || manifest.version || localExtensionVersion() || "latest"));
   const build = safeFileName(String(meta.build || remote.build || manifest.build || LOCAL_UPDATE_BUILD || "main"));
-  const filename = `糖心志者/糖心志者_${version}_${build}_最新版.zip`;
   const candidates = repositoryArchiveCandidates(manifest, {
     url: meta.url || remote.archiveUrl || update?.downloadUrl,
     downloadUrl: meta.downloadUrl
@@ -2172,7 +2190,10 @@ async function buildLatestArchiveDownloadPlan(meta = {}) {
     url: meta.url || remote.archiveUrl || update?.downloadUrl,
     downloadUrl: meta.downloadUrl
   });
-  return { update, manifestError, version, build, filename, candidates, attempts };
+  const primaryUrl = candidates[0] || attempts[0] || "";
+  const ext = packageFileExtension(primaryUrl);
+  const filename = `糖心志者/糖心志者_${version}_${build}_最新版.${ext}`;
+  return { update, manifestError, version, build, filename, candidates, attempts, packageExt: ext };
 }
 
 async function recordRepositoryArchiveDownload(result = {}) {

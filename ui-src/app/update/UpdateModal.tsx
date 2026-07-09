@@ -182,10 +182,10 @@ export function UpdateModal({
                   {downloading || vm.status === "downloading"
                     ? "下载中…"
                     : vm.status === "available"
-                      ? "下载最新版"
+                      ? "下载最新 CRX"
                       : vm.status === "downloaded"
-                        ? "再次下载"
-                        : "下载安装包"}
+                        ? "再次下载 CRX"
+                        : "下载 CRX 安装包"}
                 </button>
               </>
             )}

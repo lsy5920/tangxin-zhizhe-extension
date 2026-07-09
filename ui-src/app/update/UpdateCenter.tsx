@@ -75,7 +75,7 @@ export function UpdateCenter({ state, onAction }: Props) {
             <Rocket size={14} className="text-sky-400" /> 升级中心
           </h3>
           <p className="mt-0.5 text-[10px] leading-relaxed text-purple-400">
-            多源并发取最新 · 版本/构建比对 · 多候选下载 · 更新日志
+            多源并发取最新 · 版本/构建比对 · CRX 安装包 · 更新日志
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ${tone.badge}`}>
@@ -196,7 +196,7 @@ export function UpdateCenter({ state, onAction }: Props) {
           className={`flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r ${tone.solid} py-2 text-xs font-semibold text-white shadow-sm transition-transform active:scale-95 disabled:opacity-70`}
         >
           {downloading ? <RefreshCw size={13} className="animate-spin" /> : <Download size={13} />}
-          {downloading ? "下载中…" : vm.status === "available" ? "下载最新版" : "下载安装包"}
+          {downloading ? "下载中…" : vm.status === "available" ? "下载最新 CRX" : "下载 CRX 安装包"}
         </button>
         <button
           type="button"

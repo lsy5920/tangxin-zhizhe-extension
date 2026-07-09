@@ -52,7 +52,7 @@
 - MP4 输出：M3U8 分片下载完成后优先转封装为真实 MP4，失败时保留 TS 兜底。
 - 数据清理：支持一键清除旧版本缓存、账号池缓存、播放缓存、下载缓存、更新缓存和页面运行缓存。
 - 旧数据整理：当前版本重构升级系统后不再保留旧运行数据，覆盖安装时会清空旧账号、旧播放记录、旧下载任务和旧更新状态，请重新同步云端账号池。
-- 更新管理（升级系统 v5）：后台**并发探测** GitHub raw、gitmirror、ghproxy、jsDelivr 等多份远程 `update.json`，在成功源中按 **version + build 取最新**（不再「第一个成功就返回」，避免 CDN 强缓存把云端显示成旧版）；同版本优先 raw 主源。前端 `UpdateViewModel` 统一映射 idle/checking/latest/available/error/downloading/downloaded 七态；发现新版本时弹出专业渐变更新弹窗；设置页「升级中心」展示本地/远程版本、检测来源（含多源探测摘要）、清单与下载地址、更新日志；下载前重新拉清单、地址追加时间戳、GitHub 多候选压缩包兜底；忽略本次更新后同一版本不再重复弹窗。
+- 更新管理（升级系统 v5）：后台**并发探测** GitHub raw、gitmirror、ghproxy、jsDelivr 等多份远程 `update.json`，在成功源中按 **version + build 取最新**；同版本优先 raw 主源。前端 `UpdateViewModel` 统一七态；发现新版本时弹出专业更新弹窗。**正式安装包为 CRX**：`releases/tangxin-zhizhe-latest.crx`，检查更新后「下载」直接拉取 `.crx` 文件（多镜像候选），不再默认下 zip 源码包。
 - 移动端适配：手机视图下顶部操作栏和底部导航固定，内部内容独立滚动，并使用更接近设计稿的全屏糖果风面板。
 
 ## 项目目录结构
@@ -65,7 +65,12 @@ tangxin-zhizhe-extension/
 ├── vite.config.ts             # Vite 打包配置，输出扩展可加载的 dist-ui 资源
 ├── tsconfig.json              # React TypeScript 源码检查配置
 ├── scripts/
-│   └── check-deps.mjs         # 构建前依赖完整性自检和 node_modules 损坏自动修复脚本
+│   ├── check-deps.mjs         # 构建前依赖完整性自检和 node_modules 损坏自动修复脚本
+│   └── pack-crx.mjs           # 打包为 CRX 安装包（固定私钥签名）
+├── releases/                  # 对外分发的 CRX 安装包（latest + 版本号）
+│   ├── tangxin-zhizhe-latest.crx
+│   └── tangxin-zhizhe-x.y.z.crx
+├── keys/                      # 本地签名密钥（.pem 不入库，务必备份）
 ├── ui-src/                    # 直接接入的 Figma Make 糖果风 React 页面源码
 │   ├── main.tsx               # 新界面挂载入口，使用 Shadow DOM 隔离网页样式
 │   ├── app/                   # App、五个页面组件、状态桥和类型定义
@@ -92,6 +97,20 @@ tangxin-zhizhe-extension/
 ```
 
 ## 安装教程
+
+### 方式一：安装 CRX（推荐，更新也下这个）
+
+1. 下载最新安装包：  
+   `https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx`
+2. **Kiwi 浏览器（安卓）**：下载后点开 `.crx` 即可安装/更新。
+3. **Chrome / Edge 桌面端**：
+   - 打开 `chrome://extensions/`（或 `edge://extensions/`）
+   - 打开右上角「开发者模式」
+   - 把 `.crx` 文件拖进扩展页面完成安装  
+   - 若浏览器拦截「非应用商店扩展」，请用下方「方式二」加载解压目录，或允许来自其他来源的扩展（视浏览器策略而定）
+4. 以后在插件「设置 → 升级中心」点「下载」也会直接下载同款 `.crx` 文件。
+
+### 方式二：开发者模式加载源码目录
 
 1. 打开 Chrome 或 Edge。
 2. 在地址栏输入 `chrome://extensions/` 并回车。
@@ -435,13 +454,32 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 
 ### 下载最新版失败
 
-1. 进入「设置」页，未检测过远程信息时点击「检测并下载」；已经检测到远程信息后按钮会显示为「下载」。
-2. 插件会先重新检测远程清单，再按清单里的完整下载地址下载 GitHub 主分支最新压缩包。
-3. 实际提交下载前会给地址追加时间戳，减少浏览器或代理缓存旧压缩包的概率。
-4. 下载会优先使用 `https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main`，失败后自动尝试 GitHub 备用压缩包地址和 GitHub API zipball 地址。
-5. 如果浏览器拦截下载，请打开浏览器下载记录允许保留文件。
-6. 如果仍然失败，设置页会显示上次下载错误、所有候选地址和实际尝试地址，请点击「复制信息」保存诊断内容。
-7. 如果网络无法访问 GitHub 压缩包地址，请点击设置页「打开地址」或复制设置页展示的下载地址到浏览器中手动打开。
+1. 进入「设置」页，点击「检查更新」后再点「下载」。
+2. 插件会先重新检测远程清单，再按清单下载 **CRX 安装包**（`releases/tangxin-zhizhe-latest.crx`）。
+3. 候选地址依次尝试：GitHub raw、raw.githubusercontent、jsDelivr、ghproxy 等镜像。
+4. 实际提交下载前会给地址追加时间戳（CDN 部分镜像可能仍有缓存延迟）。
+5. 保存文件名形如：`糖心志者_3.5.5_构建号_最新版.crx`。
+6. 如果浏览器拦截下载，请打开浏览器下载记录允许保留文件。
+7. 如果仍然失败，设置页点「复制信息」保存诊断内容；也可手动打开清单里的下载地址。
+
+### 开发者如何打 CRX 包（发版）
+
+1. 确认本机已安装 Node.js，并在项目目录执行过 `npm install`。
+2. 修改版本号时同步：`manifest.json`、`package.json`、`ui-src/app/constants.ts`、`background.js` 构建号、`update.json`、`README` 更新日志。
+3. 执行一键发版构建：
+
+```bash
+npm run release
+```
+
+等价于 `npm run build` 后再 `npm run pack`。
+
+4. 产物在 `releases/`：
+   - `tangxin-zhizhe-latest.crx`（更新系统固定下载这个）
+   - `tangxin-zhizhe-{版本号}.crx`（带版本备份）
+   - `extension-id.txt`、`latest.json`
+5. 首次打包会在 `keys/txzz-extension.pem` 生成签名私钥，**请立刻备份**；不要把 `.pem` 提交到公开仓库。同一密钥才能保持扩展 ID 不变。
+6. 将 `releases/*.crx` 与源码一并提交并推送到 `main`，用户即可在线下载更新。
 
 ## 安全与隐私
 
@@ -600,3 +638,4 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 2026-07-10 04:30 【修复】升级版本到 v3.5.2，修复 background.js 中 `??` 与 `||` 混用导致的语法错误，Service Worker 无法启动，同步账号与检测更新全部失效。
 2026-07-10 04:45 【优化】升级版本到 v3.5.3，线路探测改为后台延迟串行静默执行，播放中锁定当前源避免探测改分重载；体检/诊断/记录报告仅面板内查看，不再写入剪贴板。
 2026-07-10 05:05 【修复】升级版本到 v3.5.4，升级系统 v5：更新检测改为多源并发探测，按 version+build 取最新清单，修复 jsDelivr 强缓存导致「本地 3.5.3 / 云端却显示 3.5.1～3.5.2、检测不到更新」；设置页展示探测摘要；同步 manifest、package、update.json、构建号与构建产物。
+2026-07-10 05:20 【新增】升级版本到 v3.5.5，正式分发改为 CRX：新增 `scripts/pack-crx.mjs` 与 `npm run pack` / `npm run release`；产物 `releases/tangxin-zhizhe-latest.crx`；检查更新下载优先拉取 CRX（多镜像），保存名为 `.crx`；固定私钥签名保证扩展 ID 稳定；同步文档安装与发版说明。

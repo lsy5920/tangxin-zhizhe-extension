@@ -1,87 +1,91 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.5.4",
-  "build": "2026-07-10-0505",
-  "releasedAt": "2026-07-10 05:05",
+  "version": "3.5.5",
+  "build": "2026-07-10-0520",
+  "releasedAt": "2026-07-10 05:20",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
-  "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
+  "packageFormat": "crx",
+  "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
   "downloadCandidates": [
-    "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
-    "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
+    "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
+    "https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx",
+    "https://cdn.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/releases/tangxin-zhizhe-latest.crx",
+    "https://fastly.jsdelivr.net/gh/lsy5920/tangxin-zhizhe-extension@main/releases/tangxin-zhizhe-latest.crx",
+    "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0520",
+      "type": "新增",
+      "title": "正式分发改为 CRX 安装包",
+      "detail": "新增 npm run pack / release 一键打包；产物写入 releases/tangxin-zhizhe-latest.crx。检查更新与下载最新版优先获取 CRX 文件，保存名为 .crx，便于 Kiwi 等浏览器直接安装；固定私钥签名保证扩展 ID 稳定。"
+    },
     {
       "id": "2026-07-10-0505",
       "type": "修复",
       "title": "更新检测多源并发取最新 · 修复云端显示旧版",
-      "detail": "根因是 jsDelivr 等 CDN 强缓存旧 update.json，旧逻辑「第一个成功源就返回」会把 3.5.1/3.5.2 当成云端版本。现改为并发探测 GitHub raw、gitmirror、ghproxy、jsDelivr 等多源，按 version+build 取最新一份；同版本优先 raw。升级中心展示探测摘要。"
+      "detail": "根因是 jsDelivr 等 CDN 强缓存旧 update.json，旧逻辑「第一个成功源就返回」会把 3.5.1/3.5.2 当成云端版本。现改为并发探测多源，按 version+build 取最新一份。"
     },
     {
       "id": "2026-07-10-0445",
       "type": "优化",
       "title": "线路探测不打断播放 · 报告不写剪贴板",
-      "detail": "主备线路探测改为返回播放详情后延迟串行后台执行，降低与起播带宽冲突；播放中锁定当前源，探测改分不再自动切换导致重载。体检/诊断/记录报告改为面板内查看弹层，不再写入系统剪贴板。"
+      "detail": "主备线路探测改为返回播放详情后延迟串行后台执行；播放中锁定当前源。体检/诊断/记录报告改为面板内查看弹层。"
     },
     {
       "id": "2026-07-10-0430",
       "type": "修复",
       "title": "修复插件无法联网 · Service Worker 语法错误",
-      "detail": "下载进度字段写入时混用 ?? 与 ||，导致 background.js 语法错误、Service Worker 无法启动，同步账号、检测更新、播放详情等所有后台联网请求全部失败。已改为安全的空值合并写法。"
+      "detail": "下载进度字段写入时混用 ?? 与 ||，导致 background.js 语法错误、Service Worker 无法启动。"
     },
     {
       "id": "2026-07-10-0415",
       "type": "修复",
       "title": "开屏倒计时结束后进入按钮残留",
-      "detail": "广告清理在移除 .ad-splash 后，继续清理右上角固定定位的进入/跳过/纯数字倒计时残留徽标（常挂到 body，不在 splash 内）；点击拦截同步覆盖；首屏更密补扫与轻量巡检，避免倒计时归零后按钮回弹。"
+      "detail": "广告清理补杀开屏倒计时结束后的右上角进入/跳过/数字残留按钮。"
     },
     {
       "id": "2026-07-10-0400",
       "type": "优化",
       "title": "线路智能推荐 · 可选线路下载与体积进度",
-      "detail": "1) 主备线路不再默认主线优先，按分片数/时长/延迟/HTTP 状态综合打分推荐更好线路。2) 下载支持自动优选/主线/备用；进度按已下载字节估算总体积百分比，并实时显示下载速度；下载页同步展示。"
+      "detail": "主备线路综合打分推荐；下载支持选线与字节进度/速度。"
     },
     {
       "id": "2026-07-10-0315",
       "type": "修复",
       "title": "播放页信息头底色 · 记录按视频去重",
-      "detail": "1) 播放页顶部信息头与刷新/下载/复制按钮改内联背景色，修复 Shadow DOM 下无底色。2) fullDetails 写入改为按 movieId 合并；界面展示再去重；备用链路不再单独记一条媒体观察，避免一个视频显示两条记录。"
+      "detail": "信息头内联背景色；fullDetails 按 movieId 合并去重。"
     },
     {
       "id": "2026-07-10-0300",
       "type": "优化",
       "title": "重构播放页布局 · 资源/下载/记录分段",
-      "detail": "播放页信息头更紧凑，播放器优先展示；下方改为「资源 / 下载 / 记录」三段切换，合并体检与分片、线路卡片；下载与记录沿用设计系统按钮与空状态，减少长页滚动；播放器内核与底部导航未改。"
+      "detail": "播放页改为资源/下载/记录三段切换，减少长页滚动。"
     },
     {
       "id": "2026-07-10-0230",
       "type": "修复",
       "title": "快捷操作内联渐变 · 更新检测多镜像",
-      "detail": "1) 总览快捷操作背景改内联 style + 原生 CSS 双保险，彻底解决 Shadow DOM 下白底白字。2) 升级检测改为 raw.githubusercontent + jsDelivr 多镜像轮询，失败时显示明确错误；结果摘要带上本地/远程版本比对说明。"
+      "detail": "快捷操作内联渐变背景；升级检测多镜像。"
     },
     {
       "id": "2026-07-10-0215",
       "type": "修复",
       "title": "修复快捷操作背景缺失 · 下载页统计重复",
-      "detail": "1) 总览快捷操作：动态拼接 Tailwind 渐变 class 导致粉/蓝/橙按钮背景未进构建，只剩「同步账号」紫色可见；改为 tone 映射完整静态 class。2) 下载页去掉顶部 StatGrid，只保留分段筛选（全部/进行中/可保存/失败）作为唯一数量入口，避免与统计瓷砖重复。"
+      "detail": "快捷操作静态渐变 class；下载页去掉重复 StatGrid。"
     },
     {
       "id": "2026-07-10-0200",
       "type": "优化",
       "title": "完全重构插件面板 UI · 统一设计系统",
-      "detail": "新增 ui 设计系统 primitives（PageShell/SectionCard/HeroBanner/StatGrid/SoftButton/SegmentedControl/ModalSheet 等）；总览、账号池、下载、设置全面重构布局与交互；控制台外壳（侧栏/顶栏/底栏）升级更专业；播放页外围卡片视觉对齐；移动端与桌面端体验统一。"
-    },
-    {
-      "id": "2026-07-10-0115",
-      "type": "优化",
-      "title": "缩小播放器多级菜单与主控功能图标",
-      "detail": "根据真机反馈，缩小播放器主控按钮与「菜单」多级面板中的功能图标：全屏不再使用 oversized lg 按钮；菜单芯片与工具宫格改为紧凑小图标（约 10–12px）；工具面板改为图标在上文字在下的紧凑四列布局；CSS 强制限制 more-sheet 内 svg 尺寸，减少遮挡视频画面。"
+      "detail": "五页面板统一设计系统 primitives。"
     },
     {
       "id": "2026-07-10-0100",
       "type": "优化",
       "title": "完全重构升级系统 · 专业状态机与视觉中心",
-      "detail": "升级系统提升到 v4：前端新增 UpdateViewModel 统一状态机（idle/checking/latest/available/error/downloading/downloaded）；设置页接入升级中心卡片；发现新版本时使用专业渐变弹窗，展示本地/远程版本、升级进度条、更新日志与多操作按钮；检测失败可一键重试；下载前实时读清单并多候选 GitHub 压缩包兜底；清理旧设置页破碎更新弹窗逻辑。"
+      "detail": "升级系统状态机与专业更新弹窗。"
     }
   ]
 }

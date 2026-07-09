@@ -95,10 +95,10 @@ export function buildUpdateViewModel(
         : status === "checking"
           ? "正在并发探测 GitHub 主源与各镜像，自动取最新 version/build…"
           : status === "downloading"
-            ? "正在提交最新版压缩包下载，请留意浏览器下载栏。"
+            ? "正在提交最新版 CRX 安装包下载，请留意浏览器下载栏。"
             : status === "downloaded"
-              ? (update?.downloadStatus || "最新版压缩包已提交下载。")
-              : "点击「检查更新」可获取远程版本与下载地址。";
+              ? (update?.downloadStatus || "最新版 CRX 安装包已提交下载。")
+              : "点击「检查更新」可获取远程版本与 CRX 下载地址。";
 
   const progressMap: Record<UpdateUiStatus, number> = {
     idle: 0,
