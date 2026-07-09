@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Artplayer from "artplayer";
 import Hls from "hls.js";
-import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SortDesc, Timer, Wifi, Zap } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SortDesc, Timer, Wifi } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 import { PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerMorePanelKey } from "./player/PlayerChrome";
 import { PlayerGestureHudOverlay, PlayerGestureSurface, type GestureHudState } from "./player/PlayerGestureSystem";
+import {
+  ActionToolbar,
+  EmptyState,
+  Pill,
+  SectionCard,
+  SoftButton,
+  SoftInput
+} from "./ui/primitives";
 import {
   applyAdaptiveVideoLayout,
   clearForcedFullscreenStyles,
@@ -37,6 +45,7 @@ type PlaybackLine = {
 
 type PlaybackRecordFilter = "all" | "downloadable" | "saveable" | "failed" | "backup";
 type PlaybackRecordSort = "recent" | "failed" | "saveable" | "backup";
+type PlaybackPanelTab = "resource" | "download" | "records";
 type PlaybackPreviewKey = "recommended" | "play" | "backup" | "record";
 type PlayerFitMode = "auto" | "wide" | "vertical";
 type PlayerFillMode = "contain" | "cover" | "fill";
@@ -688,6 +697,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const [recordFilter, setRecordFilter] = useState<PlaybackRecordFilter>("all");
   const [recordSearch, setRecordSearch] = useState("");
   const [recordSort, setRecordSort] = useState<PlaybackRecordSort>("recent");
+  // 播放页次级信息分段：资源体检 / 下载 / 记录，减少一屏堆叠。
+  const [panelTab, setPanelTab] = useState<PlaybackPanelTab>("resource");
   const [previewKey, setPreviewKey] = useState<PlaybackPreviewKey>("recommended");
   const [previewRecord, setPreviewRecord] = useState<PlaybackPreviewRecord | null>(null);
   const [playerReloadKey, setPlayerReloadKey] = useState(0);
@@ -2174,76 +2185,97 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const recordFilterLabel = recordFilterItems.find((item) => item.key === recordFilter)?.label || "当前筛选";
   const batchRecordReport = playbackRecordsReport(filteredRecordRows, recordFilterLabel);
 
+  const panelTabs: { key: PlaybackPanelTab; label: string; icon: typeof ShieldCheck; badge?: string }[] = [
+    { key: "resource", label: "资源", icon: ShieldCheck, badge: readyCount ? `${readyCount}线` : undefined },
+    { key: "download", label: "下载", icon: Download, badge: currentTask ? currentTaskTone.label : undefined },
+    { key: "records", label: "记录", icon: Film, badge: recordStats.total ? `${recordStats.total}` : undefined }
+  ];
+
   return (
-    <div className="txzz-playback-root txzz-page space-y-3.5 p-3.5 sm:p-4" style={playerStageStyle}>
-      <div className="txzz-playback-hidden-during-fullscreen relative overflow-hidden rounded-2xl bg-gradient-to-br from-purple-400 via-fuchsia-400 to-violet-500 p-4 text-white shadow-[0_14px_36px_rgba(168,85,247,0.28)]">
-        <div className="pointer-events-none absolute -right-2 -top-3 select-none text-5xl opacity-[0.14]">🎬</div>
-        <div className="pointer-events-none absolute -bottom-10 left-8 h-24 w-24 rounded-full bg-white/10 blur-2xl" />
-        <p className="mb-0.5 text-[10px] opacity-70 uppercase tracking-wider">最近视频</p>
-        <h3 className="mb-2 pr-10 text-sm font-bold leading-snug">
-          {latest?.movieTitle || latest?.title || latest?.movieId || "等待播放详情"}
-        </h3>
-        <div className="flex items-center gap-1.5 text-xs mb-3">
-          {latest ? <CheckCircle size={12} className="text-emerald-300 shrink-0" /> : <AlertCircle size={12} className="text-amber-200 shrink-0" />}
-          <span className="opacity-85">
-            {latest
-              ? `已获取播放详情 · ${readyCount || 0} 条可用线路 · ${segmentTotal || "?"} 个分片${duration ? ` · ${formatDuration(duration)}` : ""}`
-              : "打开视频详情页后会记录完整播放资源"}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">M3U8</span>
-          <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">{latest?.accountLabel || latest?.accountUser || "自动轮换账号"}</span>
-          <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">{localizeFlowText(latest?.action || "full_detail")}</span>
-          <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">体检 {health.score} 分</span>
-          {fetchedAt && <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] backdrop-blur">{shortTime(fetchedAt)}</span>}
-        </div>
-        {preferredLineUrl && (
-          <div className="flex items-center gap-1.5 mb-2 rounded-lg bg-black/20 px-2 py-1.5">
-            <Link size={10} className="shrink-0 text-white/60" />
-            <span className="flex-1 truncate text-[10px] text-white/80 font-mono">{preferredLine?.label} · {maskUrl(preferredLineUrl)}</span>
+    <div className="txzz-playback-root txzz-page space-y-3 p-3 sm:p-3.5" style={playerStageStyle}>
+      {/* 紧凑信息头：标题 + 关键状态 + 主操作，把视觉重心留给播放器 */}
+      <div className="txzz-playback-hidden-during-fullscreen relative overflow-hidden rounded-2xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-pink-500 p-3.5 text-white shadow-[0_12px_32px_rgba(168,85,247,0.26)]">
+        <div className="pointer-events-none absolute -right-3 -top-4 select-none text-5xl opacity-[0.12]">🎬</div>
+        <div className="relative flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-medium tracking-wide text-white/70">当前视频</p>
+            <h3 className="mt-0.5 line-clamp-2 text-[13px] font-bold leading-snug">
+              {latest?.movieTitle || latest?.title || latest?.movieId || "等待播放详情"}
+            </h3>
+            <p className="mt-1 flex items-center gap-1 text-[10px] text-white/80">
+              {latest ? <CheckCircle size={11} className="shrink-0 text-emerald-200" /> : <AlertCircle size={11} className="shrink-0 text-amber-200" />}
+              <span className="truncate">
+                {latest
+                  ? `${readyCount} 条线路 · ${segmentTotal || "?"} 分片${duration ? ` · ${formatDuration(duration)}` : ""} · 体检 ${health.score}`
+                  : "打开网站视频详情页后自动获取播放资源"}
+              </span>
+            </p>
           </div>
-        )}
-        <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <Pill className="bg-white/20 text-white backdrop-blur">{health.label}</Pill>
+            {fetchedAt && <span className="text-[9px] text-white/65">{shortTime(fetchedAt)}</span>}
+          </div>
+        </div>
+        <div className="relative mt-2.5 flex flex-wrap gap-1">
+          <Pill className="bg-black/15 text-white">M3U8</Pill>
+          <Pill className="bg-black/15 text-white">{latest?.accountLabel || latest?.accountUser || "自动账号"}</Pill>
+          <Pill className="bg-black/15 text-white">{localizeFlowText(latest?.action || "full_detail")}</Pill>
+          {preferredLineUrl && (
+            <Pill className="max-w-full bg-black/15 font-mono text-white">
+              <Link size={9} /> <span className="truncate">{preferredLine?.label} · {maskUrl(preferredLineUrl)}</span>
+            </Pill>
+          )}
+        </div>
+        <div className="relative mt-2.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
           <button
+            type="button"
             onClick={() => onAction("refresh-full-detail", { movieId: latest?.movieId || "" })}
-            className="flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 px-3 py-1.5 text-xs font-medium backdrop-blur transition-all"
+            className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-white/20 px-2 text-[11px] font-semibold text-white backdrop-blur transition active:scale-95 hover:bg-white/30"
           >
-            <RefreshCw size={12} /> 刷新资源
+            <RefreshCw size={12} /> 刷新
           </button>
           <button
-            onClick={() => onAction("download-full-video", { movieId: latest?.movieId || "" })}
-            className="flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 px-3 py-1.5 text-xs font-medium backdrop-blur transition-all"
+            type="button"
+            onClick={() => {
+              onAction("download-full-video", { movieId: latest?.movieId || "" });
+              setPanelTab("download");
+            }}
+            className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-white/20 px-2 text-[11px] font-semibold text-white backdrop-blur transition active:scale-95 hover:bg-white/30"
           >
-            <Download size={12} /> 下载视频
+            <Download size={12} /> 下载
           </button>
-          {preferredLine?.url && (
-            <button
-              onClick={() => onAction(preferredLine.copyAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}
-              className="flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 px-3 py-1.5 text-xs font-medium backdrop-blur transition-all"
-            >
-              <Copy size={12} /> 复制完整链接
-            </button>
-          )}
-          {preferredLine?.url && (
-            <button
-              onClick={() => onAction(preferredLine.openAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}
-              className="flex items-center gap-1.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 px-3 py-1.5 text-xs font-medium backdrop-blur transition-all"
-              title="用完整链接打开推荐线路"
-            >
-              <ExternalLink size={12} /> 打开线路
-            </button>
-          )}
+          <button
+            type="button"
+            disabled={!preferredLine?.url}
+            onClick={() => preferredLine && onAction(preferredLine.copyAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}
+            className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-white/20 px-2 text-[11px] font-semibold text-white backdrop-blur transition active:scale-95 hover:bg-white/30 disabled:opacity-40"
+          >
+            <Copy size={12} /> 复制
+          </button>
+          <button
+            type="button"
+            disabled={!preferredLine?.url}
+            onClick={() => preferredLine && onAction(preferredLine.openAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}
+            className="flex min-h-8 items-center justify-center gap-1 rounded-xl bg-white px-2 text-[11px] font-semibold text-purple-600 shadow-sm transition active:scale-95 disabled:opacity-40"
+          >
+            <ExternalLink size={12} /> 打开
+          </button>
         </div>
       </div>
 
-      <div className="txzz-player-card space-y-3 overflow-hidden rounded-2xl border border-sky-100/90 bg-white/95 p-3.5 shadow-[0_8px_28px_rgba(14,165,233,0.08)]">
-        <div className="txzz-player-card-title flex items-start justify-between gap-3">
+      {/* 播放器主卡片：保留内核/手势/控制栏，仅优化外壳 */}
+      <div className="txzz-player-card space-y-2.5 overflow-hidden rounded-2xl border border-sky-100/90 bg-white/95 p-2.5 shadow-[0_8px_28px_rgba(14,165,233,0.08)] sm:p-3">
+        <div className="txzz-player-card-title flex items-center justify-between gap-2 px-0.5">
           <div className="min-w-0">
             <h3 className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
               <Film size={14} className="text-sky-400" /> 完整播放器
             </h3>
-            <p className="mt-0.5 truncate text-[10px] text-purple-400">{previewTitle} · 单击/双击/长按/滑动/滚轮</p>
+            <p className="mt-0.5 truncate text-[10px] text-purple-400">{previewTitle}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Pill className={previewUrl ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"}>
+              {previewUrl ? playerStatus : "无链接"}
+            </Pill>
           </div>
         </div>
         <div
@@ -2511,398 +2543,392 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           />
           </div>
         </div>
-        <div className="txzz-player-card-actions grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-          <button
-            onClick={() => onAction("copy-playback-health-report", { report: playerDiagnosticReportRef.current })}
+        <div className="txzz-player-card-actions grid grid-cols-3 gap-1.5">
+          <SoftButton
+            size="sm"
+            variant="secondary"
+            icon={Activity}
             disabled={!previewUrl}
-            className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 text-[11px] font-medium text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
+            className="w-full"
             title="复制网页播放器诊断报告"
+            onClick={() => onAction("copy-playback-health-report", { report: playerDiagnosticReportRef.current })}
           >
-            <Activity size={11} /> 诊断
-          </button>
-          <button
-            onClick={() => onAction("copy-play-link", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}
+            诊断
+          </SoftButton>
+          <SoftButton
+            size="sm"
+            variant="secondary"
+            icon={Copy}
             disabled={!previewUrl}
-            className="flex min-h-9 items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 text-[11px] font-medium text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
+            className="w-full"
             title="复制当前预览完整链接"
+            onClick={() => onAction("copy-play-link", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}
           >
-            <Copy size={11} /> 复制
-          </button>
-          <button
-            onClick={() => onAction("open-playback-url", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}
+            复制
+          </SoftButton>
+          <SoftButton
+            size="sm"
+            variant="sky"
+            icon={ExternalLink}
             disabled={!previewUrl}
-            className="flex min-h-9 items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-sky-400 to-blue-500 px-2 text-[11px] font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-45"
+            className="w-full"
             title="用完整链接在新窗口打开当前预览"
+            onClick={() => onAction("open-playback-url", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}
           >
-            <ExternalLink size={11} /> 打开
-          </button>
+            打开
+          </SoftButton>
         </div>
       </div>
 
-      <div className="txzz-playback-hidden-during-fullscreen space-y-3 overflow-hidden rounded-2xl border border-pink-100/90 bg-white/95 p-3.5 shadow-[0_8px_28px_rgba(147,51,234,0.06)]">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
-              <ShieldCheck size={14} className="text-emerald-400" /> 播放就绪
-            </h3>
-            <p className="mt-1 text-[11px] leading-relaxed text-purple-400">{playbackTip(latest)}</p>
-          </div>
-          <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${readyCount ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>
-            {readyCount ? `${readyCount} 条可用` : "待获取"}
-          </span>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-3">
-          <div className={`rounded-xl px-3 py-2 ${health.bg}`}>
-            <p className={`flex items-center gap-1 text-xs font-semibold ${health.tone}`}>
-              <Gauge size={12} /> 体检分
-            </p>
-            <p className={`mt-1 text-lg font-bold ${health.tone}`}>{health.score}</p>
-            <p className="text-[10px] text-purple-400">{health.label}</p>
-          </div>
-          <div className="rounded-xl bg-sky-50 px-3 py-2">
-            <p className="flex items-center gap-1 text-xs font-semibold text-sky-600">
-              <Signal size={12} /> 推荐线路
-            </p>
-            <p className="mt-1 truncate text-sm font-bold text-sky-600">{health.recommendedLabel}</p>
-            <p className="text-[10px] text-purple-400">{readyCount ? `${readyCount} 条可用线路` : "等待线路"}</p>
-          </div>
-          <div className="rounded-xl bg-purple-50 px-3 py-2">
-            <p className="flex items-center gap-1 text-xs font-semibold text-purple-600">
-              <Activity size={12} /> 风险项
-            </p>
-            <p className="mt-1 text-lg font-bold text-purple-600">{health.riskCount}</p>
-            <p className="truncate text-[10px] text-purple-400">{health.summary}</p>
-          </div>
-        </div>
-        <div className="space-y-1 rounded-xl bg-gray-50 p-2">
-          {health.risks.slice(0, 3).map((item) => (
-            <p key={item} className="flex items-start gap-1.5 text-[10px] leading-relaxed text-purple-500">
-              <Activity size={10} className="mt-0.5 shrink-0 text-purple-300" />
-              <span>{item}</span>
-            </p>
-          ))}
-        </div>
-        <button
-          onClick={() => onAction("copy-playback-health-report", { report: healthReport })}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-purple-200 px-3 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95"
-          title="复制当前播放资源体检报告"
-        >
-          <Copy size={13} /> 复制体检报告
-        </button>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {lines.map((line) => {
-            const stateInfo = lineState(line);
-            const lineUrl = absoluteUrl(line.url || "");
+      {/* 次级信息分段：资源 / 下载 / 记录 */}
+      <div className="txzz-playback-hidden-during-fullscreen space-y-2.5">
+        <div className="grid grid-cols-3 gap-1 rounded-2xl border border-pink-100 bg-white p-1 shadow-sm">
+          {panelTabs.map((tab) => {
+            const active = panelTab === tab.key;
+            const Icon = tab.icon;
             return (
-              <div key={line.key} className={`rounded-2xl ${stateInfo.bg} p-3`}>
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className={`flex items-center gap-1 text-xs font-semibold ${stateInfo.color}`}>
-                    <Route size={12} /> {line.label}
-                  </p>
-                  <span className={`text-[10px] ${stateInfo.color}`}>{stateInfo.label}</span>
-                </div>
-                <p className="truncate font-mono text-[10px] text-purple-500">{lineUrl ? maskUrl(lineUrl) : "暂无链接"}</p>
-                <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
-                  <span className="rounded-full bg-white/70 px-2 py-0.5 text-purple-500">{line.stat?.segments ? `${line.stat.segments} 分片` : "分片未知"}</span>
-                  <span className="rounded-full bg-white/70 px-2 py-0.5 text-purple-500">{line.stat?.duration ? formatDuration(line.stat.duration) : "时长未知"}</span>
-                  {line.stat?.status && <span className="rounded-full bg-white/70 px-2 py-0.5 text-purple-500">HTTP {line.stat.status}</span>}
-                </div>
-                {line.stat?.error && <p className="mt-2 line-clamp-2 text-[10px] leading-relaxed text-amber-600">{line.stat.error}</p>}
-                <div className="mt-3 grid grid-cols-2 gap-1.5">
-                  <button
-                    onClick={() => onAction(line.copyAction, { url: lineUrl, label: `${line.label}完整链接` })}
-                    disabled={!line.url}
-                    className="flex items-center justify-center gap-1 rounded-xl bg-white/80 px-2 py-1.5 text-[11px] font-medium text-purple-500 shadow-sm transition-transform active:scale-95 disabled:opacity-50"
-                  >
-                    <Copy size={11} /> 复制
-                  </button>
-                  <button
-                    onClick={() => onAction(line.openAction, { url: lineUrl, label: `${line.label}完整链接` })}
-                    disabled={!line.url}
-                    className="flex items-center justify-center gap-1 rounded-xl bg-white/80 px-2 py-1.5 text-[11px] font-medium text-sky-500 shadow-sm transition-transform active:scale-95 disabled:opacity-50"
-                  >
-                    <ExternalLink size={11} /> 打开
-                  </button>
-                </div>
-              </div>
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setPanelTab(tab.key)}
+                className={`relative flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] font-semibold transition ${
+                  active
+                    ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm"
+                    : "text-purple-400 hover:bg-purple-50"
+                }`}
+              >
+                <span className="flex items-center gap-1">
+                  <Icon size={13} />
+                  {tab.label}
+                </span>
+                {tab.badge && (
+                  <span className={`text-[9px] ${active ? "text-white/85" : "text-purple-300"}`}>{tab.badge}</span>
+                )}
+              </button>
             );
           })}
         </div>
-      </div>
 
-      <div className="txzz-playback-hidden-during-fullscreen overflow-hidden rounded-2xl border border-pink-100/90 bg-white/95 p-3.5 shadow-[0_8px_28px_rgba(147,51,234,0.06)]">
-        <h3 className="mb-3 flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
-          <Layers size={14} className="text-purple-400" /> 分片统计
-        </h3>
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: "总分片", value: segmentTotal || "—", color: "text-purple-600", bg: "bg-purple-50" },
-            { label: "总时长", value: duration ? formatDuration(duration) : "—", color: "text-emerald-600", bg: "bg-emerald-50" },
-            { label: "状态", value: readyCount ? "正常" : latest ? "异常" : "—", color: readyCount ? "text-sky-600" : "text-rose-600", bg: readyCount ? "bg-sky-50" : "bg-rose-50" }
-          ].map((item) => (
-            <div key={item.label} className={`${item.bg} rounded-xl p-2.5 text-center`}>
-              <p className={`text-base font-bold ${item.color}`}>{item.value}</p>
-              <p className="text-[10px] text-purple-400 mt-0.5">{item.label}</p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3">
-          <div className="mb-1 flex justify-between text-[10px] text-purple-400">
-            <span>数据完整性</span>
-            <span>{segmentTotal ? `${segmentTotal} 个分片` : "等待数据"}</span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-pink-100">
-            <div className="h-full rounded-full bg-gradient-to-r from-purple-400 to-violet-500 transition-all" style={{ width: latest ? "100%" : "6%" }} />
-          </div>
-        </div>
-      </div>
-
-      <div className="txzz-playback-hidden-during-fullscreen space-y-3 overflow-hidden rounded-2xl border border-amber-100/90 bg-white/95 p-3.5 shadow-[0_8px_28px_rgba(245,158,11,0.08)]">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
-              <Download size={14} className="text-amber-400" /> 当前视频下载
-            </h3>
-            <p className="mt-1 truncate text-xs text-purple-400">
-              {currentTask ? downloadTitle(currentTask) : latest ? "当前视频还没有下载任务。" : "等待视频播放详情后可创建下载任务。"}
-            </p>
-          </div>
-          <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-medium ${currentTaskTone.color}`}>{currentTaskTone.label}</span>
-        </div>
-        {currentTask ? (
-          <div className="space-y-2 rounded-2xl bg-purple-50 p-3">
-            <div className="flex flex-wrap gap-1.5 text-[10px]">
-              <span className="rounded-full bg-white px-2 py-0.5 text-purple-500">{downloadFormat(currentTask)}</span>
-              <span className="rounded-full bg-white px-2 py-0.5 text-sky-500">{formatBytes(currentTask.bytes)}</span>
-              <span className="rounded-full bg-white px-2 py-0.5 text-gray-400">{shortTime(currentTask.updatedAt)}</span>
-            </div>
-            {currentTaskUrl && (
-              <div className="flex items-center gap-1.5 rounded-xl bg-white px-2.5 py-1.5">
-                <Link size={11} className="shrink-0 text-purple-300" />
-                <span className="shrink-0 text-[10px] font-medium text-purple-400">完整源链接</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-purple-500">{maskUrl(currentTaskUrl)}</span>
-              </div>
-            )}
-            {currentTask.stage !== "complete" && (
-              <div>
-                <div className="mb-1 flex justify-between text-[10px] text-purple-400">
-                  <span>{downloadStageLabel(currentTask.stage)}</span>
-                  <span>{currentTask.total ? `${currentTask.current || 0}/${currentTask.total}` : `${taskProgress}%`}</span>
+        {panelTab === "resource" && (
+          <SectionCard
+            title="播放资源"
+            icon={ShieldCheck}
+            hint={playbackTip(latest)}
+            action={
+              <Pill className={readyCount ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"}>
+                {readyCount ? `${readyCount} 条可用` : "待获取"}
+              </Pill>
+            }
+          >
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div className={`rounded-xl px-2.5 py-2 ${health.bg}`}>
+                  <p className={`flex items-center gap-1 text-[10px] font-semibold ${health.tone}`}><Gauge size={11} /> 体检</p>
+                  <p className={`mt-1 text-lg font-bold tabular-nums ${health.tone}`}>{health.score}</p>
+                  <p className="text-[9px] text-purple-400">{health.label}</p>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-white">
-                  <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${taskProgress}%` }} />
+                <div className="rounded-xl bg-sky-50 px-2.5 py-2">
+                  <p className="flex items-center gap-1 text-[10px] font-semibold text-sky-600"><Signal size={11} /> 推荐</p>
+                  <p className="mt-1 truncate text-sm font-bold text-sky-600">{health.recommendedLabel}</p>
+                  <p className="text-[9px] text-purple-400">{readyCount ? `${readyCount} 条线路` : "等待"}</p>
+                </div>
+                <div className="rounded-xl bg-purple-50 px-2.5 py-2">
+                  <p className="flex items-center gap-1 text-[10px] font-semibold text-purple-600"><Layers size={11} /> 分片</p>
+                  <p className="mt-1 text-lg font-bold text-purple-700 tabular-nums">{segmentTotal || "—"}</p>
+                  <p className="text-[9px] text-purple-400">{duration ? formatDuration(duration) : "时长未知"}</p>
                 </div>
               </div>
-            )}
-            {(currentTask.error || currentTask.transmuxError) && (
-              <p className="rounded-xl bg-rose-50 p-2 text-[10px] leading-relaxed text-rose-600">{currentTask.error || `MP4转封装失败，TS已保留：${currentTask.transmuxError}`}</p>
-            )}
-          </div>
-        ) : (
-          <div className="rounded-2xl bg-purple-50 p-3 text-[11px] leading-relaxed text-purple-400">
-            点击「下载视频」后，下载任务会在这里显示进度；任务创建后可直接保存到设备或进入下载页查看全部记录。
-          </div>
+
+              {(health.risks || []).length > 0 && (
+                <div className="space-y-1 rounded-xl bg-purple-50/80 px-2.5 py-2">
+                  {health.risks.slice(0, 3).map((item) => (
+                    <p key={item} className="flex items-start gap-1.5 text-[10px] leading-relaxed text-purple-500">
+                      <Activity size={10} className="mt-0.5 shrink-0 text-purple-300" />
+                      <span>{item}</span>
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                {lines.map((line) => {
+                  const stateInfo = lineState(line);
+                  const lineUrl = absoluteUrl(line.url || "");
+                  return (
+                    <div key={line.key} className={`rounded-2xl ${stateInfo.bg} p-2.5`}>
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <p className={`flex items-center gap-1 text-[11px] font-semibold ${stateInfo.color}`}>
+                          <Route size={12} /> {line.label}
+                        </p>
+                        <span className={`text-[10px] font-medium ${stateInfo.color}`}>{stateInfo.label}</span>
+                      </div>
+                      <p className="truncate font-mono text-[10px] text-purple-500">{lineUrl ? maskUrl(lineUrl) : "暂无链接"}</p>
+                      <div className="mt-1.5 flex flex-wrap gap-1 text-[9px]">
+                        <Pill className="bg-white/80 text-purple-500">{line.stat?.segments ? `${line.stat.segments} 分片` : "分片?"}</Pill>
+                        <Pill className="bg-white/80 text-purple-500">{line.stat?.duration ? formatDuration(line.stat.duration) : "时长?"}</Pill>
+                        {line.stat?.status ? <Pill className="bg-white/80 text-purple-500">HTTP {line.stat.status}</Pill> : null}
+                      </div>
+                      {line.stat?.error && <p className="mt-1.5 line-clamp-2 text-[10px] text-amber-600">{line.stat.error}</p>}
+                      <div className="mt-2 grid grid-cols-2 gap-1.5">
+                        <SoftButton size="xs" variant="secondary" icon={Copy} disabled={!line.url} className="w-full" onClick={() => onAction(line.copyAction, { url: lineUrl, label: `${line.label}完整链接` })}>
+                          复制
+                        </SoftButton>
+                        <SoftButton size="xs" variant="sky" icon={ExternalLink} disabled={!line.url} className="w-full" onClick={() => onAction(line.openAction, { url: lineUrl, label: `${line.label}完整链接` })}>
+                          打开
+                        </SoftButton>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <SoftButton
+                size="sm"
+                variant="secondary"
+                icon={Copy}
+                className="w-full"
+                onClick={() => onAction("copy-playback-health-report", { report: healthReport })}
+              >
+                复制体检报告
+              </SoftButton>
+            </div>
+          </SectionCard>
         )}
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => {
-              // 下载失败时直接重新创建当前视频任务，其他可保存状态继续走保存流程。
-              if (currentTask?.stage === "error") onAction("download-full-video", { movieId: currentTask.movieId || latest?.movieId || "" });
-              else if (currentTask) onAction("save-download-device", { taskId: currentTask.taskId || "" });
-              else onAction("download-full-video", { movieId: latest?.movieId || "" });
-            }}
-            disabled={currentTask ? currentTask.stage !== "error" && !canSaveDownload(currentTask) : !latest?.movieId}
-            className="flex min-w-[8rem] flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 py-2 text-xs font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-45"
-          >
-            {currentTask?.stage === "error" ? <><RefreshCw size={13} /> 重试下载</> : currentTask ? <><Save size={13} /> 保存到设备</> : <><Download size={13} /> 创建下载任务</>}
-          </button>
-          {currentTaskUrl && (
-            <button
-              onClick={() => onAction("copy-download-url", { taskId: currentTask?.taskId || "" })}
-              className="flex min-w-[8rem] flex-1 items-center justify-center gap-1.5 rounded-xl border border-sky-200 py-2 text-xs font-medium text-sky-500 transition-transform active:scale-95"
-            >
-              <Copy size={13} /> 复制链接
-            </button>
-          )}
-          <button
-            onClick={() => onPage?.("downloads")}
-            className="flex min-w-[8rem] flex-1 items-center justify-center gap-1.5 rounded-xl border border-purple-200 py-2 text-xs font-medium text-purple-500 transition-transform active:scale-95"
-          >
-            <Layers size={13} /> 下载页
-          </button>
-        </div>
-      </div>
 
-      <div className="txzz-playback-hidden-during-fullscreen space-y-2.5">
-        <div className="flex items-center justify-between">
-          <h3 className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
-            <Film size={14} className="text-pink-400" /> 播放记录
-          </h3>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => onAction("copy-playback-health-report", { report: batchRecordReport })}
-              disabled={!filteredRecordRows.length}
-              className="flex items-center gap-1 rounded-xl border border-purple-200 px-2.5 py-1.5 text-[10px] font-medium text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
-              title="复制当前筛选播放记录的批量报告"
-            >
-              <Copy size={11} /> 批量报告
-            </button>
-            <span className="text-[10px] text-purple-400">{filteredRecordRows.length}/{recordStats.total} 条</span>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-pink-100 bg-white p-2 shadow-sm">
-          <div className="flex items-center gap-2 rounded-xl bg-purple-50 px-2.5 py-1.5">
-            <Search size={12} className="shrink-0 text-purple-300" />
-            <input
-              value={recordSearch}
-              onChange={(event) => setRecordSearch(event.target.value)}
-              placeholder="搜索标题、编号、账号或链接"
-              className="min-w-0 flex-1 bg-transparent text-xs text-purple-700 outline-none placeholder:text-purple-300"
-            />
-            {recordSearch && (
-              <button onClick={() => setRecordSearch("")} className="rounded-full bg-white px-2 py-0.5 text-[10px] text-purple-400">
-                清除
-              </button>
-            )}
-          </div>
-          <div className="mt-2 grid grid-cols-5 gap-1">
-            {recordFilterItems.map((filterItem) => {
-              const active = recordFilter === filterItem.key;
-              return (
-                <button
-                  key={filterItem.key}
-                  onClick={() => setRecordFilter(filterItem.key)}
-                  className={`rounded-xl px-1 py-1.5 text-center transition-all ${active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "text-purple-300 hover:bg-purple-50"}`}
-                >
-                  <p className={`text-sm font-bold ${active ? "text-white" : filterItem.color}`}>{filterItem.value}</p>
-                  <p className="mt-0.5 text-[9px]">{filterItem.label}</p>
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-2 grid grid-cols-4 gap-1.5">
-            {recordSortItems.map((item) => {
-              const active = recordSort === item.key;
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => setRecordSort(item.key)}
-                  title={item.tip}
-                  className={`flex min-h-8 items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-medium transition-all ${active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "bg-white text-purple-400 hover:bg-purple-100"}`}
-                >
-                  <SortDesc size={11} /> {item.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <div className="space-y-2">
-          {filteredRecordRows.length ? filteredRecordRows.map(({ item, index, recordUrl, recordTask, recordCanSave, recordRunning }) => {
-            // 播放记录支持直接续操作，减少用户回到详情页反复查找。
-            const recordTaskProgress = recordTask ? downloadProgress(recordTask) : 0;
-            const recordTaskState = taskTone(recordTask);
-            const recordPrimaryAction = recordTask?.stage === "error" ? "重试" : recordCanSave ? "保存" : recordRunning ? "查看" : "下载";
-            const recordReport = playbackRecordReport(item, recordTask);
-            return (
-              <div key={`${item.movieId}-${index}`} className="rounded-2xl border border-pink-100 bg-white p-3 shadow-sm">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-semibold text-purple-800">{item.movieTitle || item.title || item.movieId || "播放详情"}</p>
-                    <div className="mt-0.5 flex items-center gap-1">
-                      {recordUrl ? <CheckCircle size={10} className="shrink-0 text-emerald-400" /> : <AlertCircle size={10} className="shrink-0 text-rose-400" />}
-                      <p className="truncate text-[10px] text-purple-400">
-                        {recordUrl ? `已就绪 · ${maskUrl(recordUrl)}` : "播放详情缺少链接"}
-                      </p>
-                    </div>
+        {panelTab === "download" && (
+          <SectionCard
+            title="当前视频下载"
+            icon={Download}
+            hint={currentTask ? downloadTitle(currentTask) : latest ? "尚未创建下载任务" : "等待播放详情后可下载"}
+            action={<Pill className={currentTaskTone.color}>{currentTaskTone.label}</Pill>}
+            tone="amber"
+          >
+            <div className="space-y-3">
+              {currentTask ? (
+                <div className="space-y-2 rounded-2xl bg-amber-50/70 p-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    <Pill className="bg-white text-purple-500">{downloadFormat(currentTask)}</Pill>
+                    <Pill className="bg-white text-sky-500">{formatBytes(currentTask.bytes)}</Pill>
+                    <Pill className="bg-white text-slate-400">{shortTime(currentTask.updatedAt)}</Pill>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${recordTaskState.color}`}>
-                    {recordTaskState.label}
-                  </span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="flex items-center gap-0.5 rounded-full bg-purple-50 px-2 py-0.5 text-[10px] text-purple-500"><Wifi size={9} /> M3U8</span>
-                  <span className="flex items-center gap-0.5 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] text-sky-500"><Layers size={9} /> {item.fullStat?.segments || "?"} 分片</span>
-                  {item.fullStat?.duration && (
-                    <span className="flex items-center gap-0.5 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] text-violet-500"><Timer size={9} /> {formatDuration(item.fullStat.duration)}</span>
+                  {currentTaskUrl && (
+                    <div className="flex items-center gap-1.5 rounded-xl bg-white px-2.5 py-1.5">
+                      <Link size={11} className="shrink-0 text-purple-300" />
+                      <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-purple-500">{maskUrl(currentTaskUrl)}</span>
+                    </div>
                   )}
-                  <span className="rounded-full bg-pink-50 px-2 py-0.5 text-[10px] text-pink-500">{item.accountLabel || item.accountUser || "自动账号"}</span>
-                  <span className="flex items-center gap-0.5 rounded-full bg-gray-50 px-2 py-0.5 text-[10px] text-gray-400"><Clock size={9} /> {shortTime(String((item as { ts?: string }).ts || item.fetchedAt || ""))}</span>
+                  {currentTask.stage !== "complete" && (
+                    <div>
+                      <div className="mb-1 flex justify-between text-[10px] text-purple-400">
+                        <span>{downloadStageLabel(currentTask.stage)}</span>
+                        <span className="tabular-nums">{currentTask.total ? `${currentTask.current || 0}/${currentTask.total}` : `${taskProgress}%`}</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-white">
+                        <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${taskProgress}%` }} />
+                      </div>
+                    </div>
+                  )}
+                  {(currentTask.error || currentTask.transmuxError) && (
+                    <p className="rounded-xl bg-rose-50 p-2 text-[10px] leading-relaxed text-rose-600">
+                      {currentTask.error || `MP4转封装失败，TS已保留：${currentTask.transmuxError}`}
+                    </p>
+                  )}
                 </div>
-                {recordTask && recordTask.stage !== "complete" && (
-                  <div className="mt-2">
-                    <div className="mb-1 flex justify-between text-[10px] text-purple-400">
-                      <span>{downloadStageLabel(recordTask.stage)}</span>
-                      <span>{recordTask.total ? `${recordTask.current || 0}/${recordTask.total}` : `${recordTaskProgress}%`}</span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-pink-100">
-                      <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${recordTaskProgress}%` }} />
-                    </div>
-                  </div>
+              ) : (
+                <EmptyState
+                  icon={Download}
+                  title="还没有下载任务"
+                  desc="可创建当前视频下载，完成后可保存到设备或到下载页管理。"
+                />
+              )}
+              <ActionToolbar>
+                <SoftButton
+                  size="sm"
+                  className="flex-1"
+                  icon={currentTask?.stage === "error" ? RefreshCw : currentTask ? Save : Download}
+                  disabled={currentTask ? currentTask.stage !== "error" && !canSaveDownload(currentTask) : !latest?.movieId}
+                  onClick={() => {
+                    if (currentTask?.stage === "error") onAction("download-full-video", { movieId: currentTask.movieId || latest?.movieId || "" });
+                    else if (currentTask) onAction("save-download-device", { taskId: currentTask.taskId || "" });
+                    else onAction("download-full-video", { movieId: latest?.movieId || "" });
+                  }}
+                >
+                  {currentTask?.stage === "error" ? "重试下载" : currentTask ? "保存到设备" : "创建下载"}
+                </SoftButton>
+                {currentTaskUrl && (
+                  <SoftButton size="sm" variant="sky" icon={Copy} onClick={() => onAction("copy-download-url", { taskId: currentTask?.taskId || "" })}>
+                    复制链接
+                  </SoftButton>
                 )}
-                <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-5">
-                  <button
-                    onClick={() => {
-                      setPreviewRecord({
-                        url: recordUrl,
-                        title: item.movieTitle || item.title || item.movieId || "播放记录",
-                        movieId: item.movieId
-                      });
-                      setPreviewKey("record");
-                      setPlayerReloadKey((value) => value + 1);
-                    }}
-                    disabled={!recordUrl}
-                    className="flex items-center justify-center gap-1 rounded-xl border border-emerald-200 px-2 py-1.5 text-[11px] text-emerald-600 transition-transform active:scale-95 disabled:opacity-45"
-                    title="在网页播放控制台预览该记录"
-                  >
-                    <Film size={11} /> 预览
-                  </button>
-                  <button
-                    onClick={() => onAction("open-playback-url", { url: recordUrl, label: "播放记录完整链接" })}
-                    disabled={!recordUrl}
-                    className="flex items-center justify-center gap-1 rounded-xl border border-sky-200 px-2 py-1.5 text-[11px] text-sky-500 transition-transform active:scale-95 disabled:opacity-45"
-                    title="用完整链接打开该播放记录"
-                  >
-                    <ExternalLink size={11} /> 打开
-                  </button>
-                  <button
-                    onClick={() => onAction("copy-playback-health-report", { report: recordReport })}
-                    className="flex items-center justify-center gap-1 rounded-xl border border-purple-200 px-2 py-1.5 text-[11px] text-purple-500 transition-transform active:scale-95 disabled:opacity-45"
-                    title="复制该播放记录报告"
-                  >
-                    <Copy size={11} /> 报告
-                  </button>
-                  <button
-                    onClick={() => onAction("refresh-full-detail", { movieId: item.movieId || "" })}
-                    disabled={!item.movieId}
-                    className="flex items-center justify-center gap-1 rounded-xl border border-sky-200 px-2 py-1.5 text-[11px] text-sky-500 transition-transform active:scale-95 disabled:opacity-45"
-                    title="刷新该视频资源"
-                  >
-                    <RefreshCw size={11} /> 刷新
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (recordTask?.stage === "error") onAction("download-full-video", { movieId: recordTask.movieId || item.movieId || "" });
-                      else if (recordCanSave) onAction("save-download-device", { taskId: recordTask?.taskId || "" });
-                      else if (recordRunning) onPage?.("downloads");
-                      else onAction("download-full-video", { movieId: item.movieId || "" });
-                    }}
-                    disabled={recordCanSave ? !recordTask?.taskId : !item.movieId}
-                    className="flex items-center justify-center gap-1 rounded-xl bg-gradient-to-r from-pink-400 to-purple-500 px-2 py-1.5 text-[11px] font-medium text-white shadow-sm transition-transform active:scale-95 disabled:opacity-45"
-                    title={recordCanSave ? "保存该视频到设备" : recordTask?.stage === "error" ? "重新创建下载任务" : recordRunning ? "查看下载任务" : "下载该视频"}
-                  >
-                    {recordCanSave ? <Save size={11} /> : recordTask?.stage === "error" ? <RefreshCw size={11} /> : recordRunning ? <Layers size={11} /> : <Download size={11} />} {recordPrimaryAction}
-                  </button>
-                </div>
-              </div>
-            );
-          }) : records.length ? (
-            <div className="rounded-2xl border border-pink-100 bg-white p-4 text-xs text-purple-400 shadow-sm">
-              当前搜索或筛选没有匹配的播放记录，可切换到「全部」或清除搜索词后再看。
+                <SoftButton size="sm" variant="secondary" icon={Layers} onClick={() => onPage?.("downloads")}>
+                  下载页
+                </SoftButton>
+              </ActionToolbar>
             </div>
-          ) : (
-            <div className="rounded-2xl border border-pink-100 bg-white p-4 text-xs text-purple-400 shadow-sm">还没有播放详情记录。打开视频详情页后即会自动记录。</div>
-          )}
-        </div>
+          </SectionCard>
+        )}
+
+        {panelTab === "records" && (
+          <SectionCard
+            title="播放记录"
+            icon={Film}
+            hint={`显示 ${filteredRecordRows.length} / ${recordStats.total} 条`}
+            action={
+              <SoftButton
+                size="xs"
+                variant="secondary"
+                icon={Copy}
+                disabled={!filteredRecordRows.length}
+                onClick={() => onAction("copy-playback-health-report", { report: batchRecordReport })}
+              >
+                批量报告
+              </SoftButton>
+            }
+          >
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2 rounded-xl bg-purple-50/80 px-2.5 py-2 ring-1 ring-purple-100">
+                <Search size={13} className="shrink-0 text-purple-300" />
+                <SoftInput
+                  value={recordSearch}
+                  onChange={(event) => setRecordSearch(event.target.value)}
+                  placeholder="搜索标题、编号、账号或链接"
+                  className="border-0 bg-transparent px-0 py-0 shadow-none ring-0 focus:ring-0"
+                />
+                {recordSearch && (
+                  <SoftButton size="xs" variant="ghost" onClick={() => setRecordSearch("")}>清除</SoftButton>
+                )}
+              </div>
+
+              <div className="grid grid-cols-5 gap-1">
+                {recordFilterItems.map((filterItem) => {
+                  const active = recordFilter === filterItem.key;
+                  return (
+                    <button
+                      key={filterItem.key}
+                      type="button"
+                      onClick={() => setRecordFilter(filterItem.key)}
+                      className={`rounded-xl px-0.5 py-1.5 text-center transition ${
+                        active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "bg-purple-50/80 text-purple-400"
+                      }`}
+                    >
+                      <p className={`text-sm font-bold tabular-nums ${active ? "text-white" : filterItem.color}`}>{filterItem.value}</p>
+                      <p className="mt-0.5 text-[9px]">{filterItem.label}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-4 gap-1.5">
+                {recordSortItems.map((item) => {
+                  const active = recordSort === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setRecordSort(item.key)}
+                      title={item.tip}
+                      className={`flex min-h-8 items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold transition ${
+                        active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "bg-white text-purple-400 ring-1 ring-purple-100"
+                      }`}
+                    >
+                      <SortDesc size={11} /> {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-2">
+                {filteredRecordRows.length ? filteredRecordRows.map(({ item, index, recordUrl, recordTask, recordCanSave, recordRunning }) => {
+                  const recordTaskProgress = recordTask ? downloadProgress(recordTask) : 0;
+                  const recordTaskState = taskTone(recordTask);
+                  const recordPrimaryAction = recordTask?.stage === "error" ? "重试" : recordCanSave ? "保存" : recordRunning ? "查看" : "下载";
+                  const recordReport = playbackRecordReport(item, recordTask);
+                  return (
+                    <div key={`${item.movieId}-${index}`} className="overflow-hidden rounded-2xl border border-purple-50 bg-gradient-to-b from-white to-purple-50/30 p-2.5 shadow-sm">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-bold text-purple-800">{item.movieTitle || item.title || item.movieId || "播放详情"}</p>
+                          <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-purple-400">
+                            {recordUrl ? <CheckCircle size={10} className="shrink-0 text-emerald-400" /> : <AlertCircle size={10} className="shrink-0 text-rose-400" />}
+                            {recordUrl ? maskUrl(recordUrl) : "缺少播放链接"}
+                          </p>
+                        </div>
+                        <Pill className={recordTaskState.color}>{recordTaskState.label}</Pill>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        <Pill className="bg-purple-50 text-purple-500"><Wifi size={9} /> M3U8</Pill>
+                        <Pill className="bg-sky-50 text-sky-500"><Layers size={9} /> {item.fullStat?.segments || "?"} 分片</Pill>
+                        {item.fullStat?.duration ? (
+                          <Pill className="bg-violet-50 text-violet-500"><Timer size={9} /> {formatDuration(item.fullStat.duration)}</Pill>
+                        ) : null}
+                        <Pill className="bg-pink-50 text-pink-500">{item.accountLabel || item.accountUser || "自动账号"}</Pill>
+                        <Pill className="bg-slate-50 text-slate-400"><Clock size={9} /> {shortTime(String((item as { ts?: string }).ts || item.fetchedAt || ""))}</Pill>
+                      </div>
+                      {recordTask && recordTask.stage !== "complete" && (
+                        <div className="mt-2">
+                          <div className="mb-1 flex justify-between text-[10px] text-purple-400">
+                            <span>{downloadStageLabel(recordTask.stage)}</span>
+                            <span className="tabular-nums">{recordTask.total ? `${recordTask.current || 0}/${recordTask.total}` : `${recordTaskProgress}%`}</span>
+                          </div>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-pink-100">
+                            <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${recordTaskProgress}%` }} />
+                          </div>
+                        </div>
+                      )}
+                      <div className="mt-2 grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+                        <SoftButton
+                          size="xs"
+                          variant="emerald"
+                          icon={Film}
+                          disabled={!recordUrl}
+                          className="w-full"
+                          onClick={() => {
+                            setPreviewRecord({
+                              url: recordUrl,
+                              title: item.movieTitle || item.title || item.movieId || "播放记录",
+                              movieId: item.movieId
+                            });
+                            setPreviewKey("record");
+                            setPlayerReloadKey((value) => value + 1);
+                          }}
+                        >
+                          预览
+                        </SoftButton>
+                        <SoftButton size="xs" variant="sky" icon={ExternalLink} disabled={!recordUrl} className="w-full" onClick={() => onAction("open-playback-url", { url: recordUrl, label: "播放记录完整链接" })}>
+                          打开
+                        </SoftButton>
+                        <SoftButton size="xs" variant="secondary" icon={Copy} className="w-full" onClick={() => onAction("copy-playback-health-report", { report: recordReport })}>
+                          报告
+                        </SoftButton>
+                        <SoftButton size="xs" variant="secondary" icon={RefreshCw} disabled={!item.movieId} className="w-full" onClick={() => onAction("refresh-full-detail", { movieId: item.movieId || "" })}>
+                          刷新
+                        </SoftButton>
+                        <SoftButton
+                          size="xs"
+                          className="w-full sm:col-span-1 col-span-3"
+                          icon={recordCanSave ? Save : recordTask?.stage === "error" ? RefreshCw : recordRunning ? Layers : Download}
+                          disabled={recordCanSave ? !recordTask?.taskId : !item.movieId}
+                          onClick={() => {
+                            if (recordTask?.stage === "error") onAction("download-full-video", { movieId: recordTask.movieId || item.movieId || "" });
+                            else if (recordCanSave) onAction("save-download-device", { taskId: recordTask?.taskId || "" });
+                            else if (recordRunning) onPage?.("downloads");
+                            else onAction("download-full-video", { movieId: item.movieId || "" });
+                          }}
+                        >
+                          {recordPrimaryAction}
+                        </SoftButton>
+                      </div>
+                    </div>
+                  );
+                }) : records.length ? (
+                  <EmptyState icon={Search} title="没有匹配的播放记录" desc="切换到「全部」或清除搜索词后再看" />
+                ) : (
+                  <EmptyState icon={Film} title="还没有播放详情记录" desc="打开网站视频详情页后会自动记录到这里" />
+                )}
+              </div>
+            </div>
+          </SectionCard>
+        )}
       </div>
     </div>
   );

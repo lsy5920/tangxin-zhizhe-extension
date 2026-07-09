@@ -47,9 +47,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0230";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0300";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 02:30 【修复】升级版本到 v3.4.2，快捷操作改内联渐变彻底修复白底；更新检测增加 jsDelivr 多镜像，避免 raw.githubusercontent 失败导致检测不到新版本。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 03:00 【优化】升级版本到 v3.4.3，重构播放页布局：紧凑信息头、播放器优先、资源/下载/记录分段切换，交互更清晰。";
 
 const DEFAULT_STATE = {
   role: "guest",

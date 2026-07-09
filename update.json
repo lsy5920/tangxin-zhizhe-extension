@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.4.2",
-  "build": "2026-07-10-0230",
-  "releasedAt": "2026-07-10 02:30",
+  "version": "3.4.3",
+  "build": "2026-07-10-0300",
+  "releasedAt": "2026-07-10 03:00",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0300",
+      "type": "优化",
+      "title": "重构播放页布局 · 资源/下载/记录分段",
+      "detail": "播放页信息头更紧凑，播放器优先展示；下方改为「资源 / 下载 / 记录」三段切换，合并体检与分片、线路卡片；下载与记录沿用设计系统按钮与空状态，减少长页滚动；播放器内核与底部导航未改。"
+    },
     {
       "id": "2026-07-10-0230",
       "type": "修复",
