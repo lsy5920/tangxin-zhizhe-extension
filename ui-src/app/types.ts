@@ -83,6 +83,9 @@ export type FullDetail = {
     duration?: number;
     error?: string;
     pending?: boolean;
+    latencyMs?: number;
+    score?: number;
+    ok?: boolean;
   };
   backupStat?: {
     url?: string;
@@ -91,6 +94,9 @@ export type FullDetail = {
     duration?: number;
     error?: string;
     pending?: boolean;
+    latencyMs?: number;
+    score?: number;
+    ok?: boolean;
   };
   hasBuy?: string | boolean;
   fetchedAt?: string;
@@ -108,6 +114,10 @@ export type DownloadTask = {
   current?: number;
   total?: number;
   bytes?: number;
+  totalBytes?: number;
+  speedBps?: number;
+  percent?: number;
+  lineKey?: string;
   updatedAt?: string;
   error?: string;
   transmuxError?: string;

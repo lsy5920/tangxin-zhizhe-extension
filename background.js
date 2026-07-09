@@ -47,9 +47,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0315";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0400";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 03:15 【修复】升级版本到 v3.4.4，播放页信息头按钮改内联底色；播放记录按 movieId 合并去重，避免同一视频重复两条。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 04:00 【优化】升级版本到 v3.5.0，线路推荐按探测分优选；下载支持选线，实时体积进度与速度。";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -950,45 +950,96 @@ function isLockedCoinVideo(detail = null) {
   return normalized?.has_buy !== "y" && normalized?.layer_type === "money" && Number(normalized?.money || 0) > 0;
 }
 
+function buildM3u8Stat(url, response, text, latencyMs = 0) {
+  const durations = [...String(text || "").matchAll(/#EXTINF:([0-9.]+)/g)].map((match) => Number(match[1]));
+  const segments = durations.length;
+  const duration = Number(durations.reduce((sum, item) => sum + (Number.isFinite(item) ? item : 0), 0).toFixed(3));
+  const status = Number(response?.status || 0);
+  // 与前端 lineScore 同思路：完整、快、状态正常的线路分更高。
+  let score = 100;
+  if (status >= 200 && status < 400) score += 60;
+  else if (status > 0) score -= 40;
+  score += Math.min(50, segments / 4);
+  score += Math.min(40, duration / 20);
+  if (latencyMs > 0) score += Math.max(0, 50 - Math.min(50, latencyMs / 80));
+  if (segments <= 0 && duration <= 0) score -= 20;
+  return {
+    url,
+    status,
+    segments,
+    duration,
+    latencyMs: Math.max(0, Math.round(latencyMs || 0)),
+    score: Math.round(score),
+    ok: status >= 200 && status < 400 && segments > 0
+  };
+}
+
 async function statM3u8(link) {
   if (!link) return null;
   const url = absoluteUrl(link);
+  const started = Date.now();
   try {
     const response = await fetch(url);
     const text = await response.text();
-    const durations = [...text.matchAll(/#EXTINF:([0-9.]+)/g)].map((match) => Number(match[1]));
-    return {
-      url,
-      status: response.status,
-      segments: durations.length,
-      duration: Number(durations.reduce((sum, item) => sum + item, 0).toFixed(3))
-    };
+    return buildM3u8Stat(url, response, text, Date.now() - started);
   } catch (err) {
-    return { url, error: err?.message || String(err) };
+    return { url, error: err?.message || String(err), latencyMs: Date.now() - started, score: -800, ok: false };
   }
 }
 
-async function statM3u8Quick(link, timeoutMs = 2500) {
+async function statM3u8Quick(link, timeoutMs = 3500) {
   if (!link) return null;
   const url = absoluteUrl(link);
+  const started = Date.now();
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   let timer = null;
   if (controller) timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, controller ? { signal: controller.signal } : undefined);
     const text = await response.text();
-    const durations = [...text.matchAll(/#EXTINF:([0-9.]+)/g)].map((match) => Number(match[1]));
+    return buildM3u8Stat(url, response, text, Date.now() - started);
+  } catch (err) {
     return {
       url,
-      status: response.status,
-      segments: durations.length,
-      duration: Number(durations.reduce((sum, item) => sum + item, 0).toFixed(3))
+      error: err?.name === "AbortError" ? `timeout ${timeoutMs}ms` : err?.message || String(err),
+      latencyMs: Date.now() - started,
+      score: -800,
+      ok: false
     };
-  } catch (err) {
-    return { url, error: err?.name === "AbortError" ? `timeout ${timeoutMs}ms` : err?.message || String(err) };
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+function pickBetterStat(a, b) {
+  if (!a && !b) return null;
+  if (!a) return b;
+  if (!b) return a;
+  const as = Number(a.score ?? (a.error ? -800 : a.pending ? 25 : 0));
+  const bs = Number(b.score ?? (b.error ? -800 : b.pending ? 25 : 0));
+  return bs > as ? b : a;
+}
+
+function resolveDownloadLink(detail = {}, summary = {}, message = {}) {
+  const lineKey = String(message.lineKey || message.line || "auto").trim().toLowerCase();
+  const preferredUrl = absoluteUrl(message.url || message.downloadUrl || "");
+  if (preferredUrl) return { url: preferredUrl, lineKey: lineKey || "custom" };
+  const play = absoluteUrl(detail.play_link || summary.playLink || "");
+  const backup = absoluteUrl(detail.backup_link || summary.backupLink || "");
+  if (lineKey === "play" || lineKey === "main" || lineKey === "primary") {
+    return { url: play || backup, lineKey: "play" };
+  }
+  if (lineKey === "backup" || lineKey === "spare") {
+    return { url: backup || play, lineKey: "backup" };
+  }
+  // auto：用探测分选择更好线路，不再写死主线优先。
+  const fullStat = summary.fullStat || null;
+  const backupStat = summary.backupStat || null;
+  const playScore = fullStat ? Number(fullStat.score ?? (fullStat.error ? -800 : fullStat.pending ? 25 : 50)) : (play ? 15 : -10000);
+  const backupScore = backupStat ? Number(backupStat.score ?? (backupStat.error ? -800 : backupStat.pending ? 25 : 50)) : (backup ? 15 : -10000);
+  if (backup && backupScore > playScore) return { url: backup, lineKey: "backup" };
+  if (play) return { url: play, lineKey: "play" };
+  return { url: backup, lineKey: backup ? "backup" : "auto" };
 }
 
 async function getFullDetail(message = {}) {
@@ -1179,8 +1230,13 @@ async function finishLocalFullDetail(options = {}) {
       .then(async ([resolvedFullStat, resolvedBackupStat]) => {
         const latest = await getStateInternal();
         latest.fullDetails = (latest.fullDetails || []).map((item) => {
-          if (String(item.movieId) !== String(movieId) || item.fetchedAt !== summary.fetchedAt) return item;
-          return { ...item, fullStat: resolvedFullStat || item.fullStat, backupStat: resolvedBackupStat || item.backupStat };
+          // 只按 movieId 合并探测结果，兼容 upsert 后 fetchedAt 变化。
+          if (String(item.movieId) !== String(movieId)) return item;
+          return {
+            ...item,
+            fullStat: pickBetterStat(resolvedFullStat, item.fullStat) || resolvedFullStat || item.fullStat,
+            backupStat: pickBetterStat(resolvedBackupStat, item.backupStat) || resolvedBackupStat || item.backupStat
+          };
         });
         await saveState(latest);
       })
@@ -1194,10 +1250,22 @@ async function downloadFullVideo(message = {}) {
   if (!movieId) throw new Error("缺少视频编号 movieId");
   const full = await getFullDetail(message);
   const detail = normalizeFullDetail(full.detail || full.data || {});
-  const summary = full.summary || {};
-  const link = detail.play_link || summary.playLink || detail.backup_link || summary.backupLink || "";
+  // 用最新探测结果参与选线，避免写死主线。
+  const stateNow = await getStateInternal();
+  const latestSummary = (stateNow.fullDetails || []).slice().reverse().find((item) => String(item?.movieId || "") === movieId) || full.summary || {};
+  const summary = {
+    ...(full.summary || {}),
+    ...latestSummary,
+    playLink: full.summary?.playLink || latestSummary.playLink || detail.play_link || "",
+    backupLink: full.summary?.backupLink || latestSummary.backupLink || detail.backup_link || "",
+    fullStat: latestSummary.fullStat || full.summary?.fullStat || null,
+    backupStat: latestSummary.backupStat || full.summary?.backupStat || null
+  };
+  const picked = resolveDownloadLink(detail, summary, message);
+  const link = picked.url || "";
   if (!link) throw new Error("播放详情没有返回可下载播放链接");
   const url = absoluteUrl(link);
+  const lineKey = picked.lineKey || "auto";
   const ext = linkExtension(url);
   const title = displayMovieTitle(detail, summary, message.title || message.movieTitle || "");
   const titleSnippet = downloadTitleSnippet(title, movieId);
@@ -1206,7 +1274,17 @@ async function downloadFullVideo(message = {}) {
   const existingState = await getStateInternal();
   const existingTask = existingState.downloadTasks?.[taskId];
   if (isDownloadRunning(existingTask)) {
-    return { ok: true, reused: true, mode: existingTask.mode || (ext === "mp4" ? "direct" : "m3u8-merged-ts"), url: existingTask.url || url, filename: existingTask.filename || filename, taskId, summary, state: sanitizeState(existingState) };
+    return {
+      ok: true,
+      reused: true,
+      mode: existingTask.mode || (ext === "mp4" ? "direct" : "m3u8-merged-ts"),
+      url: existingTask.url || url,
+      filename: existingTask.filename || filename,
+      taskId,
+      lineKey: existingTask.lineKey || lineKey,
+      summary,
+      state: sanitizeState(existingState)
+    };
   }
   existingState.downloadDeletedTaskIds = (existingState.downloadDeletedTaskIds || []).filter((id) => id !== taskId);
   await saveState(existingState);
@@ -1225,6 +1303,11 @@ async function downloadFullVideo(message = {}) {
         stage: "ready",
         current: 1,
         total: 1,
+        percent: 100,
+        bytes: 0,
+        totalBytes: 0,
+        speedBps: 0,
+        lineKey,
         filename,
         url,
         objectReady: true,
@@ -1232,7 +1315,7 @@ async function downloadFullVideo(message = {}) {
       }
     };
     await saveState(ready);
-    return { ok: true, mode: "direct", ready: true, url, filename, taskId, summary, state: sanitizeState(ready) };
+    return { ok: true, mode: "direct", ready: true, url, filename, taskId, lineKey, summary, state: sanitizeState(ready) };
   }
   await ensureOffscreenDocument();
   const queued = await getStateInternal();
@@ -1249,6 +1332,11 @@ async function downloadFullVideo(message = {}) {
       stage: "queued",
       current: 0,
       total: 0,
+      percent: 0,
+      bytes: 0,
+      totalBytes: 0,
+      speedBps: 0,
+      lineKey,
       filename,
       url,
       updatedAt: nowIso()
@@ -1263,6 +1351,7 @@ async function downloadFullVideo(message = {}) {
     titleSnippet,
     url,
     filename,
+    lineKey,
     saveAs: false
   }).then(async (result) => {
     if (result?.ok === false) throw new Error(result.error || "视频下载失败");
@@ -1281,13 +1370,14 @@ async function downloadFullVideo(message = {}) {
         stage: "error",
         filename,
         url,
+        lineKey,
         error: err?.message || String(err),
         updatedAt: nowIso()
       }
     };
     await saveState(failed);
   });
-  return { ok: true, mode: "m3u8-merged-ts", queued: true, url, filename, taskId, summary, state: sanitizeState(queued) };
+  return { ok: true, mode: "m3u8-merged-ts", queued: true, url, filename, taskId, lineKey, summary, state: sanitizeState(queued) };
 }
 
 async function recordDownloadProgress(message = {}) {
@@ -1312,7 +1402,11 @@ async function recordDownloadProgress(message = {}) {
       url: String(message.url || state.downloadTasks?.[taskId]?.url || ""),
       error: String(message.error || ""),
       downloadId: message.downloadId || state.downloadTasks?.[taskId]?.downloadId || null,
-      bytes: Number(message.bytes || state.downloadTasks?.[taskId]?.bytes || 0),
+      bytes: Number(message.bytes ?? state.downloadTasks?.[taskId]?.bytes || 0),
+      totalBytes: Number(message.totalBytes ?? state.downloadTasks?.[taskId]?.totalBytes || 0),
+      speedBps: Number(message.speedBps ?? state.downloadTasks?.[taskId]?.speedBps || 0),
+      percent: Number(message.percent ?? state.downloadTasks?.[taskId]?.percent || 0),
+      lineKey: String(message.lineKey || state.downloadTasks?.[taskId]?.lineKey || ""),
       objectReady: message.stage === "ready" || Boolean(message.objectReady || state.downloadTasks?.[taskId]?.objectReady),
       saveVia: String(message.saveVia || state.downloadTasks?.[taskId]?.saveVia || ""),
       format: String(message.format || state.downloadTasks?.[taskId]?.format || ""),

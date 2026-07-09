@@ -3,7 +3,7 @@ import Artplayer from "artplayer";
 import Hls from "hls.js";
 import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SortDesc, Timer, Wifi } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
-import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
+import { absoluteUrl, canSaveDownload, downloadFormat, downloadLineLabel, downloadProgress, downloadSpeedText, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
 import { PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerMorePanelKey } from "./player/PlayerChrome";
 import { PlayerGestureHudOverlay, PlayerGestureSurface, type GestureHudState } from "./player/PlayerGestureSystem";
 import {
@@ -134,14 +134,45 @@ const emptyFullscreenTune: PlayerFullscreenTune = {
 };
 
 function lineState(line: PlaybackLine) {
-  if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false };
-  if (line.stat?.error) return { label: "探测异常", color: "text-amber-600", bg: "bg-amber-50", ready: false };
-  if (line.stat?.pending) return { label: "探测中", color: "text-sky-600", bg: "bg-sky-50", ready: true };
-  return { label: "可播放", color: "text-emerald-600", bg: "bg-emerald-50", ready: true };
+  if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false, score: -10000 };
+  if (line.stat?.error) return { label: "探测异常", color: "text-amber-600", bg: "bg-amber-50", ready: false, score: lineScore(line) };
+  if (line.stat?.pending) return { label: "探测中", color: "text-sky-600", bg: "bg-sky-50", ready: true, score: lineScore(line) };
+  return { label: "可播放", color: "text-emerald-600", bg: "bg-emerald-50", ready: true, score: lineScore(line) };
+}
+
+/** 综合分片/时长/延迟/HTTP 状态打分，备用线更好时会优先推荐备用。 */
+function lineScore(line?: PlaybackLine | null) {
+  if (!line?.url) return -10000;
+  const stat = line.stat;
+  if (!stat) return 15;
+  if (stat.error) return -800 + Math.min(50, Number(stat.segments || 0));
+  if (stat.pending) return 25;
+  let score = 100;
+  const status = Number(stat.status || 0);
+  if (status >= 200 && status < 400) score += 60;
+  else if (status > 0) score -= 40;
+  const segments = Number(stat.segments || 0);
+  const duration = Number(stat.duration || 0);
+  const latency = Number((stat as { latencyMs?: number }).latencyMs || 0);
+  // 分片与时长越高通常越完整；延迟越低越好。
+  score += Math.min(50, segments / 4);
+  score += Math.min(40, duration / 20);
+  if (latency > 0) score += Math.max(0, 50 - Math.min(50, latency / 80));
+  if (segments <= 0 && duration <= 0) score -= 20;
+  return score;
 }
 
 function bestLine(lines: PlaybackLine[]) {
-  return lines.find((line) => lineState(line).ready && line.url) || lines.find((line) => line.url);
+  let best: PlaybackLine | undefined;
+  let bestScore = -Infinity;
+  for (const line of lines) {
+    const score = lineScore(line);
+    if (score > bestScore) {
+      bestScore = score;
+      best = line;
+    }
+  }
+  return best || lines.find((line) => line.url) || lines[0];
 }
 
 function isPlaylistUrl(url?: string) {
@@ -502,8 +533,9 @@ function playbackHealth(latest: FullDetail | undefined, lines: PlaybackLine[], p
   const label = score >= 85 ? "优秀" : score >= 65 ? "可用" : score >= 35 ? "需观察" : latest ? "待刷新" : "待捕获";
   const tone = score >= 85 ? "text-emerald-600" : score >= 65 ? "text-sky-600" : score >= 35 ? "text-amber-600" : "text-rose-600";
   const bg = score >= 85 ? "bg-emerald-50" : score >= 65 ? "bg-sky-50" : score >= 35 ? "bg-amber-50" : "bg-rose-50";
+  const preferredScore = preferredLine ? lineScore(preferredLine) : -Infinity;
   const summary = preferredLine?.url
-    ? `推荐优先使用${preferredLine.label}，体检分 ${score}。`
+    ? `推荐优先使用${preferredLine.label}（线路分 ${Math.round(preferredScore)}），总体检 ${score}。`
     : "暂未找到可推荐线路。";
 
   return {
@@ -513,6 +545,7 @@ function playbackHealth(latest: FullDetail | undefined, lines: PlaybackLine[], p
     bg,
     summary,
     recommendedLabel: preferredLine?.url ? preferredLine.label : "暂无推荐",
+    recommendedScore: Number.isFinite(preferredScore) ? Math.round(preferredScore) : 0,
     riskCount: latest ? Math.max(0, risks.filter((item) => !item.includes("信息完整")).length) : risks.length,
     risks
   };
@@ -699,6 +732,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const [recordSort, setRecordSort] = useState<PlaybackRecordSort>("recent");
   // 播放页次级信息分段：资源体检 / 下载 / 记录，减少一屏堆叠。
   const [panelTab, setPanelTab] = useState<PlaybackPanelTab>("resource");
+  // 下载线路：auto / play / backup
+  const [downloadLineKey, setDownloadLineKey] = useState<"auto" | "play" | "backup">("auto");
   const [previewKey, setPreviewKey] = useState<PlaybackPreviewKey>("recommended");
   const [previewRecord, setPreviewRecord] = useState<PlaybackPreviewRecord | null>(null);
   const [playerReloadKey, setPlayerReloadKey] = useState(0);
@@ -2291,7 +2326,6 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           <button
             type="button"
             onClick={() => {
-              onAction("download-full-video", { movieId: latest?.movieId || "" });
               setPanelTab("download");
             }}
             className="txzz-playback-hero-btn flex min-h-8 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-semibold transition active:scale-95"
@@ -2717,13 +2751,18 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                         <p className={`flex items-center gap-1 text-[11px] font-semibold ${stateInfo.color}`}>
                           <Route size={12} /> {line.label}
                         </p>
-                        <span className={`text-[10px] font-medium ${stateInfo.color}`}>{stateInfo.label}</span>
+                        <span className={`text-[10px] font-medium ${stateInfo.color}`}>
+                          {stateInfo.label}
+                          {Number.isFinite(stateInfo.score) && stateInfo.score > -500 ? ` · ${Math.round(stateInfo.score)}分` : ""}
+                        </span>
                       </div>
                       <p className="truncate font-mono text-[10px] text-purple-500">{lineUrl ? maskUrl(lineUrl) : "暂无链接"}</p>
                       <div className="mt-1.5 flex flex-wrap gap-1 text-[9px]">
                         <Pill className="bg-white/80 text-purple-500">{line.stat?.segments ? `${line.stat.segments} 分片` : "分片?"}</Pill>
                         <Pill className="bg-white/80 text-purple-500">{line.stat?.duration ? formatDuration(line.stat.duration) : "时长?"}</Pill>
+                        {line.stat?.latencyMs ? <Pill className="bg-white/80 text-sky-600">{line.stat.latencyMs}ms</Pill> : null}
                         {line.stat?.status ? <Pill className="bg-white/80 text-purple-500">HTTP {line.stat.status}</Pill> : null}
+                        {preferredLine?.key === line.key ? <Pill className="bg-emerald-100 text-emerald-600">推荐</Pill> : null}
                       </div>
                       {line.stat?.error && <p className="mt-1.5 line-clamp-2 text-[10px] text-amber-600">{line.stat.error}</p>}
                       <div className="mt-2 grid grid-cols-2 gap-1.5">
@@ -2756,16 +2795,54 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           <SectionCard
             title="当前视频下载"
             icon={Download}
-            hint={currentTask ? downloadTitle(currentTask) : latest ? "尚未创建下载任务" : "等待播放详情后可下载"}
+            hint={currentTask ? downloadTitle(currentTask) : latest ? "选择线路后创建下载，可看体积进度与速度" : "等待播放详情后可下载"}
             action={<Pill className={currentTaskTone.color}>{currentTaskTone.label}</Pill>}
             tone="amber"
           >
             <div className="space-y-3">
+              <div>
+                <p className="mb-1.5 text-[11px] font-semibold text-purple-600">下载线路</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {([
+                    { key: "auto" as const, label: "自动优选", tip: preferredLine?.label ? `当前推荐 ${preferredLine.label}` : "按探测分选择" },
+                    { key: "play" as const, label: "主线路", tip: lines[0]?.url ? `分 ${Math.round(lineScore(lines[0]))}` : "无链接" },
+                    { key: "backup" as const, label: "备用线路", tip: lines[1]?.url ? `分 ${Math.round(lineScore(lines[1]))}` : "无链接" }
+                  ]).map((item) => {
+                    const active = downloadLineKey === item.key;
+                    const disabled = item.key === "play" ? !lines[0]?.url : item.key === "backup" ? !lines[1]?.url : !latest?.movieId;
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => setDownloadLineKey(item.key)}
+                        className={`rounded-xl px-2 py-2 text-center transition disabled:opacity-40 ${
+                          active
+                            ? "bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-sm"
+                            : "bg-amber-50 text-amber-700 ring-1 ring-amber-100"
+                        }`}
+                      >
+                        <p className="text-[11px] font-bold">{item.label}</p>
+                        <p className={`mt-0.5 text-[9px] ${active ? "text-white/85" : "text-amber-500"}`}>{item.tip}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {currentTask ? (
                 <div className="space-y-2 rounded-2xl bg-amber-50/70 p-3">
                   <div className="flex flex-wrap gap-1.5">
                     <Pill className="bg-white text-purple-500">{downloadFormat(currentTask)}</Pill>
-                    <Pill className="bg-white text-sky-500">{formatBytes(currentTask.bytes)}</Pill>
+                    <Pill className="bg-white text-pink-500">{downloadLineLabel(currentTask.lineKey)}</Pill>
+                    <Pill className="bg-white text-sky-500">
+                      {currentTask.totalBytes
+                        ? `${formatBytes(currentTask.bytes)} / ${formatBytes(currentTask.totalBytes)}`
+                        : formatBytes(currentTask.bytes)}
+                    </Pill>
+                    {downloadSpeedText(currentTask) && (
+                      <Pill className="bg-white text-emerald-600">{downloadSpeedText(currentTask)}</Pill>
+                    )}
                     <Pill className="bg-white text-slate-400">{shortTime(currentTask.updatedAt)}</Pill>
                   </div>
                   {currentTaskUrl && (
@@ -2778,10 +2855,23 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                     <div>
                       <div className="mb-1 flex justify-between text-[10px] text-purple-400">
                         <span>{downloadStageLabel(currentTask.stage)}</span>
-                        <span className="tabular-nums">{currentTask.total ? `${currentTask.current || 0}/${currentTask.total}` : `${taskProgress}%`}</span>
+                        <span className="tabular-nums font-semibold text-amber-600">
+                          {taskProgress}%
+                          {currentTask.total ? ` · ${currentTask.current || 0}/${currentTask.total} 片` : ""}
+                        </span>
                       </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-white">
+                      <div className="h-2 overflow-hidden rounded-full bg-white">
                         <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${taskProgress}%` }} />
+                      </div>
+                      <div className="mt-1 flex justify-between text-[9px] text-purple-300">
+                        <span>
+                          {currentTask.totalBytes
+                            ? `已下载 ${formatBytes(currentTask.bytes || 0)} / 约 ${formatBytes(currentTask.totalBytes)}`
+                            : currentTask.bytes
+                              ? `已下载 ${formatBytes(currentTask.bytes)}`
+                              : "等待体积统计"}
+                        </span>
+                        <span>{downloadSpeedText(currentTask) || "—"}</span>
                       </div>
                     </div>
                   )}
@@ -2795,22 +2885,47 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                 <EmptyState
                   icon={Download}
                   title="还没有下载任务"
-                  desc="可创建当前视频下载，完成后可保存到设备或到下载页管理。"
+                  desc="先选线路，再点创建下载；进度按已下载体积估算百分比并显示速度。"
                 />
               )}
               <ActionToolbar>
                 <SoftButton
                   size="sm"
                   className="flex-1"
-                  icon={currentTask?.stage === "error" ? RefreshCw : currentTask ? Save : Download}
-                  disabled={currentTask ? currentTask.stage !== "error" && !canSaveDownload(currentTask) : !latest?.movieId}
+                  icon={currentTask?.stage === "error" ? RefreshCw : currentTask && canSaveDownload(currentTask) ? Save : Download}
+                  disabled={
+                    currentTask
+                      ? currentTask.stage !== "error" && !canSaveDownload(currentTask) && isRunningDownloadTask(currentTask)
+                      : !latest?.movieId
+                  }
                   onClick={() => {
-                    if (currentTask?.stage === "error") onAction("download-full-video", { movieId: currentTask.movieId || latest?.movieId || "" });
-                    else if (currentTask) onAction("save-download-device", { taskId: currentTask.taskId || "" });
-                    else onAction("download-full-video", { movieId: latest?.movieId || "" });
+                    if (currentTask?.stage === "error") {
+                      onAction("download-full-video", {
+                        movieId: currentTask.movieId || latest?.movieId || "",
+                        lineKey: downloadLineKey
+                      });
+                    } else if (currentTask && canSaveDownload(currentTask)) {
+                      onAction("save-download-device", { taskId: currentTask.taskId || "" });
+                    } else if (!currentTask || !isRunningDownloadTask(currentTask)) {
+                      onAction("download-full-video", {
+                        movieId: latest?.movieId || "",
+                        lineKey: downloadLineKey,
+                        url: downloadLineKey === "play"
+                          ? absoluteUrl(lines[0]?.url || "")
+                          : downloadLineKey === "backup"
+                            ? absoluteUrl(lines[1]?.url || "")
+                            : ""
+                      });
+                    }
                   }}
                 >
-                  {currentTask?.stage === "error" ? "重试下载" : currentTask ? "保存到设备" : "创建下载"}
+                  {currentTask?.stage === "error"
+                    ? "重试下载"
+                    : currentTask && canSaveDownload(currentTask)
+                      ? "保存到设备"
+                      : currentTask && isRunningDownloadTask(currentTask)
+                        ? "下载中…"
+                        : "创建下载"}
                 </SoftButton>
                 {currentTaskUrl && (
                   <SoftButton size="sm" variant="sky" icon={Copy} onClick={() => onAction("copy-download-url", { taskId: currentTask?.taskId || "" })}>

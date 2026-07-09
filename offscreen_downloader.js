@@ -176,7 +176,7 @@ async function anchorDownload(url, filename = "") {
 
 async function downloadM3u8(task) {
   const playlistUrl = absoluteUrl(task.url);
-  reportProgress(task, "playlist", 0, 0, playlistUrl);
+  reportProgress(task, "playlist", 0, 0, playlistUrl, { bytes: 0, totalBytes: 0, speedBps: 0, percent: 1, lineKey: task.lineKey || "" });
   const playlist = await (await fetch(playlistUrl)).text();
   let parsed = parseM3u8(playlist, playlistUrl);
   if (!parsed.segments.length && parsed.variants.length) {
@@ -185,11 +185,19 @@ async function downloadM3u8(task) {
     parsed = parseM3u8(childPlaylist, best.url);
   }
   if (!parsed.segments.length) throw new Error("播放列表里没有可下载分片");
-  reportProgress(task, "segments", 0, parsed.segments.length, playlistUrl);
+  reportProgress(task, "segments", 0, parsed.segments.length, playlistUrl, {
+    bytes: 0,
+    totalBytes: 0,
+    speedBps: 0,
+    percent: 3,
+    lineKey: task.lineKey || ""
+  });
   const chunks = new Array(parsed.segments.length);
   const keyCache = new Map();
   let nextIndex = 0;
   let completed = 0;
+  let downloadedBytes = 0;
+  const startedAt = Date.now();
   const workerCount = Math.max(1, Math.min(Number(task.concurrency || DEFAULT_SEGMENT_CONCURRENCY), parsed.segments.length));
   async function runWorker() {
     while (nextIndex < parsed.segments.length) {
@@ -197,9 +205,23 @@ async function downloadM3u8(task) {
       nextIndex += 1;
       const item = parsed.segments[index];
       const raw = await fetchBytes(item.url);
-      chunks[index] = await decryptSegment(raw, item.key, keyCache, index);
+      const decrypted = await decryptSegment(raw, item.key, keyCache, index);
+      chunks[index] = decrypted;
       completed += 1;
-      reportProgress(task, "segment", completed, parsed.segments.length, playlistUrl);
+      downloadedBytes += decrypted?.length || raw?.length || 0;
+      const elapsedSec = Math.max(0.05, (Date.now() - startedAt) / 1000);
+      const speedBps = Math.round(downloadedBytes / elapsedSec);
+      // 按已下载字节估算总量，进度更接近真实体积百分比。
+      const avgSegment = downloadedBytes / Math.max(1, completed);
+      const estimatedTotalBytes = Math.max(downloadedBytes, Math.round(avgSegment * parsed.segments.length));
+      const percent = Math.max(3, Math.min(99, Math.round((downloadedBytes / Math.max(1, estimatedTotalBytes)) * 100)));
+      reportProgress(task, "segment", completed, parsed.segments.length, playlistUrl, {
+        bytes: downloadedBytes,
+        totalBytes: estimatedTotalBytes,
+        speedBps,
+        percent,
+        lineKey: task.lineKey || ""
+      });
     }
   }
   await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
@@ -236,11 +258,15 @@ async function downloadM3u8(task) {
   });
   reportProgress(task, "ready", parsed.segments.length, parsed.segments.length, playlistUrl, {
     bytes: outputBytes.length,
+    totalBytes: outputBytes.length,
+    speedBps: 0,
+    percent: 100,
     movieTitle: task.movieTitle || "",
     titleSnippet: task.titleSnippet || "",
     filename: outputFilename,
     format: outputFormat,
-    transmuxError
+    transmuxError,
+    lineKey: task.lineKey || ""
   });
   return { ready: true, bytes: outputBytes.length, segments: parsed.segments.length, format: outputFormat, transmuxError };
 }

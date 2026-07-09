@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.4.4",
-  "build": "2026-07-10-0315",
-  "releasedAt": "2026-07-10 03:15",
+  "version": "3.5.0",
+  "build": "2026-07-10-0400",
+  "releasedAt": "2026-07-10 04:00",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-0400",
+      "type": "优化",
+      "title": "线路智能推荐 · 可选线路下载与体积进度",
+      "detail": "1) 主备线路不再默认主线优先，按分片数/时长/延迟/HTTP 状态综合打分推荐更好线路。2) 下载支持自动优选/主线/备用；进度按已下载字节估算总体积百分比，并实时显示下载速度；下载页同步展示。"
+    },
     {
       "id": "2026-07-10-0315",
       "type": "修复",

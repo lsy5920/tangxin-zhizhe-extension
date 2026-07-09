@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle, Copy, Download, FolderOpen, Link, Loader, RefreshCw, Save, Search, SortDesc, Trash2, XCircle } from "lucide-react";
 import type { BridgeState, DownloadTask } from "../types";
-import { absoluteUrl, canSaveDownload, downloadFormat, downloadProgress, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, isRunningDownloadTask, maskUrl, shortTime } from "../helpers";
+import { absoluteUrl, canSaveDownload, downloadFormat, downloadLineLabel, downloadProgress, downloadSpeedText, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, isRunningDownloadTask, maskUrl, shortTime } from "../helpers";
 import {
   ActionToolbar,
   EmptyState,
@@ -207,7 +207,13 @@ export function DownloadsPage({ state, onAction }: Props) {
               <div className="space-y-2 p-3">
                 <div className="flex flex-wrap gap-1.5">
                   <Pill className="bg-purple-50 text-purple-500">{downloadFormat(task)}</Pill>
-                  <Pill className="bg-sky-50 text-sky-500">{formatBytes(task.bytes)}</Pill>
+                  {task.lineKey && <Pill className="bg-pink-50 text-pink-500">{downloadLineLabel(task.lineKey)}</Pill>}
+                  <Pill className="bg-sky-50 text-sky-500">
+                    {task.totalBytes
+                      ? `${formatBytes(task.bytes)} / ${formatBytes(task.totalBytes)}`
+                      : formatBytes(task.bytes)}
+                  </Pill>
+                  {downloadSpeedText(task) && <Pill className="bg-emerald-50 text-emerald-600">{downloadSpeedText(task)}</Pill>}
                   <Pill className="bg-slate-50 text-slate-400">{shortTime(task.updatedAt)}</Pill>
                 </div>
                 {sourceUrl && (
@@ -220,10 +226,23 @@ export function DownloadsPage({ state, onAction }: Props) {
                   <div>
                     <div className="mb-1 flex justify-between text-[10px] text-purple-400">
                       <span>{downloadStageLabel(task.stage)}</span>
-                      <span className="tabular-nums">{task.total ? `${task.current || 0}/${task.total}` : `${progress}%`}</span>
+                      <span className="tabular-nums font-semibold text-amber-600">
+                        {progress}%
+                        {task.total ? ` · ${task.current || 0}/${task.total} 片` : ""}
+                      </span>
                     </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-pink-100">
+                    <div className="h-2 overflow-hidden rounded-full bg-pink-100">
                       <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${progress}%` }} />
+                    </div>
+                    <div className="mt-1 flex justify-between text-[9px] text-purple-300">
+                      <span>
+                        {task.totalBytes
+                          ? `已下载 ${formatBytes(task.bytes || 0)} / 约 ${formatBytes(task.totalBytes)}`
+                          : task.bytes
+                            ? `已下载 ${formatBytes(task.bytes)}`
+                            : "等待体积统计"}
+                      </span>
+                      <span>{downloadSpeedText(task) || "—"}</span>
                     </div>
                   </div>
                 )}

@@ -1848,30 +1848,35 @@
     emitFlow("远程账号池", `已上传 ${accountTitle(account)}，账号池已更新为云端只读摘要`, "ok");
   }
 
-  async function downloadFullVideo(movieId = currentMovieId()) {
+  async function downloadFullVideo(movieId = currentMovieId(), options = {}) {
     const id = String(movieId || currentMovieId()).trim();
     if (!id) throw new Error("当前页面不是视频详情页，无法识别视频编号");
     if (downloadLocks.has(id)) {
-    emitFlow("视频下载", `视频 ${id} 下载任务已经在创建中，请稍候`, "ok");
+      emitFlow("视频下载", `视频 ${id} 下载任务已经在创建中，请稍候`, "ok");
       showToast("下载任务已经在创建中", "ok");
       return { ok: true, locked: true, movieId: id };
     }
     downloadLocks.add(id);
-    emitFlow("视频下载", `开始获取视频 ${id}`);
+    const lineKey = String(options.lineKey || options.line || "auto").trim() || "auto";
+    const lineLabel = lineKey === "backup" ? "备用线路" : lineKey === "play" ? "主线路" : "自动优选";
+    emitFlow("视频下载", `开始获取视频 ${id}（${lineLabel}）`);
     emitFlow("云端账号", `正在为视频 ${id} 轮换可用账号`);
-    showToast("正在获取视频链接");
+    showToast(`正在获取视频链接（${lineLabel}）`);
     try {
       const bootstrapSession = await collectSession();
       const response = await sendRuntime("downloadFullVideo", {
         movieId: id,
         movieTitle: currentMovieTitle(),
         accountId: state.selectedFullAccountId,
-        bootstrapSession
+        bootstrapSession,
+        lineKey,
+        url: options.url || ""
       });
       if (response.state) syncSavedState(response.state);
       const mode = response.mode === "m3u8-merged-ts" ? "m3u8 分片合并" : "直接下载";
-      emitFlow("视频下载", `${mode} 已创建下载任务：${response.filename || id}`, "ok");
-      showToast(`${mode}任务已创建`, "ok");
+      const usedLine = response.lineKey === "backup" ? "备用" : response.lineKey === "play" ? "主线" : lineLabel;
+      emitFlow("视频下载", `${mode} 已创建（${usedLine}）：${response.filename || id}`, "ok");
+      showToast(`${mode}任务已创建（${usedLine}）`, "ok");
       if (response.summary) {
         emitCloudAccountFlow(response.summary, id);
         state.fullDetails = upsertFullDetailList(state.fullDetails, {
@@ -2255,7 +2260,12 @@
       if (action === "upload-account-remote") await uploadAccountRemote(payload);
       if (action === "upload-local-account-remote") await uploadLocalAccountRemote(accountId);
       if (action === "refresh-full-detail") await refreshFullDetail(payload.movieId || currentMovieId());
-      if (action === "download-full-video") await downloadFullVideo(payload.movieId || currentMovieId());
+      if (action === "download-full-video") {
+        await downloadFullVideo(payload.movieId || currentMovieId(), {
+          lineKey: payload.lineKey || payload.line || "auto",
+          url: payload.url || ""
+        });
+      }
       if (action === "refresh-downloads") {
         await refreshLocalDownloadState();
         emitFlow("下载管理", "已刷新下载任务状态", "ok");

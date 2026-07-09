@@ -123,11 +123,34 @@ export function isRunningDownloadTask(task: DownloadTask) {
 }
 
 export function downloadProgress(task: DownloadTask) {
+  if (task.stage === "complete" || task.stage === "ready") return 100;
+  const explicit = Number(task.percent || 0);
+  if (explicit > 0) return Math.max(0, Math.min(99, Math.round(explicit)));
+  // 优先按体积估算百分比，更接近真实下载进度。
+  const totalBytes = Number(task.totalBytes || 0);
+  const bytes = Number(task.bytes || 0);
+  if (totalBytes > 0 && bytes > 0) {
+    return Math.max(1, Math.min(99, Math.round((bytes / totalBytes) * 100)));
+  }
   const total = Number(task.total || 0);
   const current = Number(task.current || 0);
-  if (task.stage === "complete" || task.stage === "ready") return 100;
   if (!total) return task.stage === "queued" ? 2 : task.stage === "playlist" ? 6 : 0;
   return Math.max(0, Math.min(99, Math.round((current / total) * 100)));
+}
+
+export function downloadSpeedText(task: DownloadTask) {
+  const speed = Number(task.speedBps || 0);
+  if (!speed || !isRunningDownloadTask(task)) return "";
+  return `${formatBytes(speed)}/s`;
+}
+
+export function downloadLineLabel(lineKey?: string) {
+  const key = String(lineKey || "").trim().toLowerCase();
+  if (key === "backup" || key === "spare") return "备用线路";
+  if (key === "play" || key === "main" || key === "primary") return "主线路";
+  if (key === "auto") return "自动优选";
+  if (key === "custom") return "指定链接";
+  return key ? `线路 ${key}` : "未指定线路";
 }
 
 export function downloadStageLabel(stage?: string) {
