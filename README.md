@@ -585,3 +585,4 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 2026-07-09 23:20 【优化】升级版本到 v3.2.1，广告清理系统升级到 v3：重点强化首次进入全屏弹窗与右上角倒计时识别，首屏 rAF/密集扫/CSS 预隐藏整层移除，设置页新增开屏层与倒计时命中统计。
 2026-07-09 23:40 【优化】升级版本到 v3.2.2，基于 Playwright 实测 txh068.com 开屏 DOM（.my-swipe.ad-splash.van-swipe + 右上角数字倒计时）做永久硬杀：主世界循环 remove、Mutation 插入即删、拦截广告 window.open。
 2026-07-09 23:55 【修复】升级版本到 v3.2.3，广告清理改为严格模式：删除全部猜测规则，仅清理实测到的 .ad-splash 开屏层，修复过度清理导致无法进入网站的问题。
+2026-07-10 00:10 【修复】升级版本到 v3.2.4，紧急恢复 content.js 被误删的核心函数与初始化链路，广告清理继续仅针对实测 .ad-splash，插件主体功能恢复可用。

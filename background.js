@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2355";
+const LOCAL_UPDATE_BUILD = "2026-07-10-0010";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 23:55 【修复】升级版本到 v3.2.3，广告清理改为严格模式：只删实测 .ad-splash，去掉猜测规则避免进不去站。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 00:10 【修复】升级版本到 v3.2.4，紧急恢复 content.js 核心功能，广告清理仅保留实测 .ad-splash。";
 
 const DEFAULT_STATE = {
   role: "guest",

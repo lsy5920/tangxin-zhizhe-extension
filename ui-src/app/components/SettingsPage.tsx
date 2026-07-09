@@ -459,7 +459,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
 
       <div className="space-y-3 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
         <h3 className="flex items-center gap-1.5 text-sm font-bold text-purple-700"><Ban size={14} className="text-emerald-500" /> 广告清理</h3>
-        <p className="text-xs leading-relaxed text-purple-400">严格模式：仅清理实测到的开屏层 <code className="text-[10px]">.ad-splash</code>（全屏轮播），不再猜测扫描其它弹窗/遮罩，避免误伤网站。</p>
+        <p className="text-xs leading-relaxed text-purple-400">严格模式：仅清理实测开屏 <code className="text-[10px]">.ad-splash</code>，不扫描其它弹层，避免误伤网站与插件功能。</p>
         <div className="grid grid-cols-3 gap-2 text-center">
           {[
             { label: "总处理", value: adCleanerTotal },
