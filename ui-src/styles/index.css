@@ -274,27 +274,27 @@
 .txzz-gesture-zone-left {
   left: 0;
   width: 33.33%;
-  background: linear-gradient(90deg, rgba(56, 189, 248, 0.28), transparent);
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.16), transparent);
 }
 
 .txzz-gesture-zone-right {
   right: 0;
   width: 33.33%;
-  background: linear-gradient(270deg, rgba(52, 211, 153, 0.28), transparent);
+  background: linear-gradient(270deg, rgba(52, 211, 153, 0.16), transparent);
 }
 
 .txzz-gesture-zone-center {
   left: 33.33%;
   width: 33.34%;
-  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.16), transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.08), transparent 70%);
 }
 
 @keyframes txzz-zone-flash {
-  0% { opacity: 0.95; }
+  0% { opacity: 0.7; }
   100% { opacity: 0; }
 }
 
-/* 侧边音量/亮度竖条 */
+/* 侧边音量/亮度竖条：更瘦更淡，少挡画面 */
 .txzz-gesture-side-bar {
   position: absolute;
   top: 50%;
@@ -303,11 +303,11 @@
   flex-direction: column;
   align-items: center;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.55);
-  padding: 12px 10px;
-  backdrop-filter: blur(8px);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
-  animation: txzz-gesture-pop 0.16s ease-out;
+  background: rgba(0, 0, 0, 0.48);
+  padding: 10px 8px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  animation: txzz-gesture-pop 0.14s ease-out;
 }
 
 .txzz-gesture-side-bar-left {
@@ -319,13 +319,22 @@
 }
 
 .txzz-gesture-side-track {
-  width: 6px;
-  height: 120px;
+  width: 5px;
+  height: 96px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.16);
   display: flex;
   align-items: flex-end;
+}
+
+/* 中央手势提示：默认紧凑，禁止过大遮挡 */
+.txzz-player-gesture-hud {
+  max-width: min(14rem, 72vw) !important;
+}
+
+.txzz-player-gesture-chip {
+  max-width: min(16rem, 78vw) !important;
 }
 
 .txzz-gesture-side-fill {
@@ -743,7 +752,7 @@
   transition: transform 0.18s ease;
 }
 
-/* 播放页真实运行的全屏舞台：不再旋转整套控件，横屏交给系统方向锁定，画面始终居中完整显示。 */
+/* 播放页真实运行的全屏舞台：优先系统方向锁定；失败时再走 CSS 横屏兜底。 */
 .txzz-player-orientation-stage {
   position: absolute;
   inset: 0;
@@ -754,13 +763,43 @@
 }
 
 .txzz-player-fullscreen-shell .txzz-player-orientation-stage {
-  position: fixed !important;
+  position: absolute !important;
   inset: 0 !important;
-  width: var(--txzz-player-viewport-width, 100%) !important;
-  height: var(--txzz-player-viewport-height, 100%) !important;
+  width: 100% !important;
+  height: 100% !important;
   margin: 0 !important;
   transform: none !important;
   overflow: hidden !important;
+}
+
+/*
+ * CSS 横屏兜底：系统 orientation.lock 失败、视口仍是竖屏时，
+ * 把全屏壳旋转 90° 并交换宽高，让横屏片 + 控制栏变成横屏布局。
+ * 仅在 .txzz-player-css-landscape 时启用，退出全屏自动失效。
+ */
+.txzz-player-fullscreen-shell.txzz-player-css-landscape {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: 100dvh !important;
+  height: 100dvw !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  inset: auto !important;
+  transform: translate(-50%, -50%) rotate(90deg) !important;
+  transform-origin: center center !important;
+  overflow: hidden !important;
+  z-index: 2147483647 !important;
+  background: #000 !important;
+}
+
+.txzz-player-fullscreen-shell.txzz-player-css-landscape .txzz-player-orientation-stage,
+.txzz-player-fullscreen-shell.txzz-player-css-landscape .txzz-player-card-body,
+.txzz-player-fullscreen-shell.txzz-player-css-landscape .art-video-player,
+.txzz-player-fullscreen-shell.txzz-player-css-landscape video,
+.txzz-player-fullscreen-shell.txzz-player-css-landscape .art-video {
+  transform: none !important;
 }
 
 :host(.txzz-player-fullscreen-mode) .txzz-player-card.rounded-2xl,

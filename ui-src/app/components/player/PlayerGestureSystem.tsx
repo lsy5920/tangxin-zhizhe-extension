@@ -358,10 +358,11 @@ export function PlayerGestureSurface({
       const next = clamp(swipe.startTime + seekSeconds, 0, duration || swipe.startTime + seekSeconds);
       onShowHud({
         kind: "seek-scrub",
-        text: `${seekSeconds >= 0 ? "+" : ""}${seekSeconds}s · ${formatDuration(next)}${duration ? ` / ${formatDuration(duration)}` : ""}`,
+        // 文案尽量短，避免中央大块遮挡画面
+        text: `${seekSeconds >= 0 ? "+" : ""}${seekSeconds}s  ${formatDuration(next)}`,
         percent: duration ? percent(next, duration) : 50,
         zone: seekSeconds < 0 ? "left" : "right"
-      }, 1200);
+      }, 700);
       return;
     }
 
@@ -450,12 +451,12 @@ type GestureHudOverlayProps = {
   holdHint?: string;
 };
 
-/** 专业手势 HUD：中央大提示 + 左右区域双击闪 + 侧边音量/亮度竖条。 */
+/** 专业手势 HUD：紧凑中央提示 + 区域闪 + 侧边音量/亮度竖条（避免大块遮挡画面）。 */
 export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProps) {
   if (holdHint) {
     return (
-      <div className="pointer-events-none absolute inset-0 z-[26] flex items-center justify-center">
-        <div className="txzz-player-gesture-chip rounded-2xl bg-black/80 px-5 py-2.5 text-sm font-semibold text-white shadow-xl ring-1 ring-white/10 backdrop-blur">
+      <div className="pointer-events-none absolute inset-0 z-[26] flex items-center justify-center px-4">
+        <div className="txzz-player-gesture-chip max-w-[70%] truncate rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-semibold text-white shadow-lg ring-1 ring-white/12 backdrop-blur-sm">
           {holdHint}
         </div>
       </div>
@@ -463,12 +464,25 @@ export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProp
   }
   if (!hud.kind) return null;
 
-  const showCenter = !hud.sideBar || hud.kind === "seek-scrub" || hud.kind === "rate" || hud.kind === "play" || hud.kind === "pause" || hud.kind === "lock" || hud.kind === "unlock";
+  // 音量/亮度只走侧边竖条，不再叠中央大卡片
+  const showCenter = !hud.sideBar && (
+    hud.kind === "seek-scrub"
+    || hud.kind === "seek-back"
+    || hud.kind === "seek-forward"
+    || hud.kind === "double-left"
+    || hud.kind === "double-right"
+    || hud.kind === "rate"
+    || hud.kind === "play"
+    || hud.kind === "pause"
+    || hud.kind === "lock"
+    || hud.kind === "unlock"
+  );
   const barPercent = typeof hud.percent === "number" ? clamp(hud.percent, 0, 100) : 0;
+  const isSeek = hud.kind === "seek-scrub" || hud.kind === "seek-back" || hud.kind === "seek-forward" || hud.kind === "double-left" || hud.kind === "double-right";
 
   return (
     <div className="pointer-events-none absolute inset-0 z-[26]">
-      {/* 双击区域闪烁 */}
+      {/* 双击区域闪烁：更淡、更短，少挡画面 */}
       {hud.zone === "left" && <div className="txzz-gesture-zone-flash txzz-gesture-zone-left" />}
       {hud.zone === "right" && <div className="txzz-gesture-zone-flash txzz-gesture-zone-right" />}
       {hud.zone === "center" && <div className="txzz-gesture-zone-flash txzz-gesture-zone-center" />}
@@ -476,48 +490,55 @@ export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProp
       {/* 左侧亮度竖条 */}
       {hud.sideBar === "left" && (
         <div className="txzz-gesture-side-bar txzz-gesture-side-bar-left">
-          <Sun size={16} className="mb-2 text-amber-200" />
+          <Sun size={14} className="mb-1.5 text-amber-200" />
           <div className="txzz-gesture-side-track">
             <div className="txzz-gesture-side-fill bg-amber-300" style={{ height: `${barPercent}%` }} />
           </div>
-          <span className="mt-2 text-[10px] font-semibold text-white/90">{Math.round(60 + (barPercent / 100) * 80)}%</span>
+          <span className="mt-1.5 text-[9px] font-semibold text-white/90">{Math.round(60 + (barPercent / 100) * 80)}</span>
         </div>
       )}
 
       {/* 右侧音量竖条 */}
       {hud.sideBar === "right" && (
         <div className="txzz-gesture-side-bar txzz-gesture-side-bar-right">
-          {barPercent <= 0 ? <VolumeX size={16} className="mb-2 text-sky-200" /> : <Volume2 size={16} className="mb-2 text-sky-200" />}
+          {barPercent <= 0 ? <VolumeX size={14} className="mb-1.5 text-sky-200" /> : <Volume2 size={14} className="mb-1.5 text-sky-200" />}
           <div className="txzz-gesture-side-track">
             <div className="txzz-gesture-side-fill bg-sky-400" style={{ height: `${barPercent}%` }} />
           </div>
-          <span className="mt-2 text-[10px] font-semibold text-white/90">{barPercent}%</span>
+          <span className="mt-1.5 text-[9px] font-semibold text-white/90">{barPercent}</span>
         </div>
       )}
 
-      {/* 中央 HUD */}
+      {/* 中央 HUD：紧凑胶囊，快进/拖进度用横条小卡片 */}
       {showCenter && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="txzz-player-gesture-hud flex min-w-[8.5rem] max-w-[80%] flex-col items-center gap-2 rounded-3xl bg-black/75 px-5 py-4 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/12">
-              {(hud.kind === "volume" || hud.sideBar === "right") && (barPercent <= 0 ? <VolumeX size={22} /> : <Volume2 size={22} />)}
-              {(hud.kind === "brightness" || hud.sideBar === "left") && hud.kind !== "volume" && <Sun size={22} />}
-              {(hud.kind === "seek-back" || hud.kind === "double-left") && <ChevronLeft size={26} />}
-              {(hud.kind === "seek-forward" || hud.kind === "double-right") && <ChevronRight size={26} />}
-              {hud.kind === "seek-scrub" && (barPercent < 50 ? <ChevronLeft size={24} /> : <ChevronRight size={24} />)}
-              {hud.kind === "play" && <Play size={22} className="ml-0.5 fill-white" />}
-              {hud.kind === "pause" && <Pause size={22} className="fill-white" />}
-              {hud.kind === "lock" && <Lock size={20} />}
-              {hud.kind === "unlock" && <Unlock size={20} />}
-              {hud.kind === "rate" && <Zap size={22} />}
-            </div>
-            <span className="text-center text-xs font-semibold tracking-wide">{hud.text}</span>
-            {typeof hud.percent === "number" && !hud.sideBar && (hud.kind === "seek-scrub" || hud.kind === "seek-back" || hud.kind === "seek-forward") && (
-              <div className="h-1.5 w-28 overflow-hidden rounded-full bg-white/20">
-                <div className="h-full rounded-full bg-emerald-300 transition-all duration-100" style={{ width: `${barPercent}%` }} />
+        <div className="absolute inset-0 flex items-center justify-center px-6">
+          {isSeek ? (
+            <div className="txzz-player-gesture-hud flex max-w-[min(14rem,72vw)] items-center gap-2 rounded-2xl bg-black/65 px-3 py-2 text-white shadow-lg ring-1 ring-white/12 backdrop-blur-sm">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12">
+                {(hud.kind === "seek-back" || hud.kind === "double-left" || (hud.kind === "seek-scrub" && barPercent < 50)) && <ChevronLeft size={16} />}
+                {(hud.kind === "seek-forward" || hud.kind === "double-right" || (hud.kind === "seek-scrub" && barPercent >= 50)) && <ChevronRight size={16} />}
               </div>
-            )}
-          </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[11px] font-semibold leading-tight tracking-wide">{hud.text}</div>
+                {typeof hud.percent === "number" && (
+                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-white/18">
+                    <div className="h-full rounded-full bg-emerald-300 transition-all duration-75" style={{ width: `${barPercent}%` }} />
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="txzz-player-gesture-hud flex max-w-[min(11rem,70vw)] items-center gap-2 rounded-full bg-black/65 px-3 py-1.5 text-white shadow-lg ring-1 ring-white/12 backdrop-blur-sm">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12">
+                {hud.kind === "play" && <Play size={14} className="ml-0.5 fill-white" />}
+                {hud.kind === "pause" && <Pause size={14} className="fill-white" />}
+                {hud.kind === "lock" && <Lock size={13} />}
+                {hud.kind === "unlock" && <Unlock size={13} />}
+                {hud.kind === "rate" && <Zap size={14} />}
+              </div>
+              <span className="truncate text-[11px] font-semibold tracking-wide">{hud.text}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

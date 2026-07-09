@@ -398,26 +398,50 @@ function restoreHostAfterBrowserFullscreen(host: HTMLElement | null) {
   restoreFullscreenChrome(host);
 }
 
-function wantedScreenOrientation(mode: PlayerOrientationMode, videoLandscape: boolean) {
+function wantedScreenOrientation(
+  mode: PlayerOrientationMode,
+  videoLandscape: boolean,
+  preferLandscapeFallback = false
+) {
   if (mode === "landscape") return "landscape";
   if (mode === "portrait") return "portrait";
-  return videoLandscape ? "landscape" : "";
+  // 自动：横屏片源必须横屏；片源尺寸未知时（悬浮秒开全屏）也优先横屏，避免竖屏壳看横屏片
+  if (videoLandscape || preferLandscapeFallback) return "landscape";
+  return "";
 }
 
-async function requestScreenOrientation(mode: PlayerOrientationMode, videoLandscape: boolean) {
-  const wanted = wantedScreenOrientation(mode, videoLandscape);
+async function requestScreenOrientation(
+  mode: PlayerOrientationMode,
+  videoLandscape: boolean,
+  options: { preferLandscapeFallback?: boolean } = {}
+) {
+  const wanted = wantedScreenOrientation(mode, videoLandscape, options.preferLandscapeFallback);
   const controller = window.screen?.orientation as ScreenOrientationController | undefined;
   if (!wanted) {
     controller?.unlock?.();
     return "自动方向";
   }
   if (!controller?.lock) return "浏览器不支持方向锁定";
-  try {
-    await controller.lock(wanted);
-    return wanted === "landscape" ? "已请求系统横屏" : "已请求系统竖屏";
-  } catch {
-    return wanted === "landscape" ? "横屏锁定被浏览器限制" : "竖屏锁定被浏览器限制";
+  // 多候选：Android/Kiwi 对 landscape / landscape-primary 支持不一致
+  const candidates = wanted === "landscape"
+    ? ["landscape", "landscape-primary", "landscape-secondary"]
+    : ["portrait", "portrait-primary", "portrait-secondary"];
+  let lastError: unknown = null;
+  for (const orientation of candidates) {
+    try {
+      await controller.lock(orientation as "landscape" | "portrait" | "landscape-primary" | "landscape-secondary" | "portrait-primary" | "portrait-secondary");
+      return wanted === "landscape" ? "已请求系统横屏" : "已请求系统竖屏";
+    } catch (err) {
+      lastError = err;
+    }
   }
+  void lastError;
+  return wanted === "landscape" ? "横屏锁定被浏览器限制，请横握手机" : "竖屏锁定被浏览器限制";
+}
+
+/** 当前视口是否更接近竖屏（高>宽）。 */
+function isPortraitViewport(width: number, height: number) {
+  return height > 0 && width > 0 && height > width * 1.05;
 }
 
 function releaseScreenOrientation() {
@@ -760,12 +784,26 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const previewBuffered = percent(playerStats.bufferedEnd, playerStats.duration);
   const playerFullscreenActive = playerImmersive || browserFullscreenActive;
   const playerVideoLandscape = playerVideoSize.width > 0 && playerVideoSize.height > 0 && playerVideoSize.width >= playerVideoSize.height * 1.08;
+  const playerVideoPortrait = playerVideoSize.width > 0 && playerVideoSize.height > 0 && playerVideoSize.height > playerVideoSize.width * 1.08;
+  // 全屏自动方向：横屏片 / 尺寸未知（悬浮秒开）优先横屏；明确竖屏片才不锁横屏
+  const preferLandscapeInFullscreen = playerFullscreenActive
+    && playerOrientationMode !== "portrait"
+    && (playerOrientationMode === "landscape" || playerVideoLandscape || !playerVideoPortrait);
   // 手机横屏矮屏：Kiwi 等浏览器横屏高度常 < 420，控制栏必须紧凑，否则会占掉半个画面。
   const isCompactLandscape = playerViewportSize.height > 0
     && playerViewportSize.width > playerViewportSize.height
     && playerViewportSize.height <= 520;
-  const playerOrientationRequested = playerFullscreenActive && Boolean(wantedScreenOrientation(playerOrientationMode, playerVideoLandscape));
+  const playerOrientationRequested = playerFullscreenActive && Boolean(
+    wantedScreenOrientation(playerOrientationMode, playerVideoLandscape, preferLandscapeInFullscreen && !playerVideoPortrait)
+  );
   const playerOrientationLabel = orientationModeLabel(playerOrientationMode, playerOrientationRequested);
+  // 系统横屏锁失败且仍是竖屏视口时：用 CSS 把全屏舞台旋成横屏布局（悬浮入口看横屏片）
+  const cssForceLandscape = Boolean(
+    playerFullscreenActive
+    && preferLandscapeInFullscreen
+    && !playerVideoPortrait
+    && isPortraitViewport(playerViewportSize.width, playerViewportSize.height)
+  );
   const playerFitLabel = fitModeLabel(playerFitMode, detectedFitMode);
   const playerShellAspect = playerFullscreenActive ? undefined : fitModeAspect(playerFitMode, detectedFitMode);
   const fullscreenDiagnosticLabel = playerFullscreenDiagnostic.ok
@@ -1774,7 +1812,10 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       const status = fromFloating ? "悬浮按钮已全屏 · 正在校正画面" : "已进入浏览器全屏";
       setPlayerStatus(status);
       art.notice.show = status;
-      requestScreenOrientation(playerOrientationMode, playerVideoLandscape).then((message) => {
+      // 悬浮秒开时片源尺寸可能还未知：preferLandscapeFallback 强制先横屏
+      requestScreenOrientation(playerOrientationMode, playerVideoLandscape, {
+        preferLandscapeFallback: fromFloating || !playerVideoPortrait
+      }).then((message) => {
         if (artRef.current && message) artRef.current.notice.show = message;
       });
       scheduleFullscreenDiagnosticRefresh();
@@ -1789,7 +1830,9 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       pluginHost: host
     });
 
-    const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape);
+    const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape, {
+      preferLandscapeFallback: fromFloating || !playerVideoPortrait
+    });
     setBrowserFullscreenActive(result.real);
     setPlayerImmersive(true);
     prepareHostForBrowserFullscreen(host);
@@ -1861,6 +1904,41 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       scheduleFullscreenDiagnosticRefresh();
     }
   };
+
+  // 全屏后根据片源尺寸反复请求横屏（元数据晚到时补锁；悬浮入口必横屏）
+  useEffect(() => {
+    if (!playerFullscreenActive || !wantFullscreenRef.current) return undefined;
+    if (playerOrientationMode === "portrait") return undefined;
+    if (playerVideoPortrait) return undefined;
+    let cancelled = false;
+    const run = async () => {
+      if (cancelled) return;
+      const message = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape, {
+        preferLandscapeFallback: true
+      });
+      if (!cancelled && artRef.current && message.includes("已请求")) {
+        artRef.current.notice.show = message;
+      }
+    };
+    run();
+    const t1 = window.setTimeout(run, 280);
+    const t2 = window.setTimeout(run, 900);
+    const t3 = window.setTimeout(run, 1800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.clearTimeout(t3);
+    };
+  }, [
+    playerFullscreenActive,
+    playerVideoLandscape,
+    playerVideoPortrait,
+    playerVideoSize.width,
+    playerVideoSize.height,
+    playerOrientationMode,
+    browserFullscreenActive
+  ]);
 
   // 悬浮视频按钮 / 外部自动全屏信号：立刻沉浸，再等播放器就绪后真正接好全屏。
   useEffect(() => {
@@ -2254,7 +2332,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
         </div>
         <div
           ref={playerShellRef}
-          className={`txzz-player-shell txzz-candy-interactive select-none ${playerCursorHidden ? "cursor-none" : ""} ${playerFullscreenActive ? "txzz-player-fullscreen-shell txzz-fullscreen-active fixed inset-0 z-[2147483647] overflow-hidden rounded-none bg-black" : "relative overflow-hidden rounded-2xl bg-black shadow-inner ring-1 ring-black/20"}`}
+          className={`txzz-player-shell txzz-candy-interactive select-none ${playerCursorHidden ? "cursor-none" : ""} ${playerFullscreenActive ? "txzz-player-fullscreen-shell txzz-fullscreen-active fixed inset-0 z-[2147483647] overflow-hidden rounded-none bg-black" : "relative overflow-hidden rounded-2xl bg-black shadow-inner ring-1 ring-black/20"} ${cssForceLandscape ? "txzz-player-css-landscape" : ""}`}
           style={
             playerFullscreenActive
               // 全屏时不要注入可能为 0 的 viewport 像素变量，避免 video 被压成 0×0
@@ -2263,11 +2341,12 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
                 ? { ...playerStageStyle, aspectRatio: playerShellAspect }
                 : playerStageStyle
           }
+          data-css-landscape={cssForceLandscape ? "1" : "0"}
         >
           <div
             className="txzz-player-orientation-stage"
             data-orientation-mode={playerOrientationMode}
-            data-video-orientation={playerVideoLandscape ? "landscape" : playerVideoSize.height > playerVideoSize.width ? "portrait" : "unknown"}
+            data-video-orientation={playerVideoLandscape ? "landscape" : playerVideoPortrait ? "portrait" : "unknown"}
             style={playerFullscreenActive ? ({ position: "absolute", inset: 0, width: "100%", height: "100%", background: "transparent" } as CSSProperties) : playerStageStyle}
           >
           <div

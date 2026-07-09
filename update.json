@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.1.8",
-  "build": "2026-07-09-2235",
-  "releasedAt": "2026-07-09 22:35",
+  "version": "3.1.9",
+  "build": "2026-07-09-2245",
+  "releasedAt": "2026-07-09 22:45",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2245",
+      "type": "优化",
+      "title": "缩小中央手势提示 · 悬浮全屏横屏片强制横屏",
+      "detail": "1) 中央快进/拖进度提示从大卡片改为紧凑横条/胶囊，侧边音量亮度更瘦，区域闪更淡，减少遮挡画面。2) 悬浮全屏与自动方向：横屏片源/尺寸未知时优先 screen.orientation.lock 横屏（多候选重试）；元数据到达后补锁；系统锁失败且视口仍竖屏时启用 CSS 旋转舞台横屏兜底。"
+    },
     {
       "id": "2026-07-09-2235",
       "type": "修复",

@@ -274,42 +274,44 @@ export function PlayerOverlays({
   return (
     <>
       {holdSeekHint && (
-        <div className="pointer-events-none absolute inset-0 z-[25] flex items-center justify-center">
-          <div className="txzz-player-gesture-chip rounded-2xl bg-black/78 px-4 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur">
+        <div className="pointer-events-none absolute inset-0 z-[25] flex items-center justify-center px-4">
+          <div className="txzz-player-gesture-chip max-w-[70%] truncate rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-semibold text-white shadow-lg backdrop-blur-sm">
             {holdSeekHint}
           </div>
         </div>
       )}
 
       {gestureHud.kind && !holdSeekHint && (
-        <div className="pointer-events-none absolute inset-0 z-[24] flex items-center justify-center">
-          <div className="txzz-player-gesture-hud flex min-w-[8rem] flex-col items-center gap-2 rounded-3xl bg-black/72 px-5 py-4 text-white shadow-2xl backdrop-blur">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/12 ring-1 ring-white/10">
-              {gestureHud.kind === "volume" && ((gestureHud.percent || 0) <= 0 ? <VolumeX size={22} /> : <Volume2 size={22} />)}
-              {gestureHud.kind === "brightness" && <Sun size={22} />}
-              {gestureHud.kind === "seek-back" && <ChevronLeft size={24} />}
-              {gestureHud.kind === "seek-forward" && <ChevronRight size={24} />}
-              {gestureHud.kind === "lock" && <Lock size={20} />}
-              {gestureHud.kind === "unlock" && <Unlock size={20} />}
-              {gestureHud.kind === "rate" && <Zap size={20} />}
+        <div className="pointer-events-none absolute inset-0 z-[24] flex items-center justify-center px-6">
+          <div className="txzz-player-gesture-hud flex max-w-[min(12rem,72vw)] items-center gap-2 rounded-2xl bg-black/65 px-3 py-2 text-white shadow-lg ring-1 ring-white/12 backdrop-blur-sm">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12">
+              {gestureHud.kind === "volume" && ((gestureHud.percent || 0) <= 0 ? <VolumeX size={14} /> : <Volume2 size={14} />)}
+              {gestureHud.kind === "brightness" && <Sun size={14} />}
+              {gestureHud.kind === "seek-back" && <ChevronLeft size={16} />}
+              {gestureHud.kind === "seek-forward" && <ChevronRight size={16} />}
+              {gestureHud.kind === "lock" && <Lock size={13} />}
+              {gestureHud.kind === "unlock" && <Unlock size={13} />}
+              {gestureHud.kind === "rate" && <Zap size={14} />}
             </div>
-            <span className="text-xs font-semibold tracking-wide">{gestureHud.text}</span>
-            {typeof gestureHud.percent === "number" && (
-              <div className="h-1.5 w-24 overflow-hidden rounded-full bg-white/20">
-                <div
-                  className={`h-full rounded-full transition-all duration-100 ${
-                    gestureHud.kind === "brightness"
-                      ? "bg-amber-300"
-                      : gestureHud.kind === "seek-back" || gestureHud.kind === "seek-forward"
-                        ? "bg-emerald-300"
-                        : gestureHud.kind === "rate"
-                          ? "bg-violet-300"
-                          : "bg-sky-400"
-                  }`}
-                  style={{ width: `${Math.max(0, Math.min(100, gestureHud.percent))}%` }}
-                />
-              </div>
-            )}
+            <div className="min-w-0">
+              <span className="block truncate text-[11px] font-semibold tracking-wide">{gestureHud.text}</span>
+              {typeof gestureHud.percent === "number" && (
+                <div className="mt-1 h-1 w-20 overflow-hidden rounded-full bg-white/18">
+                  <div
+                    className={`h-full rounded-full transition-all duration-100 ${
+                      gestureHud.kind === "brightness"
+                        ? "bg-amber-300"
+                        : gestureHud.kind === "seek-back" || gestureHud.kind === "seek-forward"
+                          ? "bg-emerald-300"
+                          : gestureHud.kind === "rate"
+                            ? "bg-violet-300"
+                            : "bg-sky-400"
+                    }`}
+                    style={{ width: `${Math.max(0, Math.min(100, gestureHud.percent))}%` }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
