@@ -115,7 +115,10 @@
 
 .txzz-player-clean .art-bottom,
 .txzz-player-clean .art-settings,
-.txzz-player-clean .art-info {
+.txzz-player-clean .art-info,
+.txzz-player-clean .art-controls,
+.txzz-player-clean .art-mask,
+.txzz-player-clean .art-state {
   display: none !important;
 }
 
@@ -125,8 +128,15 @@
   background: #000 !important;
 }
 
-.txzz-player-clean .art-mask {
-  bottom: 0 !important;
+/* 屏蔽 ArtPlayer 内置点击层：所有点击交给外层自定义控制与手势，避免单击暂停、双击误进全屏。 */
+.txzz-player-clean .art-video,
+.txzz-player-clean .art-poster,
+.txzz-player-clean .art-danmuku,
+.txzz-player-clean .art-layers,
+.txzz-player-clean .art-mask,
+.txzz-player-clean .art-state,
+.txzz-player-clean video {
+  pointer-events: none !important;
 }
 
 .txzz-player-clean .art-video {

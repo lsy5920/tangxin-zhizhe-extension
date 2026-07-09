@@ -47,14 +47,23 @@ function requestHostFullscreen() {
   const host = document.getElementById("txzz-candy-ui-root") as FullscreenTarget | null;
   const request = host?.requestFullscreen || host?.webkitRequestFullscreen || host?.msRequestFullscreen;
   if (!host || !request) return;
-  host.classList.add(playerFullscreenHostClass);
-  window.setTimeout(() => host.classList.add(playerFullscreenHostClass), 80);
-  window.setTimeout(() => host.classList.add(playerFullscreenHostClass), 240);
+  // 仅在浏览器真正进入全屏后再挂宿主全屏模式类，避免 request 失败时面板被 CSS 藏成黑屏。
+  const markIfFullscreen = () => {
+    const doc = document as Document & { webkitFullscreenElement?: Element | null };
+    if (document.fullscreenElement === host || doc.webkitFullscreenElement === host) {
+      host.classList.add(playerFullscreenHostClass);
+    }
+  };
   try {
-    Promise.resolve(request.call(host)).catch(() => {});
+    Promise.resolve(request.call(host)).then(markIfFullscreen).catch(() => {
+      host.classList.remove(playerFullscreenHostClass);
+    });
   } catch {
+    host.classList.remove(playerFullscreenHostClass);
     // 浏览器全屏只能在用户点击时尝试，失败后播放页会继续使用沉浸全屏兜底。
   }
+  window.setTimeout(markIfFullscreen, 80);
+  window.setTimeout(markIfFullscreen, 240);
 }
 
 function disableHostPlaybackFullscreenMode() {
@@ -122,7 +131,12 @@ export default function App() {
     setShowUpdateModal(true);
   }, [bridgeState.repositoryUpdate?.updateAvailable, bridgeState.repositoryUpdate?.remote?.id, bridgeState.repositoryUpdate?.remote?.version, bridgeState.repositoryUpdate?.remote?.build, dismissedUpdateId]);
 
-  const openPanel = () => { setOpen(true); action("toggle", { force: true }); };
+  const openPanel = () => {
+    // 打开普通面板时清掉残留全屏宿主类，避免上次异常全屏后面板整页消失。
+    disableHostPlaybackFullscreenMode();
+    setOpen(true);
+    action("toggle", { force: true });
+  };
   const closePanel = () => {
     disableHostPlaybackFullscreenMode();
     setOpen(false);

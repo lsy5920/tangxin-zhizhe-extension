@@ -12,6 +12,11 @@ const ARTPLAYER_STYLE_ID = "txzz-artplayer-style";
 // 否则 ArtPlayer 的控制栏、全屏和网页全屏样式会被隔离在外层页面里。
 Artplayer.FULLSCREEN_WEB_IN_BODY = false;
 Artplayer.LOG_VERSION = false;
+// 关闭 ArtPlayer 内置单击播放 / 双击全屏：插件已有自定义控制层与手势，
+// 内置双击全屏在扩展 Shadow DOM 里常失败，还会误触发我们的沉浸全屏，导致面板“突然消失”。
+Artplayer.DBCLICK_FULLSCREEN = false;
+Artplayer.MOBILE_CLICK_PLAY = false;
+Artplayer.MOBILE_DBCLICK_PLAY = false;
 
 function createHost() {
   const existed = document.getElementById(HOST_ID);

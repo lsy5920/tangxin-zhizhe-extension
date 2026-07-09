@@ -98,10 +98,16 @@ export function CtrlButton({
       title={title}
       disabled={disabled}
       onClick={(event) => {
+        event.preventDefault();
         event.stopPropagation();
         onClick?.();
       }}
-      onPointerDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+      }}
+      onPointerUp={(event) => {
+        event.stopPropagation();
+      }}
       className={`txzz-player-control-button inline-flex items-center justify-center gap-1 rounded-xl font-medium transition-all duration-150 active:scale-95 disabled:pointer-events-none disabled:opacity-40 ${sizeClass} ${accentClass} ${className}`}
     >
       {children}

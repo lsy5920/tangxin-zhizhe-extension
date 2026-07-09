@@ -740,6 +740,10 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   const fullscreenMetaTimerRef = useRef<number | undefined>();
   const playerDiagnosticReportRef = useRef("");
   const fullscreenIntentRef = useRef(0);
+  // 仅在用户明确点全屏时为 true；防止 ArtPlayer 内置全屏失败/误触发把面板打成沉浸黑屏。
+  const wantFullscreenRef = useRef(false);
+  // 主控按钮刚操作后的短窗口，忽略外壳 surface 点击，避免“点播放却被当成点画面”。
+  const controlActionStampRef = useRef(0);
   // 播放器运行时快照：给 ArtPlayer 事件回调和右键菜单读取最新界面状态，避免闭包里的旧值。
   const playerRuntimeRef = useRef({ previewKey: "recommended" as PlaybackPreviewKey, title: "", backupUrl: "", autoBackupUsed: false, resumeId: "" });
   const [isDraggingProgress, setIsDraggingProgress] = useState(false);
@@ -1007,11 +1011,16 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   useEffect(() => {
     const host = fullscreenHostElement();
     if (!host) return;
-    if (playerFullscreenActive) {
+    // 只有用户明确进入全屏（浏览器全屏或沉浸全屏）时才挂宿主模式类，避免普通播放误藏面板。
+    if (playerFullscreenActive && wantFullscreenRef.current) {
       host.classList.add(playerFullscreenHostClass);
-      return () => host.classList.remove(playerFullscreenHostClass);
+      return () => {
+        if (!wantFullscreenRef.current) host.classList.remove(playerFullscreenHostClass);
+      };
     }
-    if (fullscreenElement() !== host) host.classList.remove(playerFullscreenHostClass);
+    if (!playerFullscreenActive || !wantFullscreenRef.current) {
+      host.classList.remove(playerFullscreenHostClass);
+    }
     return undefined;
   }, [playerFullscreenActive]);
 
@@ -1021,12 +1030,23 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       const shell = playerShellRef.current;
       const host = fullscreenHostElement();
       const active = isPlayerFullscreenElement(fullscreenNode, shell, host);
-      if (active && fullscreenNode === host) host?.classList.add(playerFullscreenHostClass);
-      setBrowserFullscreenActive(active);
-      setPlayerFullscreenDiagnostic(measureFullscreenDiagnostic(shell, host, playerImmersive || active, videoRef.current));
-      if (!active && fullscreenNode !== shell) {
-        setPlayerImmersive(false);
-        host?.classList.remove(playerFullscreenHostClass);
+      if (active && wantFullscreenRef.current && fullscreenNode === host) {
+        host?.classList.add(playerFullscreenHostClass);
+      }
+      setBrowserFullscreenActive(active && wantFullscreenRef.current);
+      setPlayerFullscreenDiagnostic(
+        measureFullscreenDiagnostic(shell, host, (playerImmersive || active) && wantFullscreenRef.current, videoRef.current)
+      );
+      // 浏览器已退出全屏，或当前并不是用户主动全屏：清理沉浸态和宿主类，防止面板一直黑屏消失。
+      if (!active) {
+        if (!wantFullscreenRef.current) {
+          setPlayerImmersive(false);
+          host?.classList.remove(playerFullscreenHostClass);
+        } else if (fullscreenNode !== shell && fullscreenNode !== host) {
+          wantFullscreenRef.current = false;
+          setPlayerImmersive(false);
+          host?.classList.remove(playerFullscreenHostClass);
+        }
       }
     };
     document.addEventListener("fullscreenchange", syncFullscreen);
@@ -1374,17 +1394,18 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       hotkey: false,
       pip: false,
       mutex: true,
-      backdrop: true,
+      backdrop: false,
       fullscreen: false,
       fullscreenWeb: false,
       miniProgressBar: false,
       playsInline: true,
-      lock: true,
-      gesture: true,
+      // 关闭 ArtPlayer 内置锁屏/手势/自动横竖屏，统一由插件自定义控制层处理，避免和我们的点击手势抢事件。
+      lock: false,
+      gesture: false,
       fastForward: false,
       autoPlayback: true,
-      autoOrientation: true,
-      airplay: true,
+      autoOrientation: false,
+      airplay: false,
       moreVideoAttr: {
         crossOrigin: "anonymous",
         preload: "metadata"
@@ -1565,14 +1586,42 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       setSafeStatus("截图已生成");
     });
     art.on("fullscreen", (state) => {
+      // 忽略 ArtPlayer 内置误触发的全屏状态，只同步用户主动全屏。
+      if (!wantFullscreenRef.current) {
+        if (state && art.fullscreen) {
+          try {
+            art.fullscreen = false;
+          } catch {
+            // 忽略强制退出失败。
+          }
+        }
+        return;
+      }
       setBrowserFullscreenActive(Boolean(state));
       setSafeStatus(state ? "已进入浏览器全屏" : "已退出浏览器全屏");
+      if (!state) {
+        wantFullscreenRef.current = false;
+        setPlayerImmersive(false);
+        fullscreenHostElement()?.classList.remove(playerFullscreenHostClass);
+      }
     });
     art.on("fullscreenWeb", (state) => {
+      if (!wantFullscreenRef.current) {
+        if (state && art.fullscreenWeb) {
+          try {
+            art.fullscreenWeb = false;
+          } catch {
+            // 忽略。
+          }
+        }
+        return;
+      }
       setPlayerImmersive(Boolean(state));
       setSafeStatus(state ? "已进入网页全屏" : "已退出网页全屏");
     });
     art.on("fullscreenError", () => {
+      // 只有用户点了全屏才允许沉浸兜底；普通播放时的内置全屏失败绝不能把面板藏掉。
+      if (!wantFullscreenRef.current) return;
       setPlayerImmersive(true);
       setSafeStatus("浏览器全屏受限，已切换沉浸全屏");
       setSafeError("当前页面限制了浏览器全屏，已自动使用插件内沉浸全屏兜底。");
@@ -1590,10 +1639,16 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
 
   const exitPlayerFullscreen = async () => {
     const art = artRef.current;
+    wantFullscreenRef.current = false;
     releaseScreenOrientation();
     setPlayerUiLocked(false);
     setPlayerImmersive(false);
     if (art?.fullscreenWeb) art.fullscreenWeb = false;
+    try {
+      if (art?.fullscreen) art.fullscreen = false;
+    } catch {
+      // 忽略 ArtPlayer 退出全屏失败。
+    }
     const fullscreenNode = fullscreenElement();
     const shell = playerShellRef.current;
     const host = fullscreenHostElement();
@@ -1611,6 +1666,7 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     const shell = playerShellRef.current;
     if (!art || !shell) return;
     closePlayerPopovers();
+    wantFullscreenRef.current = true;
     const host = fullscreenHostElement();
     const fullscreenTarget = shell;
     host?.classList.add(playerFullscreenHostClass);
@@ -1663,7 +1719,8 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
   };
 
   const togglePlayerFullscreen = async () => {
-    if (playerFullscreenActive) {
+    markControlAction();
+    if (playerFullscreenActive && wantFullscreenRef.current) {
       await exitPlayerFullscreen();
       return;
     }
@@ -1739,15 +1796,35 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
     setPlayerStats(playerSnapshot(art.video));
   };
 
+  const markControlAction = () => {
+    controlActionStampRef.current = Date.now();
+  };
+
   const togglePlayerPlay = async () => {
     const art = artRef.current;
-    if (!art) return;
+    markControlAction();
+    // 普通播放绝不进入全屏；顺手清掉误挂的宿主全屏模式，恢复面板可见。
+    if (!wantFullscreenRef.current) {
+      setPlayerImmersive(false);
+      setBrowserFullscreenActive(false);
+      fullscreenHostElement()?.classList.remove(playerFullscreenHostClass);
+    }
+    if (!art) {
+      setPlayerError("播放器尚未就绪，请等待链接加载完成后再点播放");
+      setPlayerStatus("播放器未就绪");
+      return;
+    }
     try {
       if (art.playing) await art.pause();
       else await art.play();
       setPlayerStats(playerSnapshot(art.video));
+      setPlayerError("");
+      setPlayerStatus(art.playing ? "播放中" : "已暂停");
+      revealPlayerControls(true);
     } catch (err) {
       setPlayerError(err instanceof Error ? err.message : String(err));
+      setPlayerStatus("播放失败");
+      revealPlayerControls(true);
     }
   };
 
@@ -1773,8 +1850,17 @@ export function PlaybackPage({ state, onAction, onPage, autoFullscreenSignal = 0
       suppressClickRef.current = false;
       return;
     }
+    // 刚点过主控按钮（播放/暂停/全屏等）时，忽略随后冒泡到外壳的 surface 点击。
+    if (Date.now() - controlActionStampRef.current < 450) return;
     const target = event.target as HTMLElement;
-    if (!previewUrl || target.closest("button,[role='slider'],.art-bottom,.art-controls,.art-progress,.art-settings,.art-contextmenus")) return;
+    if (
+      !previewUrl
+      || target.closest(
+        "button,input,textarea,[role='slider'],.txzz-player-control-panel,.txzz-player-top-bar,.txzz-player-more-sheet,.txzz-player-unlock-fab,.art-bottom,.art-controls,.art-progress,.art-settings,.art-contextmenus"
+      )
+    ) {
+      return;
+    }
     // 锁屏后单击不展开控制层，避免误触；双击左右仍允许快退快进，方便不解锁也能跳进度。
     if (playerUiLocked) {
       const state = clickSeekRef.current;

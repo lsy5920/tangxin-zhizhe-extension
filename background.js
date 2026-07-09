@@ -38,9 +38,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 9000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-09-2120";
+const LOCAL_UPDATE_BUILD = "2026-07-09-2145";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 21:20 【优化】升级版本到 v3.0.5，全面重构播放器交互与按钮：左右分区主控栏、音量/倍速快开面板、快捷参数条、模块化控制组件，新增横向滑动快进快退，清晰度/倍速/步长一键点选。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-09 21:45 【修复】升级版本到 v3.0.6，修复点击播放后插件面板消失且无法正常播放：关闭 ArtPlayer 内置单击/双击全屏冲突，禁止非主动全屏误进沉浸黑屏，恢复面板内正常播放。";
 
 const DEFAULT_STATE = {
   role: "guest",

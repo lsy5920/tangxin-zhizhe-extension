@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.0.5",
-  "build": "2026-07-09-2120",
-  "releasedAt": "2026-07-09 21:20",
+  "version": "3.0.6",
+  "build": "2026-07-09-2145",
+  "releasedAt": "2026-07-09 21:45",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "downloadUrl": "https://codeload.github.com/lsy5920/tangxin-zhizhe-extension/zip/refs/heads/main",
   "downloadCandidates": [
@@ -11,6 +11,12 @@
     "https://github.com/lsy5920/tangxin-zhizhe-extension/archive/refs/heads/main.zip"
   ],
   "changelog": [
+    {
+      "id": "2026-07-09-2145",
+      "type": "修复",
+      "title": "修复点击播放后面板消失 · 关闭 ArtPlayer 内置点击全屏冲突",
+      "detail": "修复 v3.0.5 起点击播放后插件面板整页消失、嵌入播放器无法正常使用的问题：关闭 ArtPlayer 默认单击切换播放与双击全屏；视频层 pointer-events 交给自定义控制层；只有用户主动点全屏才进入沉浸/宿主全屏模式，ArtPlayer 全屏失败不再误藏面板；打开面板和点播放时自动清理残留全屏宿主类。"
+    },
     {
       "id": "2026-07-09-2120",
       "type": "优化",
