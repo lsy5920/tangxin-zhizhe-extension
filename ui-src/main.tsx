@@ -8,6 +8,29 @@ const HOST_ID = "txzz-candy-ui-root";
 const ROOT_ID = "txzz-candy-ui";
 const ARTPLAYER_STYLE_ID = "txzz-artplayer-style";
 
+function syncHostVisualViewport(host: HTMLElement) {
+  const visual = window.visualViewport;
+  const width = Math.max(280, Math.round(visual?.width || window.innerWidth || document.documentElement.clientWidth || 390));
+  const height = Math.max(360, Math.round(visual?.height || window.innerHeight || document.documentElement.clientHeight || 640));
+  const left = Math.round(visual?.offsetLeft || 0);
+  const top = Math.round(visual?.offsetTop || 0);
+  host.style.setProperty("--txzz-vvw", `${width}px`);
+  host.style.setProperty("--txzz-vvh", `${height}px`);
+  host.style.setProperty("--txzz-vleft", `${left}px`);
+  host.style.setProperty("--txzz-vtop", `${top}px`);
+  host.style.setProperty("--txzz-vcenter-x", `${left + width / 2}px`);
+}
+
+function bindHostVisualViewport(host: HTMLElement) {
+  syncHostVisualViewport(host);
+  if (host.dataset.txzzViewportBound === "1") return;
+  host.dataset.txzzViewportBound = "1";
+  const sync = () => syncHostVisualViewport(host);
+  window.addEventListener("resize", sync, { passive: true });
+  window.visualViewport?.addEventListener("resize", sync, { passive: true });
+  window.visualViewport?.addEventListener("scroll", sync, { passive: true });
+}
+
 // 插件界面运行在 Shadow DOM 中，必须把播放器核心样式注入同一个 Shadow DOM，
 // 否则 ArtPlayer 的控制栏、全屏和网页全屏样式会被隔离在外层页面里。
 Artplayer.FULLSCREEN_WEB_IN_BODY = false;
@@ -21,6 +44,7 @@ Artplayer.MOBILE_DBCLICK_PLAY = false;
 function createHost() {
   const existed = document.getElementById(HOST_ID);
   if (existed?.shadowRoot) {
+    bindHostVisualViewport(existed);
     return existed.shadowRoot;
   }
 
@@ -36,6 +60,7 @@ function createHost() {
     pointerEvents: "none"
   });
   if (!existed) document.documentElement.appendChild(host);
+  bindHostVisualViewport(host);
 
   const shadow = host.shadowRoot || host.attachShadow({ mode: "open" });
   const styleHref = chrome.runtime.getURL("dist-ui/txzz-ui.css");

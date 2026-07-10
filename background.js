@@ -78,7 +78,7 @@ let repositoryArchiveDownloadInFlight = null;
 let repositoryUpdateStateWriteQueue = Promise.resolve();
 let updateVerificationKeyPromise = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-1712";
+const LOCAL_UPDATE_BUILD = "2026-07-10-2050";
 
 const DEFAULT_STATE = {
   role: "guest",

@@ -223,11 +223,13 @@
     panel.style.setProperty("--txzz-vvh", `${height}px`);
     panel.style.setProperty("--txzz-vleft", `${left}px`);
     panel.style.setProperty("--txzz-vtop", `${top}px`);
+    panel.style.setProperty("--txzz-vcenter-x", `${left + width / 2}px`);
     if (views.flowBadge) {
       views.flowBadge.style.setProperty("--txzz-vvw", `${width}px`);
       views.flowBadge.style.setProperty("--txzz-vvh", `${height}px`);
       views.flowBadge.style.setProperty("--txzz-vleft", `${left}px`);
       views.flowBadge.style.setProperty("--txzz-vtop", `${top}px`);
+      views.flowBadge.style.setProperty("--txzz-vcenter-x", `${left + width / 2}px`);
     }
   }
 

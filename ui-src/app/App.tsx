@@ -627,7 +627,7 @@ export default function App() {
 
           {toast && (
             <div
-              className={`txzz-app-toast fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 z-[70] flex w-[min(calc(100vw-1.5rem),28rem)] -translate-x-1/2 items-start gap-2 rounded-xl border px-3 py-2.5 shadow-xl backdrop-blur sm:bottom-8 ${toastTone}`}
+              className={`txzz-app-toast fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] left-1/2 z-[70] flex w-[min(calc(100vw-1.5rem),28rem)] items-start gap-2 rounded-xl border px-3 py-2.5 shadow-xl backdrop-blur sm:bottom-8 ${toastTone}`}
               role={toast.level === "error" ? "alert" : "status"}
               aria-live={toast.level === "error" ? "assertive" : "polite"}
             >

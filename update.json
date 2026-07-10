@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "3.7.0",
-  "build": "2026-07-10-1712",
-  "releasedAt": "2026-07-10 17:12",
+  "version": "3.7.1",
+  "build": "2026-07-10-2050",
+  "releasedAt": "2026-07-10 20:50",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,12 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-2050",
+      "type": "修复",
+      "title": "移动提示居中与触摸长按手势修复",
+      "detail": "操作提示改为跟随 visualViewport 的真实中心和宽度，并使用传统 transform 居中，修复 Android Edge 地址栏、缩放或视口偏移时提示从右侧被裁切；播放器区分鼠标右键与触摸/手写笔长按，移动端长按只执行连续快退或临时倍速，不再弹出链接菜单，同时保留桌面右键菜单。"
+    },
     {
       "id": "2026-07-10-1712",
       "type": "优化",
@@ -113,11 +119,11 @@
     }
   ],
   "extensionId": "ghbbddahmhhmjknofkmdkcflbmplcace",
-  "packageSize": 556518,
-  "packageSha256": "ac73706034f1343dd04da45b8b1cc5f7ba62170408c475009787bfcf96422bad",
+  "packageSize": 557189,
+  "packageSha256": "68ea89a21c8e88d0b78f782d13b36cb4e47949ce6bf56d1e379686ab13882340",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:67113307c77c9ade5ac3a25b1cfb2024c14cc6f3c2af43eb8207b1ad9d418884",
-    "value": "O7JgtUP1PN9wOYotzvnxvO2utVaAOPXEC6jLALHheAET1hTTkMF5ET8jglpebVEGaTSzdxOoWpBsTy5nOyHg7g6PKs9WsV6U+MeWB3rWfSrOp57Uzgjj0AbtI/rzHhf2+z7oMEx6bpzPP4FjseM9ZejalQNDGngbmajhFT7oWW/KMh+iy4qMLz46E/+ff1MpeJQio0cvTAA/PKxRI820TWOdHnJC44dycGM7Tq7oc2MNdVOP/g3KOOcjEu5LxiDf3i27OztKV4QxlS/cc7RPU6Cad7Wh8LEwP29pskommx8wKn6HFpEcFDg3/2v2zCGnXPY27Lvw0WdGbW4DKyBFBg=="
+    "value": "lrIDYV6nm9MRmRO90o8LT9jcN8Tdj1Rej86a1rCFEodb46hgFZvPcUqgVXzZhz731KJIAbzP0hH+gnl50hgy6mipbMVPfc7Ov8vEynhsOXcFPFEdVPwTDBe7WEG2hJc1s2eKazDANRBwLe7AJjcaRWEFiNB3GHAqKKL/N3qb1bggTmsNkGV1zlceH27C946V6J8GWH392XJbayhRICxRc+fBh+ICZyMdu8Iq/OiB5wtvo/HRdWvHtqvT6/Hi52DRQj+Y29zyRKUjhhnYRCULfFMaBoPKoUu5H9gSrDw3mBihDtoKaVsCXvPpLknoJms8C9r8EUBa48+908AC9NYLtQ=="
   }
 }

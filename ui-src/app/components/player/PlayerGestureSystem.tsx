@@ -126,6 +126,8 @@ export function PlayerGestureSurface({
   });
   const suppressClickRef = useRef(false);
   const controlsVisibleOnDownRef = useRef(controlsVisible);
+  // Android Chromium/Edge 会把触摸长按合成为 contextmenu；记录输入来源，避免与长按快退/倍速手势竞争。
+  const lastPointerInputRef = useRef<{ type: string; at: number }>({ type: "mouse", at: 0 });
   const holdRef = useRef<{ delay?: number; interval?: number; active: boolean; side: "left" | "right" | "" }>({ active: false, side: "" });
   const swipeRef = useRef<SwipeState>({
     active: false,
@@ -283,7 +285,8 @@ export function PlayerGestureSurface({
     const rect = event.currentTarget.getBoundingClientRect();
     // 旧浏览器可能返回空 pointerType，统一按鼠标处理。
     const pointerType = String(event.pointerType || "mouse");
-    const isTouch = pointerType === "touch";
+    lastPointerInputRef.current = { type: pointerType, at: Date.now() };
+    const isTouch = pointerType === "touch" || pointerType === "pen";
     const isMouse = pointerType === "mouse";
     // 仅鼠标左键参与拖拽手势；右键留给浏览器/菜单。
     if (isMouse && event.button !== 0) return;
@@ -439,6 +442,25 @@ export function PlayerGestureSurface({
   };
 
   const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const nativeEvent = event.nativeEvent as MouseEvent & {
+      pointerType?: string;
+      sourceCapabilities?: { firesTouchEvents?: boolean };
+    };
+    const nativePointerType = String(nativeEvent.pointerType || "");
+    const lastPointer = lastPointerInputRef.current;
+    const recentDirectPointer = (lastPointer.type === "touch" || lastPointer.type === "pen")
+      && Date.now() - lastPointer.at < 1200;
+    const fromDirectPointer = nativePointerType === "touch"
+      || nativePointerType === "pen"
+      || nativeEvent.sourceCapabilities?.firesTouchEvents === true
+      || recentDirectPointer;
+
+    if (fromDirectPointer) {
+      // 触摸/手写笔长按只服务于播放器快退或临时倍速，禁止打开自定义或浏览器菜单。
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (!enabled || locked || !onContextMenu) return;
     event.preventDefault();
     event.stopPropagation();
