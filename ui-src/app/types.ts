@@ -11,12 +11,52 @@ export type UpdateChangelogItem = {
   releasedAt?: string;
 };
 
+export type UpdateCheckPhase = "idle" | "checking" | "cached" | "success" | "error";
+export type UpdateDownloadPhase = "idle" | "validating" | "submitted" | "failed";
+
+/** 对同一份完整 CRX3 字节执行大小、哈希、身份、结构与包签名校验后的结果。 */
+export type UpdatePackageProbe = {
+  ok?: boolean;
+  format?: "crx" | "zip" | string;
+  crxVersion?: number;
+  headerSize?: number;
+  zipOffset?: number;
+  extensionId?: string;
+  sha256?: string;
+  publicKeyLength?: number;
+  signatureLength?: number;
+  status?: number;
+  contentType?: string;
+  contentLength?: number;
+  totalSize?: number;
+  bytesChecked?: number;
+  finalUrl?: string;
+  verifiedAt?: string;
+};
+
+/** 单个镜像的校验/下载提交结果，失败时用于准确定位问题源。 */
+export type UpdatePackageProbeAttempt = {
+  url?: string;
+  displayUrl?: string;
+  format?: string;
+  ok?: boolean;
+  phase?: "validating" | "validated" | "submitted" | "rejected" | "validation-failed" | "submit-failed" | string;
+  error?: string;
+  downloadId?: number;
+  packageProbe?: UpdatePackageProbe | null;
+};
+
 /** 升级系统统一状态（background → content → React） */
 export type RepositoryUpdateState = {
   ok?: boolean;
   source?: string;
   checkedAt?: string;
+  checkStartedAt?: string;
   checkMode?: string;
+  checkPhase?: UpdateCheckPhase;
+  cacheHit?: boolean;
+  cacheAgeMs?: number;
+  cacheServedAt?: string;
   error?: string;
   repositoryUrl?: string;
   manifestUrl?: string;
@@ -25,8 +65,15 @@ export type RepositoryUpdateState = {
   downloadAttemptUrls?: string[];
   downloadStatus?: string;
   downloadError?: string;
+  downloadPhase?: UpdateDownloadPhase;
+  downloadStartedAt?: string;
+  downloadSubmittedAt?: string;
+  downloadId?: number;
+  packageProbe?: UpdatePackageProbe | null;
+  packageProbeAttempts?: UpdatePackageProbeAttempt[];
   updateAvailable?: boolean;
   shouldNotify?: boolean;
+  reminderDismissed?: boolean;
   status?: string;
   compareHint?: string;
   probe?: {
@@ -55,6 +102,7 @@ export type RepositoryUpdateState = {
     downloadPolicy?: string;
     engine?: string;
     mirrorCount?: number;
+    packageFormat?: string;
   };
   local?: {
     version?: string;
@@ -277,4 +325,11 @@ export type UiActionPayload = {
 export type AccountsPageIntent = {
   showInvalid?: boolean;
   openAdd?: boolean;
+};
+
+export type SettingsSection = "service" | "experience" | "updates" | "data";
+
+/** 从全局更新入口进入设置页时，明确定位到升级中心，而不是回到默认服务分区。 */
+export type SettingsPageIntent = {
+  section?: SettingsSection;
 };

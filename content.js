@@ -164,6 +164,7 @@
   let drag = null;
   let ignoreNextToggle = false;
   let toastTimer = 0;
+  // 保存任务模式，避免用户手动实时检测误复用一个自动缓存任务。
   let repositoryUpdateCheckTask = null;
   const downloadLocks = new Set();
   const announcedDownloadStages = new Set();
@@ -1660,21 +1661,31 @@
     }
   }
 
-  async function sendRuntime(type, payload = {}) {
+  async function sendRuntime(type, payload = {}, timeoutMs = 0) {
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        if (timer) window.clearTimeout(timer);
+        callback(value);
+      };
+      const timer = timeoutMs > 0
+        ? window.setTimeout(() => finish(reject, new Error(`${type} 操作超时，请重试`)), timeoutMs)
+        : 0;
       chrome.runtime.sendMessage({ type, ...payload }, (response) => {
         const err = chrome.runtime.lastError;
         if (err) {
-          reject(new Error(err.message));
+          finish(reject, new Error(err.message));
           return;
         }
         if (response?.ok === false) {
           const error = new Error(response.error || "runtime error");
           error.response = response;
-          reject(error);
+          finish(reject, error);
           return;
         }
-        resolve(response || {});
+        finish(resolve, response || {});
       });
     });
   }
@@ -1687,7 +1698,7 @@
     const banner = views.updateBanner;
     if (!banner) return;
     const remote = update?.remote || {};
-    const hasUpdate = Boolean(update?.updateAvailable && remote.id);
+    const hasUpdate = Boolean(update?.updateAvailable && remote.id && update?.shouldNotify !== false);
     banner.hidden = !hasUpdate;
     if (!hasUpdate) return;
     const versionText = remote.version ? `版本 ${remote.version}` : remote.time || "发现更新";
@@ -1825,23 +1836,59 @@
     return fullUrl;
   }
 
-  async function closeRepositoryUpdateDialog(mode = "dismissed") {
-    const updateId = uiState.repositoryUpdate?.remote?.id || "";
+  async function closeRepositoryUpdateDialog(mode = "dismissed", requestedUpdateId = "") {
+    // 以弹窗明确提交的更新 ID 为准，避免状态刚好刷新时把“忽略”写到另一条更新上。
+    const updateId = String(requestedUpdateId || uiState.repositoryUpdate?.remote?.id || "");
     if (updateId) {
-      await sendRuntime("markRepositoryUpdateNotified", { updateId, mode }).catch(() => {});
+      // 持久化失败必须抛给界面，不能在本地伪装成“已永久忽略”。
+      await sendRuntime("markRepositoryUpdateNotified", { updateId, mode });
+    }
+    if (mode === "dismissed" && uiState.repositoryUpdate) {
+      uiState.repositoryUpdate = {
+        ...uiState.repositoryUpdate,
+        shouldNotify: false,
+        reminderDismissed: true
+      };
+      renderRepositoryUpdateBanner(uiState.repositoryUpdate);
     }
     publishState();
+    return { ok: true, updateId, mode };
   }
 
   async function checkRepositoryUpdate(force = false, options = {}) {
     const showDialog = options.showDialog ?? Boolean(force);
     const silent = Boolean(options.silent);
-    if (repositoryUpdateCheckTask) return repositoryUpdateCheckTask;
-    repositoryUpdateCheckTask = (async () => {
+    const realtime = Boolean(force || options.realtime);
+    if (repositoryUpdateCheckTask) {
+      if (!realtime || repositoryUpdateCheckTask.realtime) return repositoryUpdateCheckTask.promise;
       try {
-        const response = await sendRuntime("checkRepositoryUpdate", { force, realtime: Boolean(force || options.realtime) });
+        await repositoryUpdateCheckTask.promise;
+      } catch (_) {}
+      return checkRepositoryUpdate(force, options);
+    }
+
+    const previous = uiState.repositoryUpdate || {};
+    rememberRepositoryUpdate({
+      ...previous,
+      checkMode: realtime ? "实时检测" : "自动检测",
+      checkPhase: "checking",
+      cacheHit: false,
+      status: "checking",
+      checkStartedAt: new Date().toISOString(),
+      downloadPhase: "idle",
+      downloadStatus: "",
+      downloadError: "",
+      downloadId: 0,
+      packageProbe: null,
+      packageProbeAttempts: [],
+      downloadAttemptUrls: []
+    });
+
+    const task = (async () => {
+      try {
+        const response = await sendRuntime("checkRepositoryUpdate", { force, realtime }, 60000);
         const hasUpdate = rememberRepositoryUpdate(response);
-        if (hasUpdate && (showDialog || !silent)) showRepositoryUpdateDialog(response);
+        if (hasUpdate && response.shouldNotify !== false && (showDialog || !silent)) showRepositoryUpdateDialog(response);
         else if (force && !silent) {
           const remote = response?.remote || {};
           const text = remote.version
@@ -1851,19 +1898,42 @@
         }
         return response;
       } catch (err) {
-        const response = err?.response || { ok: false, checkedAt: new Date().toISOString(), error: err?.message || String(err), local: { version: "", build: "" }, remote: null };
+        const response = {
+          ...previous,
+          ...(err?.response || {}),
+          ok: false,
+          checkedAt: new Date().toISOString(),
+          checkPhase: "error",
+          downloadPhase: "idle",
+          downloadStatus: "",
+          downloadError: "",
+          downloadId: 0,
+          packageProbe: null,
+          packageProbeAttempts: [],
+          downloadUrl: "",
+          downloadCandidates: [],
+          downloadAttemptUrls: [],
+          status: "error",
+          shouldNotify: false,
+          error: err?.message || String(err),
+          local: previous.local || { version: "", build: "" },
+          remote: err?.response?.remote ?? previous.remote ?? null
+        };
         rememberRepositoryUpdate(response);
         if (!silent) emitFlow("更新检查失败", err?.message || String(err), "error");
         return response;
-      } finally {
-        repositoryUpdateCheckTask = null;
       }
     })();
-    return repositoryUpdateCheckTask;
+    repositoryUpdateCheckTask = { promise: task, realtime };
+    try {
+      return await task;
+    } finally {
+      if (repositoryUpdateCheckTask?.promise === task) repositoryUpdateCheckTask = null;
+    }
   }
 
   function remindRepositoryUpdateOnPanelOpen() {
-    if (uiState.repositoryUpdate?.updateAvailable) {
+    if (uiState.repositoryUpdate?.updateAvailable && uiState.repositoryUpdate?.shouldNotify !== false) {
       window.setTimeout(() => showRepositoryUpdateDialog(uiState.repositoryUpdate), 120);
       return;
     }
@@ -1947,9 +2017,12 @@
     publishState();
   }
 
-  async function clearDataCache() {
-    const ok = window.confirm("将清除插件本地数据、账号池缓存、播放详情缓存和保存记录，并重置为当前版本默认状态。新版本覆盖安装时会自动清理旧缓存，此按钮用于手动兜底。是否继续？");
-    if (!ok) return;
+  async function clearDataCache(options = {}) {
+    // React 设置页已经提供可访问的确认弹层；旧入口调用时仍保留原生确认作为安全兜底。
+    if (!options.confirmed) {
+      const ok = window.confirm("将清除全部插件本地数据并重置为当前版本默认状态。是否继续？");
+      if (!ok) return;
+    }
     window.postMessage({ source: "txzz-content", kind: "clear-runtime-cache" }, "*");
     const response = await sendRuntime("clearAllData");
     resetLocalRuntimeState(response.state || {});
@@ -2264,9 +2337,12 @@
     emitFlow("下载管理", `已删除视频 ${movieId || taskId} 的下载任务`, "ok");
   }
 
-  async function clearDownloadTasks() {
-    const ok = window.confirm("将清空插件面板里的当前下载任务记录，不会删除已经保存到浏览器下载目录的文件。是否继续？");
-    if (!ok) return;
+  async function clearDownloadTasks(options = {}) {
+    // 新版下载页已经二次确认；旧入口仍使用原生确认，避免无确认直接清空。
+    if (!options.confirmed) {
+      const ok = window.confirm("将清空插件面板里的当前下载任务记录，不会删除已经保存到浏览器下载目录的文件。是否继续？");
+      if (!ok) return;
+    }
     const response = await sendRuntime("clearDownloadTasks");
     syncSavedState(response.state || {});
     emitFlow("下载管理", "已清空当前下载任务记录", "ok");
@@ -2505,7 +2581,7 @@
       if (action === "save-download-device") await saveDownloadDevice(payload.taskId || "");
       if (action === "save-ready-downloads") await saveReadyDownloads(payload.taskIds || []);
       if (action === "remove-download-task") await removeDownloadTask(payload.taskId || "", payload.movieId || "");
-      if (action === "clear-downloads") await clearDownloadTasks();
+      if (action === "clear-downloads") await clearDownloadTasks(payload);
       if (action === "clear-download-snapshots") await clearDownloadSnapshots();
       if (action === "open-download-folder") await openDownloadFolder();
       if (action === "import-current-session") await importCurrentSession();
@@ -2533,50 +2609,75 @@
         if (views.exportBox) views.exportBox.textContent = "{}";
         emitFlow("清空", "已清空当前会话捕获记录", "ok");
       }
-      if (action === "clear-cache") await clearDataCache();
+      if (action === "clear-cache") await clearDataCache(payload);
       if (action === "clean-ads") {
         const cleaned = cleanAdElements("手动清理");
         emitFlow("广告清理", cleaned ? `本次清理 ${cleaned} 个广告元素` : "当前页面没有新的广告元素", cleaned ? "ok" : "info");
       }
       if (action === "check-update") await checkRepositoryUpdate(true, { realtime: true });
       if (action === "dismiss-update") {
-        const updateId = String(payload?.updateId || uiState.repositoryUpdate?.remote?.id || "");
-        await closeRepositoryUpdateDialog("dismissed");
-        if (updateId) {
-          await sendRuntime("markRepositoryUpdateNotified", { updateId, mode: "dismissed" }).catch(() => {});
-        }
-        emitFlow("更新提醒", "已忽略本次更新提醒，可在设置页升级中心随时查看", "info");
+        await closeRepositoryUpdateDialog("dismissed", String(payload?.updateId || ""));
+        emitFlow("更新提醒", "已持久化忽略此版本；新版本仍会重新提醒", "info");
       }
       if (action === "download-latest") {
-        const latest = await checkRepositoryUpdate(true, { realtime: true, silent: true });
+        const current = uiState.repositoryUpdate || {};
+        rememberRepositoryUpdate({
+          ...current,
+          downloadPhase: "validating",
+          downloadStatus: "正在校验 CRX 安装包",
+          downloadError: "",
+          downloadId: 0,
+          packageProbe: null,
+          packageProbeAttempts: [],
+          downloadStartedAt: new Date().toISOString()
+        });
+        emitFlow("版本更新", "正在验证签名清单并完整下载 CRX3，随后核对大小、哈希、扩展 ID 与包签名", "running");
         let response = null;
         try {
-          response = await sendRuntime("downloadRepositoryArchive", {});
+          response = await sendRuntime("downloadRepositoryArchive", {}, 120000);
         } catch (err) {
           const failed = err?.response || {};
           rememberRepositoryUpdate({
-            ...(latest || uiState.repositoryUpdate || {}),
-            ok: false,
-            checkedAt: latest?.checkedAt || uiState.repositoryUpdate?.checkedAt || new Date().toISOString(),
-            error: failed.error || err?.message || String(err),
-            downloadUrl: latest?.downloadUrl || uiState.repositoryUpdate?.downloadUrl || "",
-            downloadCandidates: failed.candidates || latest?.downloadCandidates || uiState.repositoryUpdate?.downloadCandidates || [],
+            ...(failed.update || current),
+            checkedAt: failed.update?.checkedAt || current.checkedAt || new Date().toISOString(),
+            downloadPhase: "failed",
+            downloadUrl: current.downloadUrl || failed.displayUrl || failed.url || "",
+            downloadCandidates: failed.candidates || current.downloadCandidates || [],
             downloadAttemptUrls: failed.attempts || [],
             downloadStatus: "下载失败",
-            downloadError: failed.error || err?.message || String(err)
+            downloadError: failed.error || err?.message || String(err),
+            downloadId: 0,
+            packageProbe: failed.packageProbe || null,
+            packageProbeAttempts: failed.packageProbeAttempts || [],
+            downloadStartedAt: failed.downloadStartedAt || current.downloadStartedAt || ""
           });
           throw err;
         }
         const mergedUpdate = {
-          ...(latest || uiState.repositoryUpdate || {}),
-          downloadUrl: response.displayUrl || latest?.downloadUrl || uiState.repositoryUpdate?.downloadUrl || "",
-          downloadCandidates: response.candidates || latest?.downloadCandidates || uiState.repositoryUpdate?.downloadCandidates || [],
+          ...(response.update || current),
+          downloadPhase: "submitted",
+          downloadUrl: response.displayUrl || response.url || current.downloadUrl || "",
+          downloadCandidates: response.candidates || current.downloadCandidates || [],
           downloadAttemptUrls: response.attempts || [],
-          downloadStatus: response.downloadId ? "已提交下载" : "已发送下载请求",
-          downloadError: ""
+          downloadStatus: response.downloadId ? "CRX 已提交浏览器下载" : "已发送下载请求",
+          downloadError: "",
+          downloadId: Number(response.downloadId || 0),
+          packageProbe: response.packageProbe || null,
+          packageProbeAttempts: response.packageProbeAttempts || [],
+          downloadStartedAt: response.downloadStartedAt || current.downloadStartedAt || "",
+          downloadSubmittedAt: response.downloadSubmittedAt || ""
         };
         rememberRepositoryUpdate(mergedUpdate);
-        emitFlow("版本更新", response.downloadId ? `已开始下载最新版压缩包：${response.filename}，地址 ${response.displayUrl || response.url}` : "已提交最新版下载任务", "ok");
+        emitFlow(
+          "版本更新",
+          response.downloadId
+            ? `同一份 CRX3 字节已完整校验并提交下载（编号 ${response.downloadId}）：${response.filename}；下载后请手动安装或覆盖更新`
+            : "已验证 CRX3 已提交浏览器下载；下载后请手动安装或覆盖更新",
+          "ok"
+        );
+        if (response.statePersistenceError) {
+          emitFlow("更新状态", `下载已成功提交，但本地状态保存失败：${response.statePersistenceError}`, "error");
+        }
       }
       if (action === "show-update-dialog") {
         if (uiState.repositoryUpdate?.updateAvailable) showRepositoryUpdateDialog(uiState.repositoryUpdate);

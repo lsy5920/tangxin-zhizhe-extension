@@ -308,33 +308,36 @@ export function forceFullscreenVideoVisible(params: {
   const { shell, container, video, fill = "contain" } = params;
   // 只改必要属性，并打标记，退出全屏时必须 clearForcedFullscreenStyles 清掉，
   // 否则会卡在「竖排假全屏 + 浏览器导航栏」无法回面板。
-  const applyOuterBox = (el: HTMLElement | null, black: boolean) => {
+  const applyOuterBox = (el: HTMLElement | null, black: boolean, enforceGeometry = true) => {
     if (!el) return;
     el.dataset.txzzFsForced = "1";
-    el.style.setProperty("position", "absolute", "important");
-    el.style.setProperty("inset", "0", "important");
-    el.style.setProperty("left", "0", "important");
-    el.style.setProperty("top", "0", "important");
-    el.style.setProperty("right", "0", "important");
-    el.style.setProperty("bottom", "0", "important");
-    el.style.setProperty("width", "100%", "important");
-    el.style.setProperty("height", "100%", "important");
-    el.style.setProperty("min-width", "0", "important");
-    el.style.setProperty("min-height", "0", "important");
-    el.style.setProperty("max-width", "none", "important");
-    el.style.setProperty("max-height", "none", "important");
-    el.style.setProperty("margin", "0", "important");
-    el.style.setProperty("padding", "0", "important");
-    el.style.setProperty("border", "0", "important");
-    el.style.setProperty("border-radius", "0", "important");
+    if (enforceGeometry) {
+      el.style.setProperty("position", "absolute", "important");
+      el.style.setProperty("inset", "0", "important");
+      el.style.setProperty("left", "0", "important");
+      el.style.setProperty("top", "0", "important");
+      el.style.setProperty("right", "0", "important");
+      el.style.setProperty("bottom", "0", "important");
+      el.style.setProperty("width", "100%", "important");
+      el.style.setProperty("height", "100%", "important");
+      el.style.setProperty("min-width", "0", "important");
+      el.style.setProperty("min-height", "0", "important");
+      el.style.setProperty("max-width", "none", "important");
+      el.style.setProperty("max-height", "none", "important");
+      el.style.setProperty("margin", "0", "important");
+      el.style.setProperty("padding", "0", "important");
+      el.style.setProperty("border", "0", "important");
+      el.style.setProperty("border-radius", "0", "important");
+      el.style.setProperty("transform", "none", "important");
+    }
     // 外层壳可黑底；含 video 的容器必须透明，否则 Android 合成层只出声
     el.style.setProperty("background", black ? "#000" : "transparent", "important");
     el.style.setProperty("background-color", black ? "#000" : "transparent", "important");
     el.style.setProperty("overflow", "hidden", "important");
-    el.style.setProperty("transform", "none", "important");
     el.style.setProperty("z-index", "1", "important");
   };
-  applyOuterBox(shell, true);
+  // shell 的几何与 transform 由 React/CSS 全屏状态负责；强写 none 会破坏竖屏视口下的 90° 横屏兜底。
+  applyOuterBox(shell, true, false);
   applyOuterBox(container, false);
   const stage = shell?.querySelector?.(".txzz-player-orientation-stage") as HTMLElement | null;
   applyOuterBox(stage, false);
@@ -352,6 +355,7 @@ export function forceFullscreenVideoVisible(params: {
     video.style.setProperty("display", "block", "important");
     video.style.setProperty("filter", "none", "important");
     video.style.setProperty("-webkit-filter", "none", "important");
+    video.style.setProperty("object-position", "var(--txzz-player-video-position-x, 50%) 50%", "important");
   }
   hideArtCoverLayers(container, video);
   kickVideoPaint(video);
@@ -386,7 +390,7 @@ export function clearForcedFullscreenStyles(params: {
     [
       "position", "inset", "left", "top", "right", "bottom",
       "width", "height", "min-width", "min-height", "max-width", "max-height",
-      "margin", "padding", "border", "border-radius", "background",
+      "margin", "padding", "border", "border-radius", "background", "background-color",
       "overflow", "transform", "z-index", "box-shadow", "outline"
     ].forEach((name) => {
       el.style.removeProperty(name);
@@ -396,6 +400,9 @@ export function clearForcedFullscreenStyles(params: {
   clearEl(shell);
   clearEl(container);
   clearEl(stage || null);
+  // forceFullscreenVideoVisible 也会校正 ArtPlayer 内层，退出时必须对称清理，避免二次全屏残留。
+  const artPlayer = (container?.querySelector?.(".art-video-player") || video?.closest?.(".art-video-player")) as HTMLElement | null;
+  clearEl(artPlayer);
   // video 只恢复自适应，不要保留 absolute 全屏盒模型以外的脏样式
   if (video) {
     [

@@ -1,38 +1,68 @@
-:root {
+:root,
+:host {
+  /*
+   * 糖心志者统一设计令牌。
+   * 品牌紫只承担重点操作与选中态，页面主体使用中性灰白，避免大面积彩色造成视觉疲劳。
+   */
   --font-size: 16px;
-  --background: #ffffff;
-  --foreground: oklch(0.145 0 0);
+  --background: #f6f7fb;
+  --foreground: #172033;
   --card: #ffffff;
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.0058 264.53);
-  --secondary-foreground: #030213;
-  --muted: #ececf0;
-  --muted-foreground: #717182;
-  --accent: #e9ebef;
-  --accent-foreground: #030213;
-  --destructive: #d4183d;
+  --card-foreground: #172033;
+  --popover: #ffffff;
+  --popover-foreground: #172033;
+  --primary: #6d5dfc;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f2f7;
+  --secondary-foreground: #263248;
+  --muted: #f4f5f8;
+  --muted-foreground: #667085;
+  --accent: #eef0ff;
+  --accent-foreground: #5146d8;
+  --destructive: #e5484d;
   --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.1);
-  --input: transparent;
-  --input-background: #f3f3f5;
-  --switch-background: #cbced4;
+  --border: #e4e7ec;
+  --input: #d0d5dd;
+  --input-background: #ffffff;
+  --switch-background: #cbd1dc;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: oklch(0.708 0 0);
-  --radius: 0.625rem;
+  --ring: #8175ff;
+  --radius: 0.75rem;
+
+  --txzz-canvas: #f6f7fb;
+  --txzz-surface: #ffffff;
+  --txzz-surface-subtle: #f8f9fc;
+  --txzz-surface-strong: #eef1f6;
+  --txzz-text: #172033;
+  --txzz-text-secondary: #475467;
+  --txzz-text-muted: #7a8496;
+  --txzz-border: #e4e7ec;
+  --txzz-border-strong: #d0d5dd;
+  --txzz-brand: #6d5dfc;
+  --txzz-brand-hover: #5b4bec;
+  --txzz-brand-soft: #eeecff;
+  --txzz-success: #159a72;
+  --txzz-success-soft: #e9f8f2;
+  --txzz-warning: #d98417;
+  --txzz-warning-soft: #fff5e6;
+  --txzz-danger: #dc4650;
+  --txzz-danger-soft: #fff0f1;
+  --txzz-info: #2783d8;
+  --txzz-info-soft: #edf6ff;
+  --txzz-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 4px rgba(16, 24, 40, 0.03);
+  --txzz-shadow-md: 0 12px 30px rgba(16, 24, 40, 0.08);
+  --txzz-shadow-lg: 0 28px 80px rgba(9, 16, 33, 0.22);
 }
 
 @theme inline {
-  /* 固定响应式断点，避免宿主网站缩放 html 根字号后提前触发桌面布局。 */
+  /* 固定响应式断点，避免宿主网站缩放根字号后提前触发桌面布局。 */
   --breakpoint-sm: 640px;
   --breakpoint-md: 768px;
   --breakpoint-lg: 1024px;
   --breakpoint-xl: 1280px;
   --breakpoint-2xl: 1536px;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -54,6 +84,35 @@
   --color-input-background: var(--input-background);
   --color-switch-background: var(--switch-background);
   --color-ring: var(--ring);
+
+  --color-brand-50: #f6f5ff;
+  --color-brand-100: #eeecff;
+  --color-brand-200: #ddd9ff;
+  --color-brand-300: #c3bcff;
+  --color-brand-400: #9c91ff;
+  --color-brand-500: #6d5dfc;
+  --color-brand-600: #5b4bec;
+  --color-brand-700: #4b3ec8;
+  --color-brand-800: #3f36a2;
+  --color-brand-900: #37317f;
+
+  --color-success-50: #effbf6;
+  --color-success-100: #d7f4e7;
+  --color-success-500: #159a72;
+  --color-success-600: #107d5d;
+  --color-warning-50: #fff8eb;
+  --color-warning-100: #feebc7;
+  --color-warning-500: #d98417;
+  --color-warning-600: #b8680b;
+  --color-danger-50: #fff2f3;
+  --color-danger-100: #ffe0e3;
+  --color-danger-500: #dc4650;
+  --color-danger-600: #bc303b;
+  --color-info-50: #eff7ff;
+  --color-info-100: #dceeff;
+  --color-info-500: #2783d8;
+  --color-info-600: #196bb8;
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

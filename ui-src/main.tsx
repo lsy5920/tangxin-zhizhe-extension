@@ -155,7 +155,7 @@ function createHost() {
   width: 100% !important;
   height: 100% !important;
   object-fit: contain !important;
-  object-position: center !important;
+  object-position: var(--txzz-player-video-position-x, 50%) 50% !important;
   filter: none !important;
   -webkit-filter: none !important;
   opacity: 1 !important;

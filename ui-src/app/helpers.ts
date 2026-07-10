@@ -57,6 +57,7 @@ export function localizeFlowText(value?: string) {
   if (!value) return "";
   return String(value)
     .replace(/buy_then_full_detail/g, "购买后获取播放详情")
+    .replace(/direct_full_detail/g, "直接获取播放详情")
     .replace(/fullplay\.play_link/g, "账号池播放链接")
     .replace(/fullplay\.backup_link/g, "账号池备用链接")
     .replace(/full_detail/g, "播放详情")

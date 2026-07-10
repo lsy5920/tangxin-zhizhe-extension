@@ -1,21 +1,33 @@
-import type { BridgeState, RepositoryUpdateState, UpdateChangelogItem } from "../types";
+import type {
+  BridgeState,
+  RepositoryUpdateState,
+  UpdateChangelogItem,
+  UpdateCheckPhase,
+  UpdateDownloadPhase,
+  UpdatePackageProbe,
+  UpdatePackageProbeAttempt
+} from "../types";
 import { APP_BUILD, APP_VERSION, APP_VERSION_LABEL } from "../constants";
 import { formatRelativeTime } from "../helpers";
 
-/** 升级系统统一状态机（界面只认这几种，避免到处 if-else）。 */
+/** 升级系统 v7 的界面状态，由后台阶段字段直接推导。 */
 export type UpdateUiStatus =
   | "idle"
   | "checking"
   | "latest"
   | "available"
   | "error"
-  | "downloading"
-  | "downloaded";
+  | "validating"
+  | "submitted"
+  | "download-error";
+
+export type UpdateMirrorSource = NonNullable<NonNullable<RepositoryUpdateState["probe"]>["sources"]>[number];
 
 export type UpdateViewModel = {
   status: UpdateUiStatus;
   statusLabel: string;
   statusHint: string;
+  busy: boolean;
   localVersion: string;
   localBuild: string;
   remoteVersion: string;
@@ -25,6 +37,8 @@ export type UpdateViewModel = {
   checkedRelative: string;
   sourceLabel: string;
   checkMode: string;
+  checkPhase: UpdateCheckPhase;
+  downloadPhase: UpdateDownloadPhase;
   summary: string;
   title: string;
   downloadUrl: string;
@@ -32,14 +46,23 @@ export type UpdateViewModel = {
   attemptUrls: string[];
   downloadStatus: string;
   downloadError: string;
+  downloadId: number;
   manifestUrl: string;
   repositoryUrl: string;
   changelog: UpdateChangelogItem[];
   updateId: string;
   canDownload: boolean;
-  canOpenUrl: boolean;
   progressStep: number;
-  progressTotal: number;
+  progressError: boolean;
+  cacheHit: boolean;
+  cacheAgeMs: number;
+  cacheLabel: string;
+  mirrorSources: UpdateMirrorSource[];
+  mirrorHealthLabel: string;
+  packageProbe: UpdatePackageProbe | null;
+  packageProbeAttempts: UpdatePackageProbeAttempt[];
+  packageProbeLabel: string;
+  installationHint: string;
   raw: RepositoryUpdateState | null;
 };
 
@@ -47,14 +70,53 @@ function uniqueUrls(list: Array<string | undefined | null>) {
   return Array.from(new Set(list.map((item) => String(item || "").trim()).filter(Boolean)));
 }
 
-export function deriveUpdateStatus(update?: RepositoryUpdateState | null, checking = false, downloading = false): UpdateUiStatus {
-  if (checking) return "checking";
-  if (downloading) return "downloading";
+function formatDuration(ms = 0) {
+  const seconds = Math.max(0, Math.round(Number(ms || 0) / 1000));
+  if (seconds < 60) return `${seconds} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest ? `${minutes} 分 ${rest} 秒` : `${minutes} 分钟`;
+}
+
+function formatCacheAge(ms = 0) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value < 0) return "时间未知";
+  if (value < 5000) return "刚刚";
+  return `${formatDuration(value)}前`;
+}
+
+export function formatUpdateBytes(bytes = 0) {
+  const value = Number(bytes || 0);
+  if (!Number.isFinite(value) || value <= 0) return "未记录";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(2)} MB`;
+}
+
+export function updateUrlHost(url = "") {
+  try {
+    return new URL(url).hostname || url;
+  } catch {
+    return url || "未知镜像";
+  }
+}
+
+export function deriveUpdateStatus(update?: RepositoryUpdateState | null): UpdateUiStatus {
   if (!update) return "idle";
-  if (update.downloadStatus === "已提交下载" || update.downloadStatus === "下载完成") return "downloaded";
-  if (update.ok === false) return "error";
+  if (update.checkPhase === "checking" || update.status === "checking") return "checking";
+  if (update.downloadPhase === "validating") return "validating";
+  const checkFailed = update.checkPhase === "error" || update.status === "error";
+  const checkedAt = Date.parse(String(update.checkedAt || update.checkStartedAt || ""));
+  const downloadActivityAt = Date.parse(String(update.downloadSubmittedAt || update.downloadStartedAt || ""));
+  const failedCheckIsNewer = checkFailed
+    && Number.isFinite(checkedAt)
+    && (!Number.isFinite(downloadActivityAt) || checkedAt >= downloadActivityAt);
+  if (failedCheckIsNewer) return "error";
+  if (update.downloadPhase === "submitted") return "submitted";
+  if (update.downloadPhase === "failed") return "download-error";
+  if (checkFailed || update.ok === false) return "error";
   if (update.updateAvailable) return "available";
-  if (update.checkedAt || update.remote?.version) return "latest";
+  if (["cached", "success"].includes(String(update.checkPhase || "")) || update.status === "latest") return "latest";
   return "idle";
 }
 
@@ -64,17 +126,46 @@ const STATUS_LABEL: Record<UpdateUiStatus, string> = {
   latest: "已是最新",
   available: "发现新版本",
   error: "检测失败",
-  downloading: "正在下载",
-  downloaded: "已提交下载"
+  validating: "正在验证完整包",
+  submitted: "下载已提交",
+  "download-error": "完整包获取失败"
 };
 
-export function buildUpdateViewModel(
-  state: BridgeState,
-  options: { checking?: boolean; downloading?: boolean } = {}
-): UpdateViewModel {
+function statusSummary(status: UpdateUiStatus, update: RepositoryUpdateState | null, compareHint: string) {
+  const remote = update?.remote || null;
+  if (status === "checking") return "正在并发获取更新清单，并验证清单签名、版本、构建号与发布来源。";
+  if (status === "validating") return "正在下载并验证完整 CRX3 包：核对完整包大小、SHA-256、正式扩展 ID 与 CRX3 包签名。";
+  if (status === "submitted") {
+    const suffix = update?.downloadId ? `（浏览器下载编号 ${update.downloadId}）` : "";
+    return `CRX3 完整包验证通过，已提交浏览器下载${suffix}。`;
+  }
+  if (status === "download-error") return "未能从候选镜像取得可用安装包，请查看错误后重试。";
+  if (status === "error") return "本次更新检测没有完成，请查看错误后重新检测。";
+  if (status === "available") {
+    const version = remote?.version ? ` v${String(remote.version).replace(/^v/i, "")}` : "";
+    return `签名清单确认存在新版本${version}，查看更新内容后可下载并验证正式 CRX3 安装包。`;
+  }
+  if (status === "latest") {
+    return compareHint ? `当前已是最新版本（${compareHint}）。` : "当前已是最新版本，可继续使用。";
+  }
+  return "点击“检查更新”可获取远程版本、镜像健康情况与经过校验的 CRX 下载入口。";
+}
+
+function statusHint(status: UpdateUiStatus) {
+  if (status === "available") return "可下载 CRX，浏览器不会静默安装";
+  if (status === "latest") return "本地版本与远程版本一致";
+  if (status === "checking") return "手动检查始终绕过成功缓存";
+  if (status === "validating") return "完整包验证全部通过后才会提交浏览器下载";
+  if (status === "submitted") return "浏览器已接收下载任务，完成后需手动安装";
+  if (status === "download-error") return "可重试下载，系统会重新验证全部镜像";
+  if (status === "error") return "可重新检测，或前往项目主页核对发布状态";
+  return "自动检查复用 15 分钟成功缓存";
+}
+
+export function buildUpdateViewModel(state: BridgeState): UpdateViewModel {
   const update = state.repositoryUpdate || null;
   const remote = update?.remote || null;
-  const status = deriveUpdateStatus(update, Boolean(options.checking), Boolean(options.downloading));
+  const status = deriveUpdateStatus(update);
   const candidates = uniqueUrls([
     ...(update?.downloadCandidates || []),
     ...(remote?.downloadCandidates || []),
@@ -85,75 +176,127 @@ export function buildUpdateViewModel(
   const attemptUrls = uniqueUrls(update?.downloadAttemptUrls || []);
   const changelog = Array.isArray(remote?.changelog) ? remote.changelog.slice(0, 8) : [];
   const compareHint = update?.compareHint || remote?.compareHint || "";
-  const probeSummary = String(remote?.probeSummary || update?.probe?.summary || "").trim();
-  const summary = status === "error"
-    ? `更新检测失败：${update?.error || "请稍后重试"}（已并发尝试全部清单镜像）`
-    : status === "available"
-      ? (remote?.detail || remote?.notes || remote?.text || remote?.line || remote?.title || "远程已发布新版本，建议立即更新。")
-      : status === "latest"
-        ? (remote?.detail || (compareHint ? `当前已是最新版本（${compareHint}）` : "当前已是最新版本，可继续使用。"))
-        : status === "checking"
-          ? "正在并发探测 GitHub 主源与各镜像，自动取最新 version/build…"
-          : status === "downloading"
-            ? "正在提交最新版 CRX 安装包下载，请留意浏览器下载栏。"
-            : status === "downloaded"
-              ? (update?.downloadStatus || "最新版 CRX 安装包已提交下载。")
-              : "点击「检查更新」可获取远程版本与 CRX 下载地址。";
+  const cacheHit = Boolean(update?.cacheHit || update?.checkPhase === "cached");
+  const cacheAgeMs = Number(update?.cacheAgeMs || 0);
+  const mirrorSources = Array.isArray(update?.probe?.sources)
+    ? update.probe.sources
+    : (Array.isArray(remote?.probeSources) ? remote.probeSources : []);
+  const mirrorOk = mirrorSources.filter((item) => item.ok).length;
+  const mirrorFailed = mirrorSources.length - mirrorOk;
+  const packageProbe = update?.packageProbe || null;
+  const packageProbeAttempts = Array.isArray(update?.packageProbeAttempts) ? update.packageProbeAttempts : [];
+  const shortExtensionId = packageProbe?.extensionId
+    ? `${packageProbe.extensionId.slice(0, 8)}…${packageProbe.extensionId.slice(-4)}`
+    : "";
+  const packageProbeLabel = packageProbe?.ok
+    ? `CRX${packageProbe.crxVersion || 3} · 完整包与 SHA-256 通过${shortExtensionId ? ` · ID ${shortExtensionId}` : ""}`
+    : status === "validating"
+      ? "正在验证候选镜像…"
+      : packageProbeAttempts.length
+        ? `已尝试 ${packageProbeAttempts.length} 个镜像，尚无可用安装包`
+        : "尚未执行完整包验证";
+  const baseSummary = statusSummary(status, update, compareHint);
+  const summaryParts = [baseSummary];
+  if (cacheHit && ["latest", "available"].includes(status)) summaryParts.push(`本次使用成功缓存（${formatCacheAge(cacheAgeMs)}）；点击“实时检查”可绕过缓存。`);
 
   const progressMap: Record<UpdateUiStatus, number> = {
-    idle: 0,
-    checking: 1,
-    error: 1,
-    latest: 2,
-    available: 2,
-    downloading: 3,
-    downloaded: 4
+    idle: -1,
+    checking: 0,
+    error: 0,
+    latest: 1,
+    available: 1,
+    validating: 2,
+    "download-error": 2,
+    submitted: 3
   };
+  const busy = status === "checking" || status === "validating";
+  const canDownload = !busy && (["latest", "available", "submitted", "download-error"] as UpdateUiStatus[]).includes(status);
 
   return {
     status,
     statusLabel: STATUS_LABEL[status],
-    statusHint: status === "available"
-      ? "建议下载并重新加载扩展"
-      : status === "error"
-        ? "可重试检测，或手动打开下载地址"
-        : status === "latest"
-          ? "本地版本与远程一致"
-          : "升级系统会实时读取 GitHub 版本清单",
+    statusHint: statusHint(status),
+    busy,
     localVersion: APP_VERSION_LABEL,
     localBuild: APP_BUILD,
-    remoteVersion: remote?.version ? `v${remote.version}` : "未检测",
+    remoteVersion: remote?.version ? `v${String(remote.version).replace(/^v/i, "")}` : "未检测",
     remoteBuild: remote?.build || "未检测",
     releasedAt: remote?.releasedAt || "",
     checkedAt: update?.checkedAt || "",
     checkedRelative: update?.checkedAt ? formatRelativeTime(update.checkedAt) : "未检测",
-    sourceLabel: remote?.detectionSource || (update?.source === "update.json" ? "远程版本清单（多源最新）" : update?.source || "未检测"),
-    checkMode: update?.checkMode || "实时检测",
-    summary: probeSummary && (status === "latest" || status === "available")
-      ? `${summary}\n探测：${probeSummary}`
-      : summary,
+    sourceLabel: remote?.detectionSource || (update?.source === "signed-update.json"
+      ? "签名更新清单（多源最新）"
+      : update?.source === "update.json"
+        ? "远程版本清单（兼容来源）"
+        : update?.source || "未检测"),
+    checkMode: update?.checkMode || "自动检测",
+    checkPhase: update?.checkPhase || "idle",
+    downloadPhase: update?.downloadPhase || "idle",
+    summary: summaryParts.join("\n"),
     title: remote?.title || STATUS_LABEL[status],
     downloadUrl,
     candidates,
     attemptUrls,
     downloadStatus: update?.downloadStatus || "",
     downloadError: update?.downloadError || (status === "error" ? update?.error || "" : ""),
+    downloadId: Number(update?.downloadId || 0),
     manifestUrl: update?.manifestUrl || "",
     repositoryUrl: update?.repositoryUrl || "https://github.com/lsy5920/tangxin-zhizhe-extension",
     changelog,
-    updateId: String(remote?.id || `${remote?.version || ""}|${remote?.build || ""}`),
-    canDownload: Boolean(downloadUrl) || Boolean(update?.checkedAt) || status === "available" || status === "latest",
-    canOpenUrl: Boolean(downloadUrl),
+    updateId: String(remote?.id || [remote?.version, remote?.build].filter(Boolean).join("|")),
+    // 只有成功签名清单派生出的状态才提供主下载动作；checkedAt 只代表尝试过检测，不能作为信任依据。
+    canDownload,
     progressStep: progressMap[status],
-    progressTotal: 4,
+    progressError: status === "error" || status === "download-error",
+    cacheHit,
+    cacheAgeMs,
+    cacheLabel: cacheHit ? `成功缓存 · ${formatCacheAge(cacheAgeMs)}` : update?.checkedAt ? `${update?.checkMode || "本次检测"}结果` : "尚无检测结果",
+    mirrorSources,
+    mirrorHealthLabel: mirrorSources.length
+      ? `${mirrorOk}/${mirrorSources.length} 可用${mirrorFailed ? ` · ${mirrorFailed} 个失败` : ""}${update?.probe?.staleCount ? ` · ${update.probe.staleCount} 个旧版本源` : ""}`
+      : "尚未探测镜像",
+    packageProbe,
+    packageProbeAttempts,
+    packageProbeLabel,
+    installationHint: "扩展受浏览器安全边界限制，升级系统只能验证并下载 CRX，不能静默完成安装。下载结束后请打开扩展管理页，手动安装或覆盖更新。",
     raw: update
   };
 }
 
+export function updateDownloadActionLabel(status: UpdateUiStatus, compact = false) {
+  if (status === "validating") return compact ? "验证中…" : "验证完整包中…";
+  if (status === "submitted") return compact ? "再次下载" : "再次下载 CRX";
+  if (status === "download-error") return compact ? "重试下载" : "重新验证并下载";
+  if (status === "available") return compact ? "下载 CRX" : "下载最新 CRX";
+  return compact ? "下载 CRX" : "下载当前 CRX";
+}
+
+export function updateCheckPhaseLabel(phase: UpdateCheckPhase) {
+  return ({ idle: "未开始", checking: "检测中", cached: "使用成功缓存", success: "检测成功", error: "检测失败" } as const)[phase] || phase;
+}
+
+export function updateDownloadPhaseLabel(phase: UpdateDownloadPhase) {
+  return ({ idle: "未开始", validating: "验证完整包", submitted: "已提交浏览器下载", failed: "完整包获取失败" } as const)[phase] || phase;
+}
+
+export function updateAttemptPhaseLabel(phase?: string) {
+  const labels: Record<string, string> = {
+    validating: "校验中",
+    validated: "校验通过",
+    submitted: "已提交",
+    rejected: "已拒绝",
+    "validation-failed": "校验失败",
+    "submit-failed": "提交失败"
+  };
+  return labels[String(phase || "")] || phase || "未知";
+}
+
 export function buildUpdateCopyText(vm: UpdateViewModel) {
   return [
-    "糖心志者 · 升级系统报告",
+    "糖心志者 · 升级系统 v7 报告",
     `状态：${vm.statusLabel}`,
+    `检测阶段：${updateCheckPhaseLabel(vm.checkPhase)}（${vm.checkPhase}）`,
+    `下载阶段：${updateDownloadPhaseLabel(vm.downloadPhase)}（${vm.downloadPhase}）`,
     `本地版本：${vm.localVersion}`,
     `本地构建：${vm.localBuild}`,
     `远程版本：${vm.remoteVersion}`,
@@ -161,14 +304,19 @@ export function buildUpdateCopyText(vm: UpdateViewModel) {
     `发布时间：${vm.releasedAt || "未检测"}`,
     `检测时间：${vm.checkedAt || "未检测"}`,
     `检测模式：${vm.checkMode}`,
+    `缓存：${vm.cacheLabel}`,
     `检测来源：${vm.sourceLabel}`,
+    `镜像健康：${vm.mirrorHealthLabel}`,
     `清单地址：${vm.manifestUrl || "未检测"}`,
     `下载地址：${vm.downloadUrl || "未检测"}`,
     `候选地址：${vm.candidates.length ? vm.candidates.join(" | ") : "无"}`,
     `实际尝试：${vm.attemptUrls.length ? vm.attemptUrls.join(" | ") : "未开始"}`,
+    `完整包验证：${vm.packageProbeLabel}`,
+    `浏览器下载编号：${vm.downloadId || "未提交"}`,
     `下载状态：${vm.downloadStatus || "未开始"}`,
     `错误信息：${vm.downloadError || "无"}`,
     `更新说明：${vm.summary}`,
+    `安装边界：${vm.installationHint}`,
     ...(vm.changelog.length
       ? ["", "最近更新：", ...vm.changelog.map((item, index) => `${index + 1}. 【${item.type || "更新"}】${item.title || item.detail || item.id || "记录"}`)]
       : [])
@@ -176,65 +324,64 @@ export function buildUpdateCopyText(vm: UpdateViewModel) {
 }
 
 export function updateStatusTone(status: UpdateUiStatus) {
-  if (status === "error") {
+  if (status === "error" || status === "download-error") {
     return {
-      badge: "bg-rose-100 text-rose-600",
-      soft: "from-rose-50 via-pink-50 to-white",
-      solid: "from-rose-500 to-red-500",
-      ring: "ring-rose-200",
-      border: "border-rose-100",
-      text: "text-rose-600",
-      bar: "bg-rose-400"
+      badge: "bg-danger-50 text-danger-600",
+      soft: "from-danger-50 to-white",
+      solid: "from-danger-500 to-danger-600",
+      ring: "ring-danger-100",
+      border: "border-danger-100",
+      text: "text-danger-600",
+      bar: "bg-danger-500"
     };
   }
-  if (status === "available" || status === "downloaded") {
+  if (status === "available" || status === "submitted") {
     return {
-      badge: "bg-amber-100 text-amber-700",
-      soft: "from-amber-50 via-orange-50 to-white",
-      solid: "from-amber-400 via-orange-500 to-rose-500",
-      ring: "ring-amber-200",
-      border: "border-amber-100",
-      text: "text-amber-700",
-      bar: "bg-amber-400"
+      badge: "bg-warning-50 text-warning-600",
+      soft: "from-warning-50 to-white",
+      solid: "from-warning-500 to-warning-600",
+      ring: "ring-warning-100",
+      border: "border-warning-100",
+      text: "text-warning-600",
+      bar: "bg-warning-500"
     };
   }
-  if (status === "checking" || status === "downloading") {
+  if (status === "checking" || status === "validating") {
     return {
-      badge: "bg-sky-100 text-sky-700",
-      soft: "from-sky-50 via-cyan-50 to-white",
-      solid: "from-sky-400 to-blue-500",
-      ring: "ring-sky-200",
-      border: "border-sky-100",
-      text: "text-sky-700",
-      bar: "bg-sky-400"
+      badge: "bg-info-50 text-info-600",
+      soft: "from-info-50 to-white",
+      solid: "from-info-500 to-info-600",
+      ring: "ring-info-100",
+      border: "border-info-100",
+      text: "text-info-600",
+      bar: "bg-info-500"
     };
   }
   if (status === "latest") {
     return {
-      badge: "bg-emerald-100 text-emerald-700",
-      soft: "from-emerald-50 via-teal-50 to-white",
-      solid: "from-emerald-400 to-teal-500",
-      ring: "ring-emerald-200",
-      border: "border-emerald-100",
-      text: "text-emerald-700",
-      bar: "bg-emerald-400"
+      badge: "bg-success-50 text-success-600",
+      soft: "from-success-50 to-white",
+      solid: "from-success-500 to-success-600",
+      ring: "ring-success-100",
+      border: "border-success-100",
+      text: "text-success-600",
+      bar: "bg-success-500"
     };
   }
   return {
-    badge: "bg-purple-100 text-purple-700",
-    soft: "from-purple-50 via-pink-50 to-white",
-    solid: "from-pink-400 to-purple-500",
-    ring: "ring-purple-200",
-    border: "border-purple-100",
-    text: "text-purple-700",
-    bar: "bg-purple-400"
+    badge: "bg-brand-50 text-brand-700",
+    soft: "from-brand-50 to-white",
+    solid: "from-brand-500 to-brand-700",
+    ring: "ring-brand-100",
+    border: "border-brand-100",
+    text: "text-brand-700",
+    bar: "bg-brand-500"
   };
 }
 
 export function changelogTypeLabel(type?: string) {
   const raw = String(type || "").replace(/[【】]/g, "");
-  if (!raw) return "更新";
-  return raw;
+  return raw || "更新";
 }
 
 export { APP_VERSION, APP_BUILD, APP_VERSION_LABEL };

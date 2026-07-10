@@ -1,0 +1,8 @@
+{
+  "type": "spki",
+  "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
+  "keyId": "sha256:67113307c77c9ade5ac3a25b1cfb2024c14cc6f3c2af43eb8207b1ad9d418884",
+  "sha256": "67113307c77c9ade5ac3a25b1cfb2024c14cc6f3c2af43eb8207b1ad9d418884",
+  "extensionId": "ghbbddahmhhmjknofkmdkcflbmplcace",
+  "spkiBase64": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqz6ArUCAkJqEzJr11PywW2T1H8j8/XLRuWn2qp+8qs8i0BiTiHzXjYT/BCTjLG85bx+fy7Z+V2rbveK+YO2arF+iRIR9BG2KhdJJJGXvFtFOI8Z2YzH/jeELt31xeH1Xo/e/63b+mduw2qIOmG68LgHYrysmgqQCmweurz+mYXuwTNt8+CFf961HZz3HT+aIsQ7Axh12YbItOmt2rCVoeGXGVGNlP1uG1Xf/2xnWzAVj2s4m9E3/dAQz3RMFCHJUEMrorC7GXj9JIfgYJmuKNB+EB5rwxBC3Eg6JwmU5fzcUP/Nf5gj/lz6YeJbftkvPKw80FtFuCf9MpX0iY4umaQIDAQAB"
+}

@@ -1,13 +1,156 @@
-import { useEffect, useId, useRef } from "react";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, LabelHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import { useEffect, useId, useLayoutEffect, useRef } from "react";
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  LabelHTMLAttributes,
+  ReactNode,
+  TextareaHTMLAttributes
+} from "react";
 import type { LucideIcon } from "lucide-react";
 
-/** 页面统一内边距与纵向间距，保证五页节奏一致。 */
-export function PageShell({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`txzz-page space-y-3.5 p-3.5 sm:p-4 ${className}`}>{children}</div>;
+type ScrollLockSnapshot = {
+  htmlOverflow: string;
+  bodyOverflow: string;
+  htmlOverscroll: string;
+  bodyOverscroll: string;
+  scrollbarGutter: string;
+};
+
+let documentScrollLockCount = 0;
+let documentScrollLockSnapshot: ScrollLockSnapshot | null = null;
+const modalStack: HTMLElement[] = [];
+
+function acquireDocumentScrollLock() {
+  if (typeof document === "undefined" || !document.documentElement || !document.body) return () => undefined;
+  const html = document.documentElement;
+  const body = document.body;
+  if (documentScrollLockCount === 0) {
+    documentScrollLockSnapshot = {
+      htmlOverflow: html.style.overflow,
+      bodyOverflow: body.style.overflow,
+      htmlOverscroll: html.style.overscrollBehavior,
+      bodyOverscroll: body.style.overscrollBehavior,
+      scrollbarGutter: html.style.scrollbarGutter
+    };
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    html.style.overscrollBehavior = "none";
+    body.style.overscrollBehavior = "none";
+    html.style.scrollbarGutter = "stable";
+  }
+  documentScrollLockCount += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    documentScrollLockCount = Math.max(0, documentScrollLockCount - 1);
+    if (documentScrollLockCount !== 0 || !documentScrollLockSnapshot) return;
+    html.style.overflow = documentScrollLockSnapshot.htmlOverflow;
+    body.style.overflow = documentScrollLockSnapshot.bodyOverflow;
+    html.style.overscrollBehavior = documentScrollLockSnapshot.htmlOverscroll;
+    body.style.overscrollBehavior = documentScrollLockSnapshot.bodyOverscroll;
+    html.style.scrollbarGutter = documentScrollLockSnapshot.scrollbarGutter;
+    documentScrollLockSnapshot = null;
+  };
 }
 
-/** 分区卡片：标题栏 + 正文，可选右侧操作。 */
+/** 主面板和子弹层共用计数式滚动锁，避免先关闭一层就错误解锁宿主网页。 */
+export function useDocumentScrollLock(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    return acquireDocumentScrollLock();
+  }, [active]);
+}
+
+function registerModal(element: HTMLElement) {
+  if (!modalStack.includes(element)) modalStack.push(element);
+  syncModalAccessibility(element.getRootNode());
+}
+
+function unregisterModal(element: HTMLElement) {
+  const root = element.getRootNode();
+  const index = modalStack.indexOf(element);
+  if (index >= 0) modalStack.splice(index, 1);
+  syncModalAccessibility(root);
+}
+
+function topModalFor(root: Node) {
+  return modalStack
+    .filter((item) => item.isConnected && item.getRootNode() === root)
+    .reduce<HTMLElement | null>((top, item) => {
+      if (!top) return item;
+      return top.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING ? item : top;
+    }, null);
+}
+
+/** 底层弹窗保留视觉上下文，但从键盘与无障碍树中暂时移除，只让顶层弹窗可交互。 */
+function syncModalAccessibility(root: Node) {
+  const top = topModalFor(root);
+  modalStack
+    .filter((item) => item.isConnected && item.getRootNode() === root)
+    .forEach((item) => {
+      const isTop = item === top;
+      item.inert = !isTop;
+      if (isTop) item.removeAttribute("aria-hidden");
+      else item.setAttribute("aria-hidden", "true");
+    });
+}
+
+function modalFocusableElements(dialog: HTMLElement) {
+  return Array.from(dialog.querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [contenteditable="true"], [tabindex]:not([tabindex="-1"])'
+  )).filter((item) => item.getClientRects().length > 0 && item.getAttribute("aria-hidden") !== "true");
+}
+
+function focusWithoutScroll(element?: HTMLElement | null) {
+  if (!element?.isConnected) return false;
+  try {
+    element.focus({ preventScroll: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 页面统一宽度、内边距和纵向节奏，桌面端充分利用工作台宽度。 */
+export function PageShell({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={`txzz-page mx-auto w-full max-w-[1120px] space-y-4 p-4 sm:p-5 lg:p-6 ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+/** 页面级说明区，统一承载标题、摘要和主操作。 */
+export function PageIntro({
+  eyebrow,
+  title,
+  description,
+  actions,
+  meta,
+  className = ""
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+  meta?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between ${className}`}>
+      <div className="min-w-0">
+        {eyebrow && <p className="mb-1 text-[11px] font-semibold tracking-[0.12em] text-brand-600">{eyebrow}</p>}
+        <h2 className="text-xl font-bold tracking-[-0.02em] text-slate-900 sm:text-2xl">{title}</h2>
+        {description && <p className="mt-1 max-w-2xl text-[13px] leading-5 text-slate-500">{description}</p>}
+        {meta && <div className="mt-2 flex flex-wrap items-center gap-1.5">{meta}</div>}
+      </div>
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+/** 分区卡片：降低装饰噪声，用边框、留白和标题层级表达结构。 */
 export function SectionCard({
   title,
   icon: Icon,
@@ -25,48 +168,61 @@ export function SectionCard({
   className?: string;
   tone?: "default" | "sky" | "emerald" | "amber" | "rose" | "soft";
 }) {
-  const toneBorder =
+  const toneClass =
     tone === "sky"
-      ? "border-sky-100"
+      ? "border-info-100"
       : tone === "emerald"
-        ? "border-emerald-100"
+        ? "border-success-100"
         : tone === "amber"
-          ? "border-amber-100"
+          ? "border-warning-100"
           : tone === "rose"
-            ? "border-rose-100"
+            ? "border-danger-100"
             : tone === "soft"
-              ? "border-purple-50"
-              : "border-pink-100/90";
+              ? "border-slate-100 bg-slate-50/75"
+              : "border-slate-200";
+
+  const iconClass =
+    tone === "sky"
+      ? "bg-info-50 text-info-600"
+      : tone === "emerald"
+        ? "bg-success-50 text-success-600"
+        : tone === "amber"
+          ? "bg-warning-50 text-warning-600"
+          : tone === "rose"
+            ? "bg-danger-50 text-danger-600"
+            : "bg-brand-50 text-brand-600";
+
   return (
-    <section className={`txzz-section overflow-hidden rounded-2xl border bg-white/95 shadow-[0_8px_28px_rgba(147,51,234,0.06)] ${toneBorder} ${className}`}>
+    <section className={`txzz-section overflow-hidden rounded-2xl border bg-white shadow-[var(--txzz-shadow-sm)] ${toneClass} ${className}`}>
       {(title || action) && (
-        <div className="flex items-start justify-between gap-2 border-b border-purple-50/90 px-3.5 py-2.5">
-          <div className="min-w-0">
-            {title && (
-              <h3 className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
-                {Icon && <Icon size={14} className="shrink-0 text-pink-400" strokeWidth={2.25} />}
-                {title}
-              </h3>
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3.5 sm:px-5">
+          <div className="flex min-w-0 items-start gap-2.5">
+            {Icon && (
+              <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>
+                <Icon size={15} strokeWidth={2.15} aria-hidden="true" />
+              </span>
             )}
-            {hint && <p className="mt-0.5 text-[10px] leading-relaxed text-purple-400">{hint}</p>}
+            <div className="min-w-0">
+              {title && <h3 className="text-[14px] font-semibold leading-5 text-slate-900">{title}</h3>}
+              {hint && <p className="mt-0.5 text-[11px] leading-[1.55] text-slate-500">{hint}</p>}
+            </div>
           </div>
           {action && <div className="shrink-0">{action}</div>}
         </div>
       )}
-      <div className="p-3.5">{children}</div>
+      <div className="p-4 sm:p-5">{children}</div>
     </section>
   );
 }
 
-/** 英雄头图：总览/播放页顶部身份区。 */
+/** 重点信息头，仅用于总览和少数品牌场景，避免每页重复使用大面积渐变。 */
 export function HeroBanner({
   eyebrow,
   title,
   subtitle,
   badges,
   actions,
-  emoji = "🍭",
-  gradient = "from-pink-400 via-rose-400 to-purple-500"
+  emoji = "✦"
 }: {
   eyebrow?: string;
   title: string;
@@ -74,17 +230,26 @@ export function HeroBanner({
   badges?: ReactNode;
   actions?: ReactNode;
   emoji?: string;
-  gradient?: string;
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${gradient} p-4 text-white shadow-[0_14px_36px_rgba(236,72,153,0.28)]`}>
-      <div className="pointer-events-none absolute -right-2 -top-3 select-none text-5xl opacity-[0.14]">{emoji}</div>
-      <div className="pointer-events-none absolute -bottom-10 left-10 h-24 w-24 rounded-full bg-white/10 blur-2xl" />
-      {eyebrow && <p className="relative mb-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-white/70">{eyebrow}</p>}
-      <h2 className="relative text-lg font-bold leading-snug tracking-tight sm:text-xl">{title}</h2>
-      {subtitle && <p className="relative mt-1 text-[11px] leading-relaxed text-white/75">{subtitle}</p>}
-      {badges && <div className="relative mt-2.5 flex flex-wrap gap-1.5">{badges}</div>}
-      {actions && <div className="relative mt-3 flex flex-wrap gap-1.5">{actions}</div>}
+    <div
+      className="relative overflow-hidden rounded-[1.35rem] border border-white/10 p-5 text-white shadow-[var(--txzz-shadow-md)] sm:p-6"
+      style={{ background: "linear-gradient(135deg, #0f172a 0%, #111827 58%, #37317f 100%)" }}
+    >
+      <div className="pointer-events-none absolute -right-8 -top-12 h-40 w-40 rounded-full bg-brand-400/20 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-16 left-1/3 h-32 w-48 rounded-full bg-sky-400/10 blur-3xl" />
+      <div className="relative flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          {eyebrow && <p className="mb-1 text-[11px] font-semibold tracking-[0.12em] text-white/65">{eyebrow}</p>}
+          <h2 className="text-xl font-bold leading-tight tracking-[-0.025em] sm:text-2xl">{title}</h2>
+          {subtitle && <p className="mt-1.5 max-w-2xl text-[12px] leading-5 text-white/70 sm:text-[13px]">{subtitle}</p>}
+        </div>
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-lg backdrop-blur">
+          {emoji}
+        </span>
+      </div>
+      {badges && <div className="relative mt-4 flex flex-wrap gap-1.5">{badges}</div>}
+      {actions && <div className="relative mt-4 flex flex-wrap gap-2">{actions}</div>}
     </div>
   );
 }
@@ -98,10 +263,10 @@ export function Pill({
   className?: string;
   onClick?: () => void;
 }) {
-  const base = `inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium ${className}`;
+  const base = `inline-flex min-h-6 items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium leading-none ${className}`;
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={`${base} transition active:scale-95`}>
+      <button type="button" onClick={onClick} className={`${base} transition hover:brightness-95 active:scale-95`}>
         {children}
       </button>
     );
@@ -109,43 +274,39 @@ export function Pill({
   return <span className={base}>{children}</span>;
 }
 
-/** 统计瓷砖网格。 */
+/** 统计瓷砖网格：使用中性底色和细状态条，不再让每项都成为强渐变按钮。 */
 export function StatGrid({
   items
 }: {
   items: Array<{ label: string; value: string | number; tone?: "purple" | "emerald" | "sky" | "amber" | "rose" | "pink"; onClick?: () => void }>;
 }) {
   const toneMap = {
-    purple: "from-purple-50 to-fuchsia-50 text-purple-700 ring-purple-100",
-    emerald: "from-emerald-50 to-teal-50 text-emerald-700 ring-emerald-100",
-    sky: "from-sky-50 to-cyan-50 text-sky-700 ring-sky-100",
-    amber: "from-amber-50 to-orange-50 text-amber-700 ring-amber-100",
-    rose: "from-rose-50 to-pink-50 text-rose-700 ring-rose-100",
-    pink: "from-pink-50 to-rose-50 text-pink-700 ring-pink-100"
+    purple: "before:bg-brand-500 text-brand-700",
+    emerald: "before:bg-success-500 text-success-600",
+    sky: "before:bg-info-500 text-info-600",
+    amber: "before:bg-warning-500 text-warning-600",
+    rose: "before:bg-danger-500 text-danger-600",
+    pink: "before:bg-fuchsia-500 text-fuchsia-700"
   };
   return (
-    <div className={`grid gap-2 ${items.length >= 4 ? "grid-cols-4" : items.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+    <div className={`grid gap-2.5 ${items.length >= 4 ? "grid-cols-2 lg:grid-cols-4" : items.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
       {items.map((item) => {
         const tone = toneMap[item.tone || "purple"];
         const body = (
           <>
-            <p className="truncate text-base font-bold tabular-nums leading-none sm:text-lg">{item.value}</p>
-            <p className="mt-1 truncate text-[10px] font-medium opacity-75">{item.label}</p>
+            <p className="truncate text-xl font-bold tabular-nums leading-none text-slate-900">{item.value}</p>
+            <p className="mt-1.5 truncate text-[11px] font-medium text-slate-500">{item.label}</p>
           </>
         );
-        const cls = `rounded-2xl bg-gradient-to-br p-2.5 text-center ring-1 shadow-sm ${tone}`;
+        const cls = `relative overflow-hidden rounded-2xl border border-slate-200 bg-white px-3.5 py-3 text-left shadow-[var(--txzz-shadow-sm)] before:absolute before:inset-y-0 before:left-0 before:w-1 ${tone}`;
         if (item.onClick) {
           return (
-            <button key={item.label} type="button" onClick={item.onClick} className={`${cls} transition active:scale-[0.98]`}>
+            <button key={item.label} type="button" onClick={item.onClick} className={`${cls} transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md active:translate-y-0`}>
               {body}
             </button>
           );
         }
-        return (
-          <div key={item.label} className={cls}>
-            {body}
-          </div>
-        );
+        return <div key={item.label} className={cls}>{body}</div>;
       })}
     </div>
   );
@@ -154,14 +315,14 @@ export function StatGrid({
 type BtnVariant = "primary" | "secondary" | "ghost" | "danger" | "sky" | "emerald" | "amber" | "soft";
 
 const btnVariantClass: Record<BtnVariant, string> = {
-  primary: "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-md shadow-pink-400/25 hover:brightness-[1.03]",
-  secondary: "border border-purple-200/90 bg-white text-purple-600 hover:bg-purple-50",
-  ghost: "bg-purple-50/80 text-purple-500 hover:bg-purple-100",
-  danger: "border border-rose-200 bg-white text-rose-500 hover:bg-rose-50",
-  sky: "bg-gradient-to-r from-sky-400 to-blue-500 text-white shadow-md shadow-sky-400/20",
-  emerald: "bg-gradient-to-r from-emerald-400 to-teal-500 text-white shadow-md shadow-emerald-400/20",
-  amber: "bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-md shadow-amber-400/20",
-  soft: "bg-white/20 text-white backdrop-blur hover:bg-white/30"
+  primary: "border border-brand-600 bg-brand-600 text-white shadow-sm hover:border-brand-700 hover:bg-brand-700",
+  secondary: "border border-slate-300 bg-white text-slate-700 shadow-sm hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700",
+  ghost: "border border-transparent bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-800",
+  danger: "border border-danger-100 bg-danger-50 text-danger-600 hover:border-danger-200 hover:bg-danger-100",
+  sky: "border border-info-500 bg-info-500 text-white shadow-sm hover:bg-info-600",
+  emerald: "border border-success-500 bg-success-500 text-white shadow-sm hover:bg-success-600",
+  amber: "border border-warning-500 bg-warning-500 text-white shadow-sm hover:bg-warning-600",
+  soft: "border border-white/15 bg-white/10 text-white backdrop-blur hover:bg-white/18"
 };
 
 export function SoftButton({
@@ -178,26 +339,26 @@ export function SoftButton({
 }) {
   const sizeClass =
     size === "xs"
-      ? "min-h-7 gap-1 rounded-lg px-2 text-[10px]"
+      ? "min-h-8 gap-1 rounded-lg px-2.5 text-[11px]"
       : size === "sm"
-        ? "min-h-8 gap-1 rounded-xl px-2.5 text-[11px]"
+        ? "min-h-9 gap-1.5 rounded-xl px-3 text-[12px]"
         : size === "lg"
-          ? "min-h-11 gap-1.5 rounded-xl px-4 text-sm"
-          : "min-h-9 gap-1.5 rounded-xl px-3 text-xs";
+          ? "min-h-11 gap-2 rounded-xl px-4 text-[14px]"
+          : "min-h-10 gap-1.5 rounded-xl px-3.5 text-[13px]";
   return (
     <button
       type="button"
-      className={`inline-flex items-center justify-center font-semibold transition-all active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${sizeClass} ${btnVariantClass[variant]} ${className}`}
+      className={`inline-flex items-center justify-center font-semibold transition-all active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45 ${sizeClass} ${btnVariantClass[variant]} ${className}`}
       aria-label={rest["aria-label"] || (!children && rest.title ? rest.title : undefined)}
       {...rest}
     >
-      {Icon && <Icon aria-hidden="true" size={size === "xs" ? 11 : size === "sm" ? 12 : 13} strokeWidth={2.25} />}
+      {Icon && <Icon aria-hidden="true" size={size === "xs" ? 12 : size === "sm" ? 13 : size === "lg" ? 16 : 14} strokeWidth={2.1} />}
       {children}
     </button>
   );
 }
 
-/** 分段筛选器（全部/进行中等）。 */
+/** 分段筛选器，适合状态筛选和页面内二级导航。 */
 export function SegmentedControl<T extends string>({
   items,
   value,
@@ -210,7 +371,7 @@ export function SegmentedControl<T extends string>({
   className?: string;
 }) {
   return (
-    <div role="group" className={`grid gap-1 rounded-2xl border border-pink-100 bg-white p-1 shadow-sm ${className}`} style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+    <div role="group" className={`grid gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 ${className}`} style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
       {items.map((item) => {
         const active = value === item.key;
         return (
@@ -219,12 +380,10 @@ export function SegmentedControl<T extends string>({
             type="button"
             onClick={() => onChange(item.key)}
             aria-pressed={active}
-            className={`rounded-xl px-1 py-2 text-center transition-all ${active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "text-purple-400 hover:bg-purple-50"}`}
+            className={`rounded-lg px-1.5 py-2 text-center transition-all ${active ? "bg-white text-brand-700 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:bg-white/60 hover:text-slate-700"}`}
           >
-            {typeof item.count === "number" && (
-              <p className={`text-sm font-bold tabular-nums ${active ? "text-white" : item.tone || "text-purple-700"}`}>{item.count}</p>
-            )}
-            <p className={`text-[10px] font-medium ${typeof item.count === "number" ? "mt-0.5" : ""}`}>{item.label}</p>
+            {typeof item.count === "number" && <p className={`text-base font-bold tabular-nums ${active ? "text-brand-700" : item.tone || "text-slate-700"}`}>{item.count}</p>}
+            <p className={`text-[11px] font-medium ${typeof item.count === "number" ? "mt-0.5" : ""}`}>{item.label}</p>
           </button>
         );
       })}
@@ -236,7 +395,7 @@ export function SoftInput(props: InputHTMLAttributes<HTMLInputElement>) {
   const { className = "", ...rest } = props;
   return (
     <input
-      className={`w-full rounded-xl border border-pink-200/90 bg-gradient-to-b from-white to-pink-50/40 px-3 py-2 text-xs text-purple-800 outline-none transition placeholder:text-purple-300 focus:border-purple-300 focus:ring-2 focus:ring-purple-100 ${className}`}
+      className={`w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-400 focus:border-brand-400 focus:ring-3 focus:ring-brand-100 ${className}`}
       {...rest}
     />
   );
@@ -246,14 +405,14 @@ export function SoftTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>)
   const { className = "", ...rest } = props;
   return (
     <textarea
-      className={`w-full resize-none rounded-xl border border-pink-200/90 bg-gradient-to-b from-white to-pink-50/40 px-3 py-2 text-xs text-purple-800 outline-none transition placeholder:text-purple-300 focus:border-purple-300 focus:ring-2 focus:ring-purple-100 ${className}`}
+      className={`w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-400 focus:border-brand-400 focus:ring-3 focus:ring-brand-100 ${className}`}
       {...rest}
     />
   );
 }
 
 export function FieldLabel({ children, className = "", ...rest }: LabelHTMLAttributes<HTMLLabelElement> & { children: ReactNode }) {
-  return <label className={`mb-1 block text-[11px] font-medium text-purple-500 ${className}`} {...rest}>{children}</label>;
+  return <label className={`mb-1.5 block text-[12px] font-semibold text-slate-700 ${className}`} {...rest}>{children}</label>;
 }
 
 export function EmptyState({
@@ -268,156 +427,167 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-pink-200 bg-gradient-to-b from-white to-pink-50/40 px-4 py-8 text-center">
-      <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-100 to-purple-100 text-purple-400">
-        <Icon size={22} strokeWidth={1.8} />
+    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/75 px-5 py-9 text-center">
+      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-brand-600 shadow-sm">
+        <Icon size={21} strokeWidth={1.9} />
       </div>
-      <p className="text-xs font-semibold text-purple-700">{title}</p>
-      {desc && <p className="mx-auto mt-1 max-w-xs text-[10px] leading-relaxed text-purple-400">{desc}</p>}
-      {action && <div className="mt-3 flex justify-center">{action}</div>}
+      <p className="text-[14px] font-semibold text-slate-800">{title}</p>
+      {desc && <p className="mx-auto mt-1.5 max-w-sm text-[12px] leading-5 text-slate-500">{desc}</p>}
+      {action && <div className="mt-4 flex justify-center">{action}</div>}
     </div>
   );
 }
 
-/** 底部/居中弹层骨架。 */
+/** 底部或居中弹层骨架，包含焦点循环、Esc 和关闭后焦点恢复。 */
 export function ModalSheet({
   open,
   onClose,
   title,
   children,
-  footer
+  footer,
+  size = "md",
+  contentClassName = ""
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  size?: "md" | "lg";
+  contentClassName?: string;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   const titleId = useId();
+  useDocumentScrollLock(open);
 
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
-    const root = dialogRef.current?.getRootNode();
-    const previous = root instanceof ShadowRoot ? root.activeElement : document.activeElement;
-    const focusTimer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const root = dialog.getRootNode();
+    const shadowActive = root instanceof ShadowRoot ? root.activeElement : null;
+    const previous = shadowActive instanceof HTMLElement
+      ? shadowActive
+      : document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    registerModal(dialog);
+    const focusTimer = window.setTimeout(() => {
+      if (topModalFor(root) === dialog) focusWithoutScroll(closeButtonRef.current);
+    }, 0);
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (topModalFor(root) !== dialog) return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
+        event.stopImmediatePropagation();
         onCloseRef.current();
         return;
       }
-      if (event.key !== "Tab" || !dialogRef.current) return;
-      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      )).filter((item) => item.offsetParent !== null);
+      if (event.key !== "Tab") return;
+      const focusable = modalFocusableElements(dialog);
       if (!focusable.length) return;
       const active = root instanceof ShadowRoot ? root.activeElement : document.activeElement;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && active === first) {
+      if (!(active instanceof Node) || !dialog.contains(active)) {
         event.preventDefault();
-        last.focus();
+        focusWithoutScroll(event.shiftKey ? last : first);
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault();
+        focusWithoutScroll(last);
       } else if (!event.shiftKey && active === last) {
         event.preventDefault();
-        first.focus();
+        focusWithoutScroll(first);
       }
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => {
+      const wasTop = topModalFor(root) === dialog;
       window.clearTimeout(focusTimer);
       window.removeEventListener("keydown", handleKeyDown, true);
-      if (previous instanceof HTMLElement) previous.focus();
+      unregisterModal(dialog);
+      if (!wasTop) return;
+      window.setTimeout(() => {
+        const remainingTop = topModalFor(root);
+        if (remainingTop) {
+          if (previous && remainingTop.contains(previous) && focusWithoutScroll(previous)) return;
+          focusWithoutScroll(modalFocusableElements(remainingTop)[0] || remainingTop);
+          return;
+        }
+        focusWithoutScroll(previous);
+      }, 0);
     };
   }, [open]);
 
   if (!open) return null;
   return (
-    <div className="txzz-candy-interactive fixed inset-0 z-[60] flex items-end justify-center bg-black/35 p-3 backdrop-blur-[6px] sm:items-center sm:p-5" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div
+      className="txzz-modal-layer txzz-candy-interactive fixed inset-0 z-[60] flex min-h-0 items-end justify-center overflow-hidden bg-slate-950/45 backdrop-blur-[5px] sm:items-center"
+      onClick={(event) => {
+        if (event.target === event.currentTarget && dialogRef.current && topModalFor(dialogRef.current.getRootNode()) === dialogRef.current) {
+          onCloseRef.current();
+        }
+      }}
+    >
       <div
         ref={dialogRef}
-        className="w-full max-w-sm overflow-hidden rounded-[1.5rem] border border-pink-100 bg-white shadow-[0_24px_80px_rgba(147,51,234,0.22)]"
+        data-txzz-modal-sheet="true"
+        tabIndex={-1}
+        className={`txzz-modal-sheet flex max-h-full w-full min-h-0 flex-col overflow-hidden rounded-[1.35rem] border border-slate-200 bg-white shadow-[var(--txzz-shadow-lg)] ${size === "lg" ? "max-w-xl" : "max-w-md"}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
       >
-        <div className="flex items-center justify-between border-b border-purple-50 px-4 py-3">
-          <h3 id={titleId} className="text-sm font-bold text-purple-800">{title}</h3>
-          <button ref={closeButtonRef} type="button" onClick={onClose} className="rounded-full p-1.5 text-purple-300 transition hover:bg-purple-50 hover:text-purple-500" aria-label="关闭弹窗">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
+          <h3 id={titleId} className="text-[15px] font-semibold text-slate-900">{title}</h3>
+          <button ref={closeButtonRef} type="button" onClick={onClose} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="关闭弹窗">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
         </div>
-        <div className="max-h-[min(70vh,480px)] overflow-y-auto p-4">{children}</div>
-        {footer && <div className="border-t border-purple-50 p-3">{footer}</div>}
+        <div className={`txzz-modal-content min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 ${contentClassName}`}>{children}</div>
+        {footer && <div className="txzz-modal-footer shrink-0 border-t border-slate-100 bg-slate-50/70 p-3 sm:p-4">{footer}</div>}
       </div>
     </div>
   );
 }
 
-/**
- * 快捷操作宫格。
- * 背景必须用内联 style，避免 Shadow DOM + Tailwind 在部分机型上只生成部分渐变类，导致白底白字。
- */
-const QUICK_ACTION_STYLE: Record<string, { background: string; boxShadow: string }> = {
-  pink: {
-    background: "linear-gradient(145deg, #f472b6 0%, #fb7185 48%, #f43f5e 100%)",
-    boxShadow: "0 8px 18px rgba(244, 63, 94, 0.28)"
-  },
-  purple: {
-    background: "linear-gradient(145deg, #c084fc 0%, #a855f7 48%, #8b5cf6 100%)",
-    boxShadow: "0 8px 18px rgba(147, 51, 234, 0.28)"
-  },
-  sky: {
-    background: "linear-gradient(145deg, #38bdf8 0%, #0ea5e9 48%, #2563eb 100%)",
-    boxShadow: "0 8px 18px rgba(14, 165, 233, 0.28)"
-  },
-  amber: {
-    background: "linear-gradient(145deg, #fbbf24 0%, #f59e0b 48%, #f97316 100%)",
-    boxShadow: "0 8px 18px rgba(249, 115, 22, 0.28)"
-  },
-  emerald: {
-    background: "linear-gradient(145deg, #34d399 0%, #10b981 48%, #14b8a6 100%)",
-    boxShadow: "0 8px 18px rgba(16, 185, 129, 0.28)"
-  },
-  rose: {
-    background: "linear-gradient(145deg, #fb7185 0%, #f43f5e 48%, #e11d48 100%)",
-    boxShadow: "0 8px 18px rgba(244, 63, 94, 0.28)"
-  }
+const QUICK_ACTION_TONE: Record<string, { icon: string; hover: string }> = {
+  pink: { icon: "bg-rose-50 text-rose-600", hover: "hover:border-rose-200" },
+  purple: { icon: "bg-brand-50 text-brand-600", hover: "hover:border-brand-200" },
+  sky: { icon: "bg-info-50 text-info-600", hover: "hover:border-info-100" },
+  amber: { icon: "bg-warning-50 text-warning-600", hover: "hover:border-warning-100" },
+  emerald: { icon: "bg-success-50 text-success-600", hover: "hover:border-success-100" },
+  rose: { icon: "bg-danger-50 text-danger-600", hover: "hover:border-danger-100" }
 };
 
+/** 快捷操作宫格：图标强调、容器中性，降低多彩按钮带来的竞争。 */
 export function QuickActionGrid({
   items
 }: {
-  items: Array<{ label: string; icon: LucideIcon; tone?: keyof typeof QUICK_ACTION_STYLE; color?: string; onClick: () => void }>;
+  items: Array<{ label: string; icon: LucideIcon; tone?: keyof typeof QUICK_ACTION_TONE; color?: string; onClick: () => void }>;
 }) {
   return (
-    <div className="grid grid-cols-4 gap-2">
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
       {items.map((item) => {
-        const toneKey = (item.tone || "purple") as keyof typeof QUICK_ACTION_STYLE;
-        const style = QUICK_ACTION_STYLE[toneKey] || QUICK_ACTION_STYLE.purple;
+        const tone = QUICK_ACTION_TONE[item.tone || "purple"] || QUICK_ACTION_TONE.purple;
         return (
           <button
             key={item.label}
             type="button"
             onClick={item.onClick}
-            className="txzz-quick-action-btn flex min-h-[4.5rem] flex-col items-center justify-center gap-1.5 rounded-2xl border-0 p-2.5 transition-transform active:scale-95"
-            style={{
-              background: style.background,
-              boxShadow: style.boxShadow,
-              color: "#ffffff"
-            }}
+            className={`txzz-quick-action-btn group flex min-h-[5.25rem] flex-col items-start justify-between rounded-2xl border border-slate-200 bg-white p-3.5 text-left shadow-[var(--txzz-shadow-sm)] transition hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 ${tone.hover}`}
           >
-            <item.icon size={18} strokeWidth={2.2} color="#ffffff" />
-            <span className="text-center text-[10px] font-semibold leading-tight" style={{ color: "#ffffff" }}>
-              {item.label}
+            <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${tone.icon}`}>
+              <item.icon size={17} strokeWidth={2.1} />
             </span>
+            <span className="text-[12px] font-semibold text-slate-700 group-hover:text-slate-900">{item.label}</span>
           </button>
         );
       })}
@@ -426,15 +596,11 @@ export function QuickActionGrid({
 }
 
 export function StatusDot({ ok, pulse }: { ok?: boolean; pulse?: boolean }) {
-  return (
-    <span
-      className={`inline-block h-2 w-2 shrink-0 rounded-full ${ok ? "bg-emerald-400" : "bg-rose-400"} ${pulse ? "animate-pulse" : ""}`}
-    />
-  );
+  return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${ok ? "bg-success-500" : "bg-danger-500"} ${pulse ? "animate-pulse" : ""}`} />;
 }
 
-export function ActionToolbar({ children }: { children: ReactNode }) {
-  return <div className="flex flex-wrap gap-1.5">{children}</div>;
+export function ActionToolbar({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`flex flex-wrap items-center gap-2 ${className}`}>{children}</div>;
 }
 
 export function ListRow({
@@ -448,10 +614,10 @@ export function ListRow({
 }) {
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition hover:bg-purple-50/80 active:scale-[0.99] ${className}`}>
+      <button type="button" onClick={onClick} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-slate-50 active:scale-[0.995] ${className}`}>
         {children}
       </button>
     );
   }
-  return <div className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 ${className}`}>{children}</div>;
+  return <div className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ${className}`}>{children}</div>;
 }

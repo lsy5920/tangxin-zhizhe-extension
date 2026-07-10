@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "糖心志者",
-  "version": "3.6.0",
-  "description": "安全云端账号池、智能播放、视频下载、体检与升级的一体化糖果风控制台。",
+  "version": "3.7.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqz6ArUCAkJqEzJr11PywW2T1H8j8/XLRuWn2qp+8qs8i0BiTiHzXjYT/BCTjLG85bx+fy7Z+V2rbveK+YO2arF+iRIR9BG2KhdJJJGXvFtFOI8Z2YzH/jeELt31xeH1Xo/e/63b+mduw2qIOmG68LgHYrysmgqQCmweurz+mYXuwTNt8+CFf961HZz3HT+aIsQ7Axh12YbItOmt2rCVoeGXGVGNlP1uG1Xf/2xnWzAVj2s4m9E3/dAQz3RMFCHJUEMrorC7GXj9JIfgYJmuKNB+EB5rwxBC3Eg6JwmU5fzcUP/Nf5gj/lz6YeJbftkvPKw80FtFuCf9MpX0iY4umaQIDAQAB",
+  "description": "安全云端账号池、智能播放、视频下载、服务体检与升级的一体化专业控制台。",
   "permissions": ["storage", "downloads", "offscreen"],
   "host_permissions": ["https://txh068.com/*", "https://*/*", "http://*/*"],
   "background": {
@@ -27,7 +28,6 @@
         "display_patch.js",
         "dist-ui/txzz-ui.css",
         "README.md",
-        "update.json",
         "vendor/mux-7.0.0.min.js"
       ],
       "matches": ["https://txh068.com/*"]

@@ -6,6 +6,7 @@ import {
   EmptyState,
   FieldLabel,
   ModalSheet,
+  PageIntro,
   PageShell,
   Pill,
   SectionCard,
@@ -20,6 +21,7 @@ type Props = {
   state: BridgeState;
   onAction: (action: string, payload?: Record<string, unknown>) => void;
   intent?: AccountsPageIntent;
+  onIntentHandled?: () => void;
 };
 
 const modeOptions = [
@@ -63,7 +65,7 @@ const emptyAccountForm = {
   accountNotes: ""
 };
 
-export function AccountsPage({ state, onAction, intent }: Props) {
+export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props) {
   const [showInvalid, setShowInvalid] = useState(false);
   const [workerUrl, setWorkerUrl] = useState(state.remote?.baseUrl || "");
   const [sourceMode, setSourceMode] = useState(state.remote?.accountSourceMode || "cloud");
@@ -96,9 +98,12 @@ export function AccountsPage({ state, onAction, intent }: Props) {
   }, [state.remote?.baseUrl, state.remote?.accountSourceMode]);
 
   useEffect(() => {
+    const hasIntent = typeof intent?.showInvalid === "boolean" || Boolean(intent?.openAdd);
     if (typeof intent?.showInvalid === "boolean") setShowInvalid(intent.showInvalid);
     if (intent?.openAdd) setShowTypeSelect(true);
-  }, [intent?.showInvalid, intent?.openAdd]);
+    // 设置页的快捷意图只消费一次，避免离开后再次进入账号页仍自动弹窗。
+    if (hasIntent) onIntentHandled?.();
+  }, [intent?.showInvalid, intent?.openAdd, onIntentHandled]);
 
   const saveRemote = () => {
     try {
@@ -191,48 +196,48 @@ export function AccountsPage({ state, onAction, intent }: Props) {
     return (
       <div
         key={account.id || accountName(account)}
-        className={`rounded-2xl border bg-white p-3 shadow-sm transition ${
-          selected ? "border-pink-300 ring-2 ring-pink-100" : ok ? "border-purple-50" : "border-rose-100 opacity-80"
+        className={`rounded-2xl border bg-white p-3.5 shadow-[var(--txzz-shadow-sm)] transition ${
+          selected ? "border-brand-300 ring-2 ring-brand-100" : ok ? "border-slate-200" : "border-danger-100 bg-danger-50/20"
         }`}
       >
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white shadow-sm ${ok ? "bg-gradient-to-br from-pink-400 to-purple-500" : "bg-slate-300"}`}>
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white ${ok ? "bg-brand-600" : "bg-slate-400"}`}>
               {accountName(account).slice(0, 1)}
             </div>
             <div className="min-w-0">
-              <p className="truncate text-xs font-bold text-purple-800">{accountName(account)}</p>
+              <p className="truncate text-[13px] font-semibold text-slate-900">{accountName(account)}</p>
               <div className="mt-1 flex flex-wrap gap-1">
-                {selected && <Pill className="bg-pink-100 text-pink-600">已选中</Pill>}
-                {cloud && <Pill className="bg-sky-100 text-sky-600">云端</Pill>}
-                <Pill className={ok ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"}>{accountStatusLabel(account)}</Pill>
+                {selected && <Pill className="bg-brand-100 text-brand-700">当前选中</Pill>}
+                {cloud && <Pill className="bg-info-50 text-info-600">云端只读</Pill>}
+                <Pill className={ok ? "bg-success-50 text-success-600" : "bg-danger-50 text-danger-600"}>{accountStatusLabel(account)}</Pill>
               </div>
             </div>
           </div>
-          {ok ? <CheckCircle size={16} className="mt-1 shrink-0 text-emerald-400" /> : <XCircle size={16} className="mt-1 shrink-0 text-rose-400" />}
+          {ok ? <CheckCircle size={17} className="mt-1 shrink-0 text-success-500" /> : <XCircle size={17} className="mt-1 shrink-0 text-danger-500" />}
         </div>
 
-        <div className="mt-2.5 grid grid-cols-3 gap-1.5">
-          <div className="rounded-xl bg-amber-50 px-2 py-1.5 text-center">
-            <Crown size={11} className={`mx-auto ${rights.vip ? "text-amber-500" : "text-slate-300"}`} />
-            <p className="mt-0.5 text-[9px] font-medium text-purple-500">{rights.vip ? "VIP" : "无 VIP"}</p>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <div className="rounded-xl border border-slate-100 bg-slate-50 px-2 py-2 text-center">
+            <Crown size={13} className={`mx-auto ${rights.vip ? "text-warning-500" : "text-slate-300"}`} />
+            <p className="mt-1 text-[11px] font-medium text-slate-600">{rights.vip ? "VIP 可用" : "无 VIP"}</p>
           </div>
-          <div className="rounded-xl bg-pink-50 px-2 py-1.5 text-center">
-            <Heart size={11} className={`mx-auto ${rights.dark ? "text-pink-500" : "text-slate-300"}`} />
-            <p className="mt-0.5 text-[9px] font-medium text-purple-500">{rights.dark ? "尤物圈" : "未开通"}</p>
+          <div className="rounded-xl border border-slate-100 bg-slate-50 px-2 py-2 text-center">
+            <Heart size={13} className={`mx-auto ${rights.dark ? "text-danger-500" : "text-slate-300"}`} />
+            <p className="mt-1 text-[11px] font-medium text-slate-600">{rights.dark ? "尤物圈" : "未开通"}</p>
           </div>
-          <div className="rounded-xl bg-orange-50 px-2 py-1.5 text-center">
-            <Coins size={11} className="mx-auto text-amber-500" />
-            <p className="mt-0.5 truncate text-[9px] font-medium text-purple-500">
+          <div className="rounded-xl border border-slate-100 bg-slate-50 px-2 py-2 text-center">
+            <Coins size={13} className="mx-auto text-warning-500" />
+            <p className="mt-1 truncate text-[11px] font-medium text-slate-600">
               {rights.coins !== undefined && rights.coins !== null ? rights.coins : "?"} 币
             </p>
           </div>
         </div>
 
         {cloud && (tokenMasked || lastVerified) && (
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-purple-300">
-            {tokenMasked && <span className="flex items-center gap-0.5"><Key size={9} />{tokenMasked}</span>}
-            {lastVerified && <span className="flex items-center gap-0.5"><ShieldCheck size={9} className="text-emerald-400" />{formatRelativeTime(lastVerified)}</span>}
+          <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
+            {tokenMasked && <span className="flex items-center gap-1"><Key size={11} />{tokenMasked}</span>}
+            {lastVerified && <span className="flex items-center gap-1"><ShieldCheck size={11} className="text-success-500" />{formatRelativeTime(lastVerified)}验证</span>}
           </div>
         )}
 
@@ -261,6 +266,21 @@ export function AccountsPage({ state, onAction, intent }: Props) {
 
   return (
     <PageShell>
+      <PageIntro
+        eyebrow="ACCOUNT CENTER"
+        title="账号池"
+        description="集中管理云端轮换策略、本地凭据与账号健康状态；敏感凭据仅在扩展后台使用。"
+        actions={<SoftButton size="sm" icon={Plus} onClick={() => setShowTypeSelect(true)}>添加本地账号</SoftButton>}
+        meta={
+          <>
+            <Pill className={state.remote?.lastError ? "bg-danger-50 text-danger-600" : state.remote?.lastSyncAt ? "bg-success-50 text-success-600" : "bg-warning-50 text-warning-600"}>
+              {state.remote?.lastError ? "云端连接异常" : state.remote?.lastSyncAt ? `云端已于${formatRelativeTime(state.remote.lastSyncAt)}同步` : "云端尚未同步"}
+            </Pill>
+            <Pill className="bg-slate-100 text-slate-600">{sourceMode === "local" ? "本地模式" : sourceMode === "cloud-first" ? "云端优先" : "云端自动轮换"}</Pill>
+          </>
+        }
+      />
+
       <StatGrid
         items={[
           { label: "全部", value: stats.total, tone: "purple" },
@@ -270,7 +290,7 @@ export function AccountsPage({ state, onAction, intent }: Props) {
         ]}
       />
 
-      <SectionCard title="云端连接" icon={Cloud} hint="填写服务地址后即可直接体检、同步和使用" tone="sky">
+      <SectionCard title="云端连接与轮换策略" icon={Cloud} hint="服务密钥已安全内置，只需填写地址；保存后会立即验证连接" tone="sky">
         <div className="space-y-3">
           <div>
             <FieldLabel htmlFor="txzz-worker-url">云端服务地址</FieldLabel>
@@ -295,14 +315,14 @@ export function AccountsPage({ state, onAction, intent }: Props) {
                     type="button"
                     onClick={() => setSourceMode(mode.val)}
                     aria-pressed={active}
-                    className={`rounded-xl border px-3 py-2 text-left transition ${
+                    className={`rounded-xl border px-3 py-2.5 text-left transition ${
                       active
-                        ? "border-transparent bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-md"
-                        : "border-pink-100 bg-white text-purple-600 hover:bg-purple-50"
+                        ? "border-brand-600 bg-brand-600 text-white shadow-sm"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-brand-200 hover:bg-brand-50"
                     }`}
                   >
-                    <p className="text-[11px] font-bold">{mode.label}</p>
-                    <p className={`mt-0.5 text-[9px] ${active ? "text-white/75" : "text-purple-300"}`}>{mode.desc}</p>
+                    <p className="text-[12px] font-semibold">{mode.label}</p>
+                    <p className={`mt-0.5 text-[11px] ${active ? "text-white/75" : "text-slate-500"}`}>{mode.desc}</p>
                   </button>
                 );
               })}
@@ -313,21 +333,21 @@ export function AccountsPage({ state, onAction, intent }: Props) {
             <SoftButton className="w-full" variant="sky" icon={RefreshCw} onClick={() => onAction("sync-remote")}>同步云端</SoftButton>
           </div>
           {configError && (
-            <p className="flex items-start gap-1.5 rounded-xl bg-rose-50 px-2.5 py-2 text-[10px] leading-relaxed text-rose-600" role="alert">
+            <p className="flex items-start gap-1.5 rounded-xl bg-danger-50 px-3 py-2.5 text-[12px] leading-relaxed text-danger-600" role="alert">
               <AlertTriangle size={12} className="mt-0.5 shrink-0" />{configError}
             </p>
           )}
           {state.remote?.lastSyncAt && (
-            <p className="flex items-center gap-1 text-[10px] text-emerald-500"><CheckCircle size={11} />上次同步：{formatRelativeTime(state.remote.lastSyncAt)}</p>
+            <p className="flex items-center gap-1.5 text-[11px] text-success-600"><CheckCircle size={12} />上次同步：{formatRelativeTime(state.remote.lastSyncAt)}</p>
           )}
           {state.remote?.lastError && (
-            <p className="rounded-xl bg-rose-50 px-2.5 py-1.5 text-[10px] text-rose-500">{state.remote.lastError}</p>
+            <p className="rounded-xl bg-danger-50 px-3 py-2 text-[11px] text-danger-600">{state.remote.lastError}</p>
           )}
         </div>
       </SectionCard>
 
       <div className="relative">
-        <Search size={14} className="pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-purple-300" />
+        <Search size={15} className="pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-slate-400" />
         <SoftInput
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -335,10 +355,11 @@ export function AccountsPage({ state, onAction, intent }: Props) {
           placeholder="搜索账号名称、用户名或备注"
           aria-label="搜索账号"
         />
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-purple-300">{accounts.length} 个</span>
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-400">{accounts.length} 个</span>
       </div>
 
-      <SectionCard
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <SectionCard
         title="云端账号"
         icon={Cloud}
         hint={query ? `找到 ${cloudAccounts.length} 个云端账号` : "只读轮换账号，不可手动删除"}
@@ -347,7 +368,7 @@ export function AccountsPage({ state, onAction, intent }: Props) {
             {showInvalid ? "隐藏失效" : "查看失效"}
           </SoftButton>
         }
-      >
+        >
         <div className="space-y-2">
           {cloudAccounts.length ? cloudAccounts.map(renderAccount) : (
             <EmptyState
@@ -358,9 +379,9 @@ export function AccountsPage({ state, onAction, intent }: Props) {
             />
           )}
         </div>
-      </SectionCard>
+        </SectionCard>
 
-      <SectionCard
+        <SectionCard
         title="本地账号"
         icon={HardDrive}
         hint={query ? `找到 ${localAccounts.length} 个本地账号` : "可手动添加、选择、上传与删除"}
@@ -369,7 +390,7 @@ export function AccountsPage({ state, onAction, intent }: Props) {
             添加
           </SoftButton>
         }
-      >
+        >
         <div className="space-y-2">
           {localAccounts.length ? localAccounts.map(renderAccount) : (
             <EmptyState
@@ -380,7 +401,8 @@ export function AccountsPage({ state, onAction, intent }: Props) {
             />
           )}
         </div>
-      </SectionCard>
+        </SectionCard>
+      </div>
 
       <ModalSheet open={showTypeSelect} onClose={() => setShowTypeSelect(false)} title="选择账号类型">
         <div className="space-y-2">
@@ -393,10 +415,10 @@ export function AccountsPage({ state, onAction, intent }: Props) {
               key={item.type}
               type="button"
               onClick={() => chooseType(item.type)}
-              className="w-full rounded-2xl border border-pink-100 bg-gradient-to-r from-pink-50 to-purple-50 p-3.5 text-left transition hover:from-pink-100 hover:to-purple-100 active:scale-[0.99]"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-brand-200 hover:bg-brand-50 active:scale-[0.99]"
             >
-              <p className="text-sm font-bold text-purple-800">{item.label}</p>
-              <p className="mt-0.5 text-[11px] text-purple-400">{item.desc}</p>
+              <p className="text-[14px] font-semibold text-slate-900">{item.label}</p>
+              <p className="mt-1 text-[12px] text-slate-500">{item.desc}</p>
             </button>
           ))}
         </div>
@@ -415,7 +437,7 @@ export function AccountsPage({ state, onAction, intent }: Props) {
       >
         <div className="space-y-2.5">
           {editingAccountId && (
-            <p className="rounded-xl bg-sky-50 px-3 py-2 text-[10px] leading-relaxed text-sky-600">
+            <p className="rounded-xl bg-info-50 px-3 py-2.5 text-[12px] leading-relaxed text-info-600">
               凭据输入框留空会保留原凭据；只有填写新内容时才会替换。
             </p>
           )}
@@ -457,7 +479,7 @@ export function AccountsPage({ state, onAction, intent }: Props) {
             <FieldLabel htmlFor="txzz-account-notes">备注（可选）</FieldLabel>
             <SoftInput id="txzz-account-notes" placeholder="备注说明" value={form.accountNotes} onChange={(e) => setForm({ ...form, accountNotes: e.target.value })} />
           </div>
-          {formError && <p className="rounded-xl bg-rose-50 px-3 py-2 text-[10px] text-rose-600" role="alert">{formError}</p>}
+          {formError && <p className="rounded-xl bg-danger-50 px-3 py-2.5 text-[12px] text-danger-600" role="alert">{formError}</p>}
         </div>
       </ModalSheet>
 
@@ -483,8 +505,8 @@ export function AccountsPage({ state, onAction, intent }: Props) {
         }
       >
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-500"><AlertTriangle size={18} /></div>
-          <p className="text-xs leading-relaxed text-purple-500">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-danger-50 text-danger-500"><AlertTriangle size={18} /></div>
+          <p className="text-[13px] leading-relaxed text-slate-600">
             将删除“{pendingDelete ? accountName(pendingDelete) : "该账号"}”及其本地凭据。云端已上传的账号不会一并删除。
           </p>
         </div>

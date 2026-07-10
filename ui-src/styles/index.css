@@ -66,34 +66,17 @@
   pointer-events: auto;
 }
 
-/* 提升浅色卡片上的正文对比度，避免原紫色层级在低亮度手机上过淡。 */
-#txzz-candy-ui .text-purple-300 {
-  color: #8b5cf6;
-}
-
-#txzz-candy-ui .text-purple-400 {
-  color: #7e22ce;
-}
-
 #txzz-candy-ui input::placeholder,
 #txzz-candy-ui textarea::placeholder {
-  color: #a78bfa;
-  opacity: 0.86;
-}
-
-.txzz-page .text-\[9px\] {
-  font-size: 0.625rem;
-}
-
-.txzz-page .text-\[10px\] {
-  font-size: 0.6875rem;
+  color: var(--txzz-text-muted);
+  opacity: 1;
 }
 
 /* 面板业务页统一滚动与触控体验 */
 .txzz-app-main {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  scrollbar-color: rgba(192, 132, 252, 0.45) transparent;
+  scrollbar-color: var(--txzz-border-strong) transparent;
 }
 
 .txzz-app-main::-webkit-scrollbar {
@@ -101,7 +84,7 @@
 }
 
 .txzz-app-main::-webkit-scrollbar-thumb {
-  background: rgba(192, 132, 252, 0.4);
+  background: var(--txzz-border-strong);
   border-radius: 999px;
 }
 
@@ -109,40 +92,16 @@
   min-height: 100%;
 }
 
-/* 快捷操作按钮：内联渐变 + 原生 CSS 双保险，防止白底白字 */
+/* 宿主站点可能重置 button 外观，这里只恢复浏览器基础行为，具体视觉交给组件。 */
 .txzz-quick-action-btn {
   -webkit-appearance: none;
   appearance: none;
   cursor: pointer;
-  color: #fff !important;
-  border: 0 !important;
   outline: none;
-}
-
-/* 播放页信息头按钮：强制可见底色与文字 */
-.txzz-playback-hero-btn {
-  -webkit-appearance: none !important;
-  appearance: none !important;
-  cursor: pointer;
-  outline: none;
-}
-
-.txzz-playback-hero-btn:disabled {
-  opacity: 0.4;
-}
-
-.txzz-playback-hero {
-  color: #fff;
 }
 
 .txzz-quick-action-btn svg {
-  color: #fff !important;
-  stroke: #fff !important;
   flex-shrink: 0;
-}
-
-.txzz-quick-action-btn span {
-  color: #fff !important;
 }
 
 .txzz-section {
@@ -150,16 +109,38 @@
 }
 
 .txzz-section:hover {
-  box-shadow: 0 10px 32px rgba(147, 51, 234, 0.08);
+  box-shadow: var(--txzz-shadow-md);
 }
 
 .txzz-app-panel-frame {
   animation: txzz-panel-in 0.22s ease-out;
 }
 
+/* 弹层尺寸由视口内容盒约束，横屏矮屏和安全区下头部、正文、底部动作都可达。 */
+.txzz-modal-layer {
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-right: max(12px, env(safe-area-inset-right));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  padding-left: max(12px, env(safe-area-inset-left));
+}
+
+.txzz-modal-content {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (min-width: 640px) {
+  .txzz-modal-layer {
+    padding-top: max(24px, env(safe-area-inset-top));
+    padding-right: max(24px, env(safe-area-inset-right));
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    padding-left: max(24px, env(safe-area-inset-left));
+  }
+}
+
 /* 键盘操作提供统一且清晰的焦点环，鼠标点击时不额外干扰视觉。 */
 #txzz-candy-ui :where(button, input, textarea, select, [tabindex]):focus-visible {
-  outline: 2px solid #a855f7 !important;
+  outline: 2px solid var(--txzz-ring, #8175ff) !important;
   outline-offset: 2px !important;
 }
 
@@ -186,6 +167,17 @@
 @media (min-width: 640px) {
   .txzz-app-toast {
     bottom: 32px !important;
+  }
+}
+
+/* 宽屏播放工作区优先保证播放器尺寸，保障面板保持紧凑但不挤压主画面。 */
+@media (min-width: 1280px) {
+  .txzz-playback-workspace {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr) !important;
+  }
+
+  .txzz-playback-workspace .txzz-playback-lines {
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 }
 
@@ -226,16 +218,18 @@
     }
   }
 
-  /* 手机端业务按钮保留足够触控高度，降低误触。 */
+  /* 手机端业务按钮保留完整触控高度，降低误触。 */
   .txzz-page button:not(.txzz-player-control-button) {
-    min-height: 36px;
+    min-height: 44px;
   }
 
   /* 顶部与浮层小图标同样提供完整触控区，避免只能点中图标本身。 */
   .txzz-app-header button:not(.hidden),
-  .txzz-app-toast button {
-    min-width: 36px;
-    min-height: 36px;
+  .txzz-app-toast button,
+  .txzz-modal-sheet button,
+  .txzz-update-reminder button {
+    min-width: 44px;
+    min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -486,6 +480,12 @@
   pointer-events: auto;
 }
 
+/* 无链接或锁屏时不拦截滚动/点击；解锁按钮位于独立高层。 */
+.txzz-player-gesture-surface--disabled {
+  pointer-events: none !important;
+  touch-action: pan-y !important;
+}
+
 /* 双击区域闪烁（主流 App 左右快进视觉） */
 .txzz-gesture-zone-flash {
   position: absolute;
@@ -592,7 +592,7 @@
   filter: none !important;
   -webkit-filter: none !important;
   object-fit: contain !important;
-  object-position: center center !important;
+  object-position: var(--txzz-player-video-position-x, 50%) 50% !important;
   background: #000 !important;
   opacity: 1 !important;
   visibility: visible !important;
@@ -714,7 +714,7 @@
   transform: none !important;
   -webkit-transform: none !important;
   object-fit: contain !important;
-  object-position: center center !important;
+  object-position: var(--txzz-player-video-position-x, 50%) 50% !important;
   background: transparent !important;
   background-color: transparent !important;
   opacity: 1 !important;
@@ -806,138 +806,18 @@
   border-radius: 9999px !important;
 }
 
-#txzz-candy-ui .bg-gradient-to-br.from-pink-50.via-purple-50.to-violet-50 {
-  background-image: linear-gradient(135deg, #fdf2f8 0%, #faf5ff 50%, #f5f3ff 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-r.from-pink-500.to-purple-600 {
-  background-image: linear-gradient(90deg, #ec4899 0%, #9333ea 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-br.from-pink-400.via-rose-400.to-purple-600 {
-  background-image: linear-gradient(135deg, #f472b6 0%, #fb7185 50%, #9333ea 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-b.from-pink-400.via-rose-400.to-purple-600 {
-  background-image: linear-gradient(180deg, #f472b6 0%, #fb7185 50%, #9333ea 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-br.from-pink-400.to-purple-600 {
-  background-image: linear-gradient(135deg, #f472b6 0%, #9333ea 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-br.from-pink-400.to-purple-500 {
-  background-image: linear-gradient(135deg, #f472b6 0%, #a855f7 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-br.from-pink-400.via-purple-400.to-violet-500 {
-  background-image: linear-gradient(135deg, #f472b6 0%, #c084fc 50%, #8b5cf6 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-r.from-pink-400.to-rose-400,
-#txzz-candy-ui .bg-gradient-to-br.from-pink-400.to-rose-400 {
-  background-image: linear-gradient(135deg, #f472b6 0%, #fb7185 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-r.from-purple-400.to-violet-400,
-#txzz-candy-ui .bg-gradient-to-br.from-purple-400.to-violet-400 {
-  background-image: linear-gradient(135deg, #c084fc 0%, #a78bfa 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-r.from-sky-400.to-blue-400,
-#txzz-candy-ui .bg-gradient-to-br.from-sky-400.to-blue-400 {
-  background-image: linear-gradient(135deg, #38bdf8 0%, #60a5fa 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-r.from-amber-400.to-orange-400,
-#txzz-candy-ui .bg-gradient-to-br.from-amber-400.to-orange-400 {
-  background-image: linear-gradient(135deg, #fbbf24 0%, #fb923c 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-br.from-purple-400.to-violet-500 {
-  background-image: linear-gradient(135deg, #c084fc 0%, #8b5cf6 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-br.from-pink-400.via-rose-400.to-purple-500 {
-  background-image: linear-gradient(135deg, #f472b6 0%, #fb7185 50%, #a855f7 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-r.from-sky-400.to-blue-500 {
-  background-image: linear-gradient(90deg, #38bdf8 0%, #3b82f6 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-r.from-purple-400.to-violet-500 {
-  background-image: linear-gradient(90deg, #c084fc 0%, #8b5cf6 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-r.from-pink-400.to-purple-500 {
-  background-image: linear-gradient(90deg, #f472b6 0%, #a855f7 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-r.from-pink-400.to-purple-400 {
-  background-image: linear-gradient(90deg, #f472b6 0%, #c084fc 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-r.from-rose-400.to-pink-500 {
-  background-image: linear-gradient(90deg, #fb7185 0%, #ec4899 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-r.from-pink-50.to-purple-50 {
-  background-image: linear-gradient(90deg, #fdf2f8 0%, #faf5ff 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-br.from-emerald-400.to-sky-500 {
-  background-image: linear-gradient(135deg, #34d399 0%, #0ea5e9 100%) !important;
-}
-
-#txzz-candy-ui .bg-gradient-to-br.from-rose-400.to-pink-500 {
-  background-image: linear-gradient(135deg, #fb7185 0%, #ec4899 100%) !important;
-}
-
 /* ============================================================
-   播放器增强全屏动画 & 过渡效果
+   播放器控制层与全屏体验
    ============================================================ */
 
-/* 全屏进入过渡 */
-.txzz-fullscreen-entering {
-  animation: txzz-fullscreen-in 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-
-/* 全屏退出过渡 */
-.txzz-fullscreen-exiting {
-  animation: txzz-fullscreen-out 0.28s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-
-/* 全屏激活状态 */
+/* 全屏激活状态只依赖真实容器尺寸，避免切换方向时旧视口变量把画面压缩为 0。 */
 .txzz-fullscreen-active {
   position: fixed !important;
   inset: 0 !important;
   z-index: 2147483640 !important;
-  width: var(--txzz-player-viewport-width, 100vw) !important;
-  height: var(--txzz-player-viewport-height, 100dvh) !important;
+  width: 100% !important;
+  height: 100% !important;
   background: #000 !important;
-}
-
-@keyframes txzz-fullscreen-in {
-  from {
-    opacity: 0.7;
-    transform: scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes txzz-fullscreen-out {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0.7;
-    transform: scale(0.96);
-  }
 }
 
 /* 播放器壳层基础样式 */
@@ -949,8 +829,6 @@
   isolation: isolate;
 }
 
-.txzz-player-shell--fullscreen,
-.txzz-player-shell--immersive,
 .txzz-player-fullscreen-shell {
   border-radius: 0 !important;
 }
@@ -968,12 +846,6 @@
 /* 普通模式控制层也略微提升可读性 */
 .txzz-player-shell:not(.txzz-player-fullscreen-shell) .txzz-player-control-panel {
   border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* 播放器舞台只负责动效和承载，不再负责旋转控件，方向交给系统横竖屏能力。 */
-.txzz-player-stage {
-  transform-origin: center center;
-  transition: transform 0.18s ease;
 }
 
 /* 播放页真实运行的全屏舞台：优先系统方向锁定；失败时再走 CSS 横屏兜底。 */
@@ -1001,6 +873,7 @@
  * 把全屏壳旋转 90° 并交换宽高，让横屏片 + 控制栏变成横屏布局。
  * 仅在 .txzz-player-css-landscape 时启用，退出全屏自动失效。
  */
+:host(.txzz-player-fullscreen-mode) .txzz-player-fullscreen-shell.txzz-player-css-landscape,
 .txzz-player-fullscreen-shell.txzz-player-css-landscape {
   position: fixed !important;
   top: 50% !important;
@@ -1122,10 +995,6 @@
     margin-bottom: 8px !important;
   }
 
-  :host(.txzz-player-fullscreen-mode) .txzz-player-control-grid {
-    gap: 6px !important;
-  }
-
   :host(.txzz-player-fullscreen-mode) .txzz-player-control-button {
     min-height: 36px !important;
     border-radius: 12px !important;
@@ -1145,15 +1014,6 @@
   }
 }
 
-/* 移动端：全屏时隐藏浏览器 UI */
-@media (max-width: 768px) {
-  .txzz-player-shell--fullscreen,
-  .txzz-player-shell--immersive {
-    height: 100dvh !important;
-    width: 100dvw !important;
-  }
-}
-
 /* 加载动画（3px border spinner） */
 @keyframes txzz-spin {
   to { transform: rotate(360deg); }
@@ -1163,19 +1023,14 @@
   width: 2.5rem;
   height: 2.5rem;
   border: 3px solid rgba(255, 255, 255, 0.15);
-  border-top-color: #ec4899;
+  border-top-color: var(--txzz-brand);
   border-radius: 50%;
   animation: txzz-spin 0.8s linear infinite;
 }
 
-/* 进度条悬停时整体放大 */
-.txzz-player-shell:fullscreen .group\/bar:hover > div {
-  height: 10px !important;
-}
-
-/* 重构后的主控栏：左右贴边、中间不塞状态，避免横屏大空白。 */
+/* 主控栏：高频动作固定、低频能力进入统一设置面板。 */
 .txzz-player-control-row {
-  min-height: 2.5rem;
+  min-height: 2.75rem;
   width: 100%;
 }
 
@@ -1184,8 +1039,8 @@
   flex-wrap: nowrap;
 }
 
-.txzz-player-quick-row {
-  opacity: 0.96;
+.txzz-player-shell {
+  container-type: size;
 }
 
 /* 横屏矮屏紧凑控制层：贴底、无圆角卡片感、少遮挡画面。 */
@@ -1214,12 +1069,8 @@
   bottom: 0 !important;
 }
 
-/* 横屏：无论是否全屏，都隐藏快捷条，清晰度等进「菜单」。 */
+/* 横屏矮屏：控制条压缩到安全区内，设置面板内部滚动。 */
 @media (orientation: landscape) and (max-height: 520px) {
-  .txzz-player-shell .txzz-player-quick-row {
-    display: none !important;
-  }
-
   .txzz-player-shell .txzz-player-control-panel {
     left: 0 !important;
     right: 0 !important;
@@ -1249,39 +1100,87 @@
   }
 }
 
-.txzz-player-more-sheet {
-  max-height: min(38vh, 280px);
-  overflow-y: auto;
+/* 设置菜单使用播放器范围内的真实遮罩；点击空白处关闭，避免 aria-modal 与鼠标行为不一致。 */
+.txzz-player-menu-backdrop {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  z-index: 39;
+  width: 100cqw;
+  height: 100cqh;
+  transform: translateX(-50%);
+  background: rgba(2, 6, 23, 0.32);
+  backdrop-filter: blur(1px);
+}
+
+/* 四分类播放器设置：随播放器容器高度收缩，任何尺寸下顶部和关闭按钮都不会被裁掉。 */
+.txzz-player-menu-sheet {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 40;
+  display: flex;
+  width: min(34rem, 100%);
+  max-height: min(22rem, calc(100cqh - 1rem));
+  min-height: 0;
+  margin: 0 auto;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  background: rgba(7, 13, 24, 0.96);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(18px);
+  animation: txzz-player-menu-in 0.16s ease-out;
   overscroll-behavior: contain;
+}
+
+.txzz-player-menu-body {
+  min-height: 0;
+  flex: 1;
   scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
 }
 
-/* 多级菜单：强制小图标与紧凑点击区，避免遮挡播放画面。 */
-.txzz-player-more-sheet .txzz-player-chip {
-  min-height: 32px;
-  font-size: 10px;
-  line-height: 1.1;
-  padding-left: 6px;
-  padding-right: 6px;
+.txzz-player-menu-body::-webkit-scrollbar {
+  width: 6px;
 }
 
-.txzz-player-more-sheet .txzz-player-chip svg {
-  width: 12px !important;
-  height: 12px !important;
-  flex-shrink: 0;
+.txzz-player-menu-body::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.4);
 }
 
-.txzz-player-more-sheet .txzz-player-control-button {
-  min-height: 32px !important;
-  min-width: 32px !important;
-  font-size: 10px !important;
-  padding-left: 6px !important;
-  padding-right: 6px !important;
+@keyframes txzz-player-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
-.txzz-player-more-sheet .txzz-player-control-button svg {
-  width: 11px !important;
-  height: 11px !important;
+@supports not (height: 1cqh) {
+  .txzz-player-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    transform: none;
+  }
+
+  .txzz-player-menu-sheet {
+    max-height: min(60vh, 22rem);
+  }
+}
+
+@container (max-height: 320px) {
+  .txzz-player-menu-sheet > footer {
+    display: none;
+  }
 }
 
 /* 主控栏图标统一上限，防止全屏时被浏览器缩放拉大。 */
@@ -1298,8 +1197,9 @@
 }
 
 .txzz-player-range {
-  height: 0.35rem;
+  height: 0.45rem;
   cursor: pointer;
+  touch-action: none;
 }
 
 .txzz-player-control-panel .txzz-player-control-button {
@@ -1311,17 +1211,39 @@
   gap: 0.45rem;
 }
 
-.txzz-player-fullscreen-shell .txzz-player-quick-row {
-  margin-top: 0.55rem;
+.txzz-player-control-panel--compact .txzz-player-control-secondary {
+  display: none !important;
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
-  .txzz-player-fullscreen-shell .txzz-player-quick-row {
-    display: none;
+  .txzz-player-menu-sheet {
+    max-height: min(18rem, calc(100cqh - 0.75rem));
   }
 
-  .txzz-player-fullscreen-shell .txzz-player-more-sheet {
-    max-height: min(48vh, 220px);
+  .txzz-player-menu-section {
+    padding: 0.6rem !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .txzz-player-control-secondary {
+    display: none !important;
+  }
+
+  .txzz-player-control-row {
+    gap: 0.35rem;
+  }
+
+  .txzz-player-control-left,
+  .txzz-player-control-right {
+    gap: 0.25rem !important;
+  }
+
+  .txzz-player-control-button {
+    min-width: 2.25rem !important;
+    min-height: 2.25rem !important;
+    padding-left: 0.4rem !important;
+    padding-right: 0.4rem !important;
   }
 }
 

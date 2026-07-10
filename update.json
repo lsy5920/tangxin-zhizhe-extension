@@ -1,9 +1,9 @@
 {
-  "schema": 2,
+  "schema": 3,
   "name": "糖心志者",
-  "version": "3.6.0",
-  "build": "2026-07-10-1010",
-  "releasedAt": "2026-07-10 10:10",
+  "version": "3.7.0",
+  "build": "2026-07-10-1712",
+  "releasedAt": "2026-07-10 17:12",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,18 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-1712",
+      "type": "优化",
+      "title": "播放器全屏可靠性与签名升级系统 v7 最终发布",
+      "detail": "播放器完成主控栏、四分类菜单、状态覆盖层、手势和右键菜单重构；历史预览使用各自 movieId 与主备线路，紧凑横屏保留锁屏入口，全屏 generation 阻止旧计时器回写，HLS 恢复后清除连续错误，菜单支持焦点循环与键盘导航，Shadow DOM 后置全屏样式也统一消费安全区居中变量。升级系统 v7 使用固定 RSA 公钥验证 schema 3 清单，严格固定 owner/repo/branch/path，多源只在签名有效结果中选最新并拒绝回退；同一份完整 CRX3 字节依次校验大小、SHA-256、正式扩展 ID 和包自身签名，再通过本地数据源提交下载，消除两次请求竞态。升级中心与检测弹窗统一真实阶段，修复错误状态误下载、设置导航、弹层栈、滚动锁、忽略持久化和复制反馈。发布门禁会验证清单签名、CRX3 签名、ZIP 中央目录与 CRC32，并逐字节核对全部运行时文件。"
+    },
+    {
+      "id": "2026-07-10-1303",
+      "type": "优化",
+      "title": "专业工作台、播放保障与全尺寸体验重构",
+      "detail": "统一设计令牌与弹层规范，重构总览、账号池、播放、下载、设置和升级中心；桌面端采用深色侧栏与双栏播放保障，移动端采用安全区底栏。新增设置分类导航、下载批量菜单与失败任务节流重试；修复双滚动、动态渐变、提示常驻、重复确认、缓存假复选框和错误线路推荐。真实验证金币视频 35602 在已有主备链接时直接播放，全程未发送购买请求。"
+    },
     {
       "id": "2026-07-10-1010",
       "type": "修复",
@@ -99,5 +111,13 @@
       "title": "完全重构升级系统 · 专业状态机与视觉中心",
       "detail": "升级系统状态机与专业更新弹窗。"
     }
-  ]
+  ],
+  "extensionId": "ghbbddahmhhmjknofkmdkcflbmplcace",
+  "packageSize": 556518,
+  "packageSha256": "ac73706034f1343dd04da45b8b1cc5f7ba62170408c475009787bfcf96422bad",
+  "signature": {
+    "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
+    "keyId": "sha256:67113307c77c9ade5ac3a25b1cfb2024c14cc6f3c2af43eb8207b1ad9d418884",
+    "value": "O7JgtUP1PN9wOYotzvnxvO2utVaAOPXEC6jLALHheAET1hTTkMF5ET8jglpebVEGaTSzdxOoWpBsTy5nOyHg7g6PKs9WsV6U+MeWB3rWfSrOp57Uzgjj0AbtI/rzHhf2+z7oMEx6bpzPP4FjseM9ZejalQNDGngbmajhFT7oWW/KMh+iy4qMLz46E/+ff1MpeJQio0cvTAA/PKxRI820TWOdHnJC44dycGM7Tq7oc2MNdVOP/g3KOOcjEu5LxiDf3i27OztKV4QxlS/cc7RPU6Cad7Wh8LEwP29pskommx8wKn6HFpEcFDg3/2v2zCGnXPY27Lvw0WdGbW4DKyBFBg=="
+  }
 }

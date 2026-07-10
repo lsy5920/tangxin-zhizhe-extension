@@ -10,14 +10,24 @@
  *   releases/tangxin-zhizhe-{version}.crx
  *   releases/extension-id.txt
  *
- * 签名密钥 keys/txzz-extension.pem 首次自动生成，必须备份；
- * 同一把密钥才能保证扩展 ID 不变，用户更新时覆盖安装不丢数据。
+ * 签名密钥 keys/txzz-extension.pem 必须由发布者安全保管；缺失时立即终止，
+ * 禁止静默生成新密钥导致扩展 ID 改变、用户无法覆盖更新。
  */
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import {
+  EXPECTED_EXTENSION_ID,
+  RELEASE_INCLUDE_PATHS,
+  UPDATE_PUBLIC_KEY_ID,
+  UPDATE_PUBLIC_KEY_SHA256,
+  UPDATE_PUBLIC_KEY_SPKI_BASE64,
+  UPDATE_SCHEMA_VERSION,
+  UPDATE_SIGNATURE_ALGORITHM,
+  updateManifestSigningText
+} from "./release-config.mjs";
 
 const require = createRequire(import.meta.url);
 const ChromeExtension = require("crx");
@@ -29,23 +39,6 @@ const KEY_DIR = path.join(ROOT, "keys");
 const KEY_PATH = path.join(KEY_DIR, "txzz-extension.pem");
 const STAGE_DIR = path.join(ROOT, "build", "extension-stage");
 const RELEASE_DIR = path.join(ROOT, "releases");
-
-/** 运行时需要打进 CRX 的文件/目录（相对项目根） */
-const INCLUDE_PATHS = [
-  "manifest.json",
-  "background.js",
-  "content.js",
-  "display_patch.js",
-  "nav_guard.js",
-  "page_hook.js",
-  "page_probe.js",
-  "offscreen.html",
-  "offscreen_downloader.js",
-  "update.json",
-  "README.md",
-  "dist-ui",
-  "vendor"
-];
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
@@ -76,39 +69,18 @@ function readManifest() {
   return JSON.parse(raw);
 }
 
+function readUpdateManifest() {
+  const raw = fs.readFileSync(path.join(ROOT, "update.json"), "utf8");
+  return JSON.parse(raw);
+}
+
 function ensurePrivateKey() {
-  ensureDir(KEY_DIR);
-  if (fs.existsSync(KEY_PATH)) {
-    return fs.readFileSync(KEY_PATH);
-  }
-  console.log("[pack-crx] 未找到签名密钥，正在生成 keys/txzz-extension.pem …");
-  const { privateKey } = crypto.generateKeyPairSync("rsa", {
-    modulusLength: 2048,
-    publicKeyEncoding: { type: "spki", format: "pem" },
-    privateKeyEncoding: { type: "pkcs8", format: "pem" }
-  });
-  // crx 库需要传统 PKCS#1 PEM（BEGIN RSA PRIVATE KEY）
-  const keyObject = crypto.createPrivateKey(privateKey);
-  const rsaPem = keyObject.export({ type: "pkcs1", format: "pem" });
-  fs.writeFileSync(KEY_PATH, rsaPem, { encoding: "utf8", mode: 0o600 });
-  const readme = path.join(KEY_DIR, "README.md");
-  if (!fs.existsSync(readme)) {
-    fs.writeFileSync(
-      readme,
-      [
-        "# 扩展签名密钥",
-        "",
-        "- `txzz-extension.pem`：CRX 签名私钥，**严禁公开上传到公开仓库**。",
-        "- 丢失后重新生成会导致扩展 ID 变化，用户无法平滑覆盖更新。",
-        "- 请备份到安全位置（U 盘 / 密码管理器附件）。",
-        "- 打包命令：`npm run pack` 或 `npm run release`。",
-        ""
-      ].join("\n"),
-      "utf8"
+  if (!fs.existsSync(KEY_PATH)) {
+    throw new Error(
+      "缺少固定签名私钥 keys/txzz-extension.pem。为保护正式扩展 ID，打包程序不会自动生成替代密钥；请从安全备份恢复。"
     );
   }
-  console.log("[pack-crx] 已生成密钥，请立刻备份 keys/txzz-extension.pem");
-  return Buffer.from(rsaPem, "utf8");
+  return fs.readFileSync(KEY_PATH);
 }
 
 function prepareStage() {
@@ -116,7 +88,7 @@ function prepareStage() {
   ensureDir(STAGE_DIR);
 
   const missing = [];
-  for (const rel of INCLUDE_PATHS) {
+  for (const rel of RELEASE_INCLUDE_PATHS) {
     const src = path.join(ROOT, rel);
     if (!fs.existsSync(src)) {
       missing.push(rel);
@@ -154,11 +126,59 @@ function computeExtensionId(privateKeyPem) {
   return extensionIdFromPublicKey(publicDer);
 }
 
+function verifyReleaseIdentity(privateKeyPem, manifest) {
+  const keyObject = crypto.createPrivateKey(privateKeyPem);
+  const publicDer = crypto.createPublicKey(keyObject).export({ type: "spki", format: "der" });
+  const extensionId = extensionIdFromPublicKey(publicDer);
+  const publicKeyBase64 = publicDer.toString("base64");
+  const publicKeySha256 = crypto.createHash("sha256").update(publicDer).digest("hex");
+  if (extensionId !== EXPECTED_EXTENSION_ID) {
+    throw new Error(`签名私钥对应扩展 ID ${extensionId}，与正式 ID ${EXPECTED_EXTENSION_ID} 不一致`);
+  }
+  if (publicKeyBase64 !== UPDATE_PUBLIC_KEY_SPKI_BASE64 || publicKeySha256 !== UPDATE_PUBLIC_KEY_SHA256) {
+    throw new Error("签名私钥与仓库固定的更新公钥不一致");
+  }
+  if (String(manifest.key || "") !== publicKeyBase64) {
+    throw new Error("manifest.json 的 key 未固定为正式扩展公钥");
+  }
+  return { extensionId, publicDer, publicKeyBase64, publicKeySha256 };
+}
+
+function signUpdateManifest(updateManifest, privateKey, packageMeta) {
+  const unsigned = {
+    ...updateManifest,
+    schema: UPDATE_SCHEMA_VERSION,
+    packageFormat: "crx",
+    extensionId: packageMeta.extensionId,
+    packageSize: packageMeta.size,
+    packageSha256: packageMeta.sha256
+  };
+  delete unsigned.signature;
+  const payload = Buffer.from(updateManifestSigningText(unsigned), "utf8");
+  const value = crypto.sign("sha256", payload, {
+    key: privateKey,
+    padding: crypto.constants.RSA_PKCS1_PADDING
+  }).toString("base64");
+  return {
+    ...unsigned,
+    signature: {
+      algorithm: UPDATE_SIGNATURE_ALGORITHM,
+      keyId: UPDATE_PUBLIC_KEY_ID,
+      value
+    }
+  };
+}
+
 async function packCrx() {
   const manifest = readManifest();
   const version = String(manifest.version || "0.0.0");
+  const updateManifest = readUpdateManifest();
+  const build = String(updateManifest.build || "");
+  if (String(updateManifest.version || "") !== version) {
+    throw new Error(`manifest.json 版本 ${version} 与 update.json 版本 ${updateManifest.version || "未填写"} 不一致`);
+  }
   const privateKey = ensurePrivateKey();
-  const extensionId = computeExtensionId(privateKey);
+  const { extensionId, publicKeySha256 } = verifyReleaseIdentity(privateKey, manifest);
 
   console.log(`[pack-crx] 版本 ${version}`);
   console.log(`[pack-crx] 扩展 ID ${extensionId}`);
@@ -169,6 +189,12 @@ async function packCrx() {
   const crx = new ChromeExtension({ privateKey });
   await crx.load(STAGE_DIR);
   const crxBuffer = await crx.pack();
+  const sha256 = crypto.createHash("sha256").update(crxBuffer).digest("hex");
+  const signedUpdateManifest = signUpdateManifest(updateManifest, privateKey, {
+    extensionId,
+    size: crxBuffer.length,
+    sha256
+  });
 
   const latestName = "tangxin-zhizhe-latest.crx";
   const versionedName = `tangxin-zhizhe-${version}.crx`;
@@ -177,6 +203,7 @@ async function packCrx() {
 
   fs.writeFileSync(latestPath, crxBuffer);
   fs.writeFileSync(versionedPath, crxBuffer);
+  fs.writeFileSync(path.join(ROOT, "update.json"), `${JSON.stringify(signedUpdateManifest, null, 2)}\n`, "utf8");
   fs.writeFileSync(path.join(RELEASE_DIR, "extension-id.txt"), `${extensionId}\n`, "utf8");
   fs.writeFileSync(
     path.join(RELEASE_DIR, "latest.json"),
@@ -184,12 +211,16 @@ async function packCrx() {
       {
         name: "糖心志者",
         version,
+        build,
         extensionId,
         package: latestName,
         versionedPackage: versionedName,
         packedAt: new Date().toISOString(),
         format: "crx",
-        size: crxBuffer.length
+        size: crxBuffer.length,
+        sha256,
+        publicKeySha256,
+        updateManifestSignature: signedUpdateManifest.signature
       },
       null,
       2

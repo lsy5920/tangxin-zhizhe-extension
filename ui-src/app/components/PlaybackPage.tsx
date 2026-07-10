@@ -1,14 +1,27 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Artplayer from "artplayer";
 import Hls from "hls.js";
 import { Activity, AlertCircle, CheckCircle, Clock, Copy, Download, ExternalLink, Film, Gauge, Layers, Link, RefreshCw, Route, Save, Search, ShieldCheck, Signal, SortDesc, Timer, Wifi } from "lucide-react";
 import type { BridgeState, DownloadTask, FullDetail, Page } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadLineLabel, downloadProgress, downloadSpeedText, downloadStageLabel, downloadTaskForMovie, downloadTitle, formatBytes, formatDuration, isRunningDownloadTask, latestFullDetail, localizeFlowText, maskUrl, shortTime } from "../helpers";
-import { PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerMorePanelKey } from "./player/PlayerChrome";
+import { PlayerContextMenu, PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerMorePanelKey } from "./player/PlayerChrome";
 import { PlayerGestureHudOverlay, PlayerGestureSurface, type GestureHudState } from "./player/PlayerGestureSystem";
+import {
+  bestLine,
+  isPlaylistUrl,
+  lineScore,
+  lineState,
+  playbackHealth,
+  playbackTip,
+  previewLineLabel,
+  type PlaybackLine,
+  type PlaybackPreviewKey
+} from "./playback/playbackDomain";
+import { playbackHealthReport, playbackRecordReport, playbackRecordsReport } from "./playback/playbackReports";
 import {
   ActionToolbar,
   EmptyState,
+  ModalSheet,
   Pill,
   SectionCard,
   SoftButton,
@@ -34,26 +47,23 @@ type Props = {
   onPage?: (page: Page) => void;
 };
 
-type PlaybackLine = {
-  key: "play" | "backup";
-  label: string;
-  url?: string;
-  stat?: FullDetail["fullStat"];
-  copyAction: string;
-  openAction: string;
-};
-
 type PlaybackRecordFilter = "all" | "downloadable" | "saveable" | "failed" | "backup";
 type PlaybackRecordSort = "recent" | "failed" | "saveable" | "backup";
 type PlaybackPanelTab = "resource" | "download" | "records";
-type PlaybackPreviewKey = "recommended" | "play" | "backup" | "record";
 type PlayerFitMode = "auto" | "wide" | "vertical";
 type PlayerFillMode = "contain" | "cover" | "fill";
 type PlayerOrientationMode = "auto" | "landscape" | "portrait";
 type PlaybackPreviewRecord = {
-  url: string;
   title: string;
   movieId?: string;
+  playUrl: string;
+  backupUrl: string;
+  activeLine: "play" | "backup";
+};
+
+type FullscreenScheduledTask = {
+  kind: "timeout" | "animation-frame";
+  id: number;
 };
 
 type PlayerSnapshot = {
@@ -84,7 +94,6 @@ type PlayerFullscreenDiagnostic = {
 
 type PlayerFullscreenTune = {
   objectPositionX: number;
-  shiftX: number;
   safeLeft: number;
   safeRight: number;
   label: string;
@@ -127,64 +136,10 @@ const emptyFullscreenDiagnostic: PlayerFullscreenDiagnostic = {
 
 const emptyFullscreenTune: PlayerFullscreenTune = {
   objectPositionX: 50,
-  shiftX: 0,
   safeLeft: 0,
   safeRight: 0,
   label: "默认居中"
 };
-
-function lineState(line: PlaybackLine) {
-  if (!line.url) return { label: "缺少链接", color: "text-rose-600", bg: "bg-rose-50", ready: false, score: -10000 };
-  if (line.stat?.error) return { label: "探测异常", color: "text-amber-600", bg: "bg-amber-50", ready: false, score: lineScore(line) };
-  if (line.stat?.pending) return { label: "探测中", color: "text-sky-600", bg: "bg-sky-50", ready: true, score: lineScore(line) };
-  return { label: "可播放", color: "text-emerald-600", bg: "bg-emerald-50", ready: true, score: lineScore(line) };
-}
-
-/** 综合分片/时长/延迟/HTTP 状态打分，备用线更好时会优先推荐备用。 */
-function lineScore(line?: PlaybackLine | null) {
-  if (!line?.url) return -10000;
-  const stat = line.stat;
-  if (!stat) return 15;
-  if (stat.error) return -800 + Math.min(50, Number(stat.segments || 0));
-  if (stat.pending) return 25;
-  let score = 100;
-  const status = Number(stat.status || 0);
-  if (status >= 200 && status < 400) score += 60;
-  else if (status > 0) score -= 40;
-  const segments = Number(stat.segments || 0);
-  const duration = Number(stat.duration || 0);
-  const latency = Number((stat as { latencyMs?: number }).latencyMs || 0);
-  // 分片与时长越高通常越完整；延迟越低越好。
-  score += Math.min(50, segments / 4);
-  score += Math.min(40, duration / 20);
-  if (latency > 0) score += Math.max(0, 50 - Math.min(50, latency / 80));
-  if (segments <= 0 && duration <= 0) score -= 20;
-  return score;
-}
-
-function bestLine(lines: PlaybackLine[]) {
-  let best: PlaybackLine | undefined;
-  let bestScore = -Infinity;
-  for (const line of lines) {
-    const score = lineScore(line);
-    if (score > bestScore) {
-      bestScore = score;
-      best = line;
-    }
-  }
-  return best || lines.find((line) => line.url) || lines[0];
-}
-
-function isPlaylistUrl(url?: string) {
-  return /\.m3u8(?:[?#]|$)/i.test(String(url || "")) || /m3u8/i.test(String(url || ""));
-}
-
-function previewLineLabel(key: PlaybackPreviewKey) {
-  if (key === "play") return "主线路";
-  if (key === "backup") return "备用线路";
-  if (key === "record") return "播放记录";
-  return "推荐线路";
-}
 
 function playerResumeStorageKey(movieId?: string, url?: string) {
   // 断点续播优先按视频编号记忆，避免播放链接签名轮换后丢失续播进度；无编号时退回完整链接。
@@ -258,13 +213,11 @@ function measureVideoCenterDiagnostic(video: HTMLVideoElement | null, viewportWi
   const intrinsicHeight = Number(video.videoHeight || 0);
   const objectFit = window.getComputedStyle(video).objectFit || "contain";
   let displayWidth = rect.width;
-  let displayHeight = rect.height;
   if (intrinsicWidth > 0 && intrinsicHeight > 0 && rect.width > 0 && rect.height > 0 && objectFit !== "fill") {
     const widthRatio = rect.width / intrinsicWidth;
     const heightRatio = rect.height / intrinsicHeight;
     const scale = objectFit === "cover" ? Math.max(widthRatio, heightRatio) : Math.min(widthRatio, heightRatio);
     displayWidth = intrinsicWidth * scale;
-    displayHeight = intrinsicHeight * scale;
   }
   const videoCenterX = rect.left + rect.width / 2;
   const videoCenterY = rect.top + rect.height / 2;
@@ -384,7 +337,6 @@ function calculateFullscreenTune(video: HTMLVideoElement | null, fullscreenActiv
   const objectPositionX = Math.max(0, Math.min(100, 50 - (shiftX / availableSideSpace) * 100));
   return {
     objectPositionX,
-    shiftX: Math.round(shiftX),
     safeLeft,
     safeRight,
     label: `视觉居中 ${Math.round(objectPositionX)}% · 安全区左${safeLeft}px右${safeRight}px`
@@ -488,210 +440,12 @@ function releaseScreenOrientation() {
   }
 }
 
-function playbackTip(latest?: FullDetail) {
-  if (!latest) return "打开视频详情页后会自动记录播放资源。";
-  if (latest.fullStat?.error && latest.backupStat?.error) return "主备线路探测都异常，建议刷新播放资源或检查账号池。";
-  if (!latest.playLink && latest.backupLink) return "主线路缺失，已检测到备用线路，可先复制备用线路或重新刷新资源。";
-  if (latest.playLink && latest.backupLink) return "主备线路都已记录，播放卡顿时可切换备用线路。";
-  if (latest.playLink) return "主线路已就绪，播放不稳时可刷新资源获取最新链接。";
-  return "播放详情缺少可用链接，建议刷新资源或处理账号池。";
-}
-
-function playbackHealth(latest: FullDetail | undefined, lines: PlaybackLine[], preferredLine?: PlaybackLine) {
-  // 播放体检只使用当前已捕获的探测数据，不额外发请求，避免影响用户正在播放的视频。
-  const usableLines = lines.filter((line) => line.url && !line.stat?.error);
-  const readyLines = lines.filter((line) => lineState(line).ready && line.url);
-  const errorLines = lines.filter((line) => line.stat?.error);
-  const pendingLines = lines.filter((line) => line.stat?.pending);
-  const segmentTotal = preferredLine?.stat?.segments || latest?.fullStat?.segments || latest?.backupStat?.segments || 0;
-  const duration = preferredLine?.stat?.duration || latest?.fullStat?.duration || latest?.backupStat?.duration || 0;
-  const risks: string[] = [];
-  let score = 0;
-
-  if (latest) score += 15;
-  if (usableLines.length) score += 30;
-  if (readyLines.length > 1) score += 15;
-  else if (readyLines.length === 1) score += 10;
-  if (segmentTotal) score += 20;
-  if (duration) score += 10;
-  if (!errorLines.length && usableLines.length) score += 10;
-  else if (errorLines.length < lines.length) score += 4;
-  score = Math.max(0, Math.min(100, score));
-
-  if (!latest) {
-    risks.push("等待打开视频详情页后捕获播放资源。");
-  } else {
-    if (!usableLines.length) risks.push("暂未检测到可用线路，建议刷新播放资源或检查账号池。");
-    if (errorLines.length === lines.length) risks.push("主备线路都出现探测异常，需要优先刷新资源。");
-    else errorLines.forEach((line) => risks.push(`${line.label}探测异常，可先使用另一条线路。`));
-    if (pendingLines.length) risks.push("仍有线路在探测中，稍等片刻后可再次查看体检结果。");
-    if (!segmentTotal) risks.push("分片数量未知，播放卡顿时建议先刷新资源。");
-    if (usableLines.length === 1) risks.push("仅检测到一条线路，建议保留备用线路用于卡顿时切换。");
-    if (!risks.length) risks.push("线路信息完整，可以优先使用推荐线路播放或下载。");
-  }
-
-  const label = score >= 85 ? "优秀" : score >= 65 ? "可用" : score >= 35 ? "需观察" : latest ? "待刷新" : "待捕获";
-  const tone = score >= 85 ? "text-emerald-600" : score >= 65 ? "text-sky-600" : score >= 35 ? "text-amber-600" : "text-rose-600";
-  const bg = score >= 85 ? "bg-emerald-50" : score >= 65 ? "bg-sky-50" : score >= 35 ? "bg-amber-50" : "bg-rose-50";
-  const preferredScore = preferredLine ? lineScore(preferredLine) : -Infinity;
-  const summary = preferredLine?.url
-    ? `推荐优先使用${preferredLine.label}（线路分 ${Math.round(preferredScore)}），总体检 ${score}。`
-    : "暂未找到可推荐线路。";
-
-  return {
-    score,
-    label,
-    tone,
-    bg,
-    summary,
-    recommendedLabel: preferredLine?.url ? preferredLine.label : "暂无推荐",
-    recommendedScore: Number.isFinite(preferredScore) ? Math.round(preferredScore) : 0,
-    riskCount: latest ? Math.max(0, risks.filter((item) => !item.includes("信息完整")).length) : risks.length,
-    risks
-  };
-}
-
-function lineReport(line: PlaybackLine) {
-  const stateInfo = lineState(line);
-  const lineUrl = absoluteUrl(line.url || "");
-  return [
-    `${line.label}：${stateInfo.label}`,
-    `完整链接：${lineUrl || "暂无"}`,
-    `分片数量：${line.stat?.segments || "未知"}`,
-    `视频时长：${line.stat?.duration ? formatDuration(line.stat.duration) : "未知"}`,
-    `HTTP 状态：${line.stat?.status || "未知"}`,
-    line.stat?.error ? `异常信息：${line.stat.error}` : ""
-  ].filter(Boolean).join("\n");
-}
-
-function playbackHealthReport(
-  latest: FullDetail | undefined,
-  lines: PlaybackLine[],
-  health: ReturnType<typeof playbackHealth>,
-  currentTask?: DownloadTask | null
-) {
-  // 报告面向排障复制，保留完整链接和关键状态，避免用户手动拼截图信息。
-  const fetchedAt = latest?.fetchedAt || String((latest as { ts?: string } | undefined)?.ts || "");
-  const taskUrl = absoluteUrl(currentTask?.url || "");
-  const taskLines = currentTask ? [
-    `任务名称：${downloadTitle(currentTask)}`,
-    `任务状态：${downloadStageLabel(currentTask.stage)}`,
-    `输出格式：${downloadFormat(currentTask)}`,
-    `文件大小：${formatBytes(currentTask.bytes)}`,
-    `更新时间：${currentTask.updatedAt || "未记录"}`,
-    `完整源链接：${taskUrl || "暂无"}`,
-    currentTask.error ? `失败原因：${currentTask.error}` : "",
-    currentTask.transmuxError ? `转封装异常：${currentTask.transmuxError}` : ""
-  ].filter(Boolean) : ["当前视频还没有下载任务。"];
-
-  return [
-    "糖心志者播放资源体检报告",
-    `视频标题：${latest?.movieTitle || latest?.title || "未记录"}`,
-    `视频编号：${latest?.movieId || "未记录"}`,
-    `账号：${latest?.accountLabel || latest?.accountUser || "未记录"}`,
-    `获取时间：${fetchedAt || "未记录"}`,
-    `体检分：${health.score}`,
-    `体检状态：${health.label}`,
-    `推荐线路：${health.recommendedLabel}`,
-    "",
-    "风险提示：",
-    ...health.risks.map((item) => `- ${item}`),
-    "",
-    "线路详情：",
-    ...lines.map(lineReport),
-    "",
-    "下载任务：",
-    ...taskLines
-  ].join("\n");
-}
-
-function playbackRecordReport(item: FullDetail, recordTask?: DownloadTask | null) {
-  // 单条播放记录报告面向历史视频排查，保留主备线路和关联下载任务状态。
-  const playUrl = absoluteUrl(item.playLink || "");
-  const backupUrl = absoluteUrl(item.backupLink || "");
-  const taskUrl = absoluteUrl(recordTask?.url || "");
-  const taskLines = recordTask ? [
-    `任务名称：${downloadTitle(recordTask)}`,
-    `任务状态：${downloadStageLabel(recordTask.stage)}`,
-    `输出格式：${downloadFormat(recordTask)}`,
-    `下载进度：${recordTask.total ? `${recordTask.current || 0}/${recordTask.total}` : `${downloadProgress(recordTask)}%`}`,
-    `文件大小：${formatBytes(recordTask.bytes)}`,
-    `更新时间：${recordTask.updatedAt || "未记录"}`,
-    `完整源链接：${taskUrl || "暂无"}`,
-    recordTask.error ? `失败原因：${recordTask.error}` : "",
-    recordTask.transmuxError ? `转封装异常：${recordTask.transmuxError}` : ""
-  ].filter(Boolean) : ["当前播放记录还没有下载任务。"];
-
-  return [
-    "糖心志者播放记录报告",
-    `视频标题：${item.movieTitle || item.title || "未记录"}`,
-    `视频编号：${item.movieId || "未记录"}`,
-    `账号：${item.accountLabel || item.accountUser || "未记录"}`,
-    `获取时间：${String((item as { ts?: string }).ts || item.fetchedAt || "") || "未记录"}`,
-    `主线路：${playUrl || "暂无"}`,
-    `备用线路：${backupUrl || "暂无"}`,
-    `主线路分片：${item.fullStat?.segments || "未知"}`,
-    `主线路时长：${item.fullStat?.duration ? formatDuration(item.fullStat.duration) : "未知"}`,
-    `主线路状态：${item.fullStat?.status || "未知"}`,
-    item.fullStat?.error ? `主线路异常：${item.fullStat.error}` : "",
-    `备用线路分片：${item.backupStat?.segments || "未知"}`,
-    `备用线路时长：${item.backupStat?.duration ? formatDuration(item.backupStat.duration) : "未知"}`,
-    `备用线路状态：${item.backupStat?.status || "未知"}`,
-    item.backupStat?.error ? `备用线路异常：${item.backupStat.error}` : "",
-    "",
-    "下载任务：",
-    ...taskLines
-  ].filter((line) => line !== "").join("\n");
-}
-
-function playbackRecordsReport(rows: { item: FullDetail; recordTask?: DownloadTask | null; recordFailed?: boolean }[], filterLabel = "当前筛选") {
-  // 批量报告用于一次性排查多个历史视频，保留当前筛选结果和完整链接。
-  const readyCount = rows.filter((row) => absoluteUrl(row.item.playLink || row.item.backupLink || "")).length;
-  const failedCount = rows.filter((row) => row.recordFailed).length;
-  const backupCount = rows.filter((row) => row.item.backupLink).length;
-  const lines = [
-    "糖心志者播放记录批量报告",
-    `筛选范围：${filterLabel}`,
-    `记录数量：${rows.length}`,
-    `可播放记录：${readyCount}`,
-    `异常记录：${failedCount}`,
-    `含备用线路：${backupCount}`,
-    `生成时间：${new Date().toLocaleString("zh-CN", { hour12: false })}`,
-    ""
-  ];
-  rows.forEach((row, index) => {
-    const item = row.item;
-    const recordTask = row.recordTask || null;
-    const playUrl = absoluteUrl(item.playLink || "");
-    const backupUrl = absoluteUrl(item.backupLink || "");
-    const taskUrl = absoluteUrl(recordTask?.url || "");
-    lines.push(
-      `${index + 1}. ${item.movieTitle || item.title || item.movieId || "播放详情"}`,
-      `视频编号：${item.movieId || "未记录"}`,
-      `账号：${item.accountLabel || item.accountUser || "未记录"}`,
-      `获取时间：${String((item as { ts?: string }).ts || item.fetchedAt || "") || "未记录"}`,
-      `主线路：${playUrl || "暂无"}`,
-      `备用线路：${backupUrl || "暂无"}`,
-      `主线路分片：${item.fullStat?.segments || "未知"}`,
-      `主线路时长：${item.fullStat?.duration ? formatDuration(item.fullStat.duration) : "未知"}`,
-      item.fullStat?.error ? `主线路异常：${item.fullStat.error}` : "",
-      item.backupStat?.error ? `备用线路异常：${item.backupStat.error}` : "",
-      recordTask ? `下载任务：${downloadStageLabel(recordTask.stage)} / ${downloadFormat(recordTask)} / ${recordTask.total ? `${recordTask.current || 0}/${recordTask.total}` : `${downloadProgress(recordTask)}%`}` : "下载任务：未创建",
-      recordTask ? `下载源链接：${taskUrl || "暂无"}` : "",
-      recordTask?.error ? `下载失败：${recordTask.error}` : "",
-      recordTask?.transmuxError ? `转封装异常：${recordTask.transmuxError}` : "",
-      ""
-    );
-  });
-  return lines.filter((line) => line !== "").join("\n");
-}
-
 function taskTone(task?: DownloadTask | null) {
-  if (!task) return { label: "未创建", color: "bg-purple-50 text-purple-500" };
-  if (task.stage === "error") return { label: "下载失败", color: "bg-rose-50 text-rose-600" };
-  if (task.stage === "complete") return { label: "已保存", color: "bg-emerald-50 text-emerald-600" };
-  if (task.stage === "ready") return { label: "可保存", color: "bg-emerald-50 text-emerald-600" };
-  return { label: downloadStageLabel(task.stage), color: "bg-amber-50 text-amber-600" };
+  if (!task) return { label: "未创建", color: "bg-slate-100 text-slate-500" };
+  if (task.stage === "error") return { label: "下载失败", color: "bg-danger-50 text-danger-600" };
+  if (task.stage === "complete") return { label: "已保存", color: "bg-success-50 text-success-600" };
+  if (task.stage === "ready") return { label: "可保存", color: "bg-success-50 text-success-600" };
+  return { label: downloadStageLabel(task.stage), color: "bg-warning-50 text-warning-600" };
 }
 
 function initialPlayerVolume() {
@@ -754,9 +508,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const [playerQualityLevel, setPlayerQualityLevel] = useState(-1);
   const [playerMoreOpen, setPlayerMoreOpen] = useState(false);
   const [playerMorePanel, setPlayerMorePanel] = useState<PlayerMorePanelKey>("line");
-  const [playerVolumeOpen, setPlayerVolumeOpen] = useState(false);
-  const [playerRateOpen, setPlayerRateOpen] = useState(false);
   const [playerControlsVisible, setPlayerControlsVisible] = useState(true);
+  const [playerControlsFocusWithin, setPlayerControlsFocusWithin] = useState(false);
   const [playerVolume, setPlayerVolume] = useState(initialPlayerVolume);
   const [playerMuted, setPlayerMuted] = useState(initialPlayerMuted);
   const [playerSeekStep, setPlayerSeekStep] = useState(10);
@@ -774,6 +527,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   // 全屏顶部诊断徽标默认短时显示，随后收起，减少观影干扰。
   const [playerFullscreenMetaVisible, setPlayerFullscreenMetaVisible] = useState(true);
   const [playerGestureHud, setPlayerGestureHud] = useState<GestureHudState>({ kind: "", text: "" });
+  const [playerContextMenu, setPlayerContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [holdSeekHint, setHoldSeekHint] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerShellRef = useRef<HTMLDivElement | null>(null);
@@ -781,18 +535,20 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const artRef = useRef<Artplayer | null>(null);
   const holdRateRef = useRef<{ active: boolean; prevRate: number }>({ active: false, prevRate: 1 });
   const controlsPinnedByClickRef = useRef(false);
-  const controlsRevealSuppressedUntilRef = useRef(0);
   const controlsTimerRef = useRef<number | undefined>();
   const cursorTimerRef = useRef<number | undefined>();
   const gestureHudTimerRef = useRef<number | undefined>();
   const fullscreenMetaTimerRef = useRef<number | undefined>();
+  // 全屏进入、退出和多帧重绘共享同一代次；旧代次回调不得重新写回强制样式。
+  const fullscreenGenerationRef = useRef(0);
+  const fullscreenScheduledTasksRef = useRef<FullscreenScheduledTask[]>([]);
   const playerDiagnosticReportRef = useRef("");
   // 仅在用户明确点全屏时为 true；防止 ArtPlayer 内置全屏失败/误触发把面板打成沉浸黑屏。
   const wantFullscreenRef = useRef(false);
   // 主控按钮刚操作后的短窗口，忽略外壳 surface 点击，避免“点播放却被当成点画面”。
   const controlActionStampRef = useRef(0);
   // 播放器运行时快照：给 ArtPlayer 事件回调和右键菜单读取最新界面状态，避免闭包里的旧值。
-  const playerRuntimeRef = useRef({ previewKey: "recommended" as PlaybackPreviewKey, title: "", backupUrl: "", autoBackupUsed: false, resumeId: "" });
+  const playerRuntimeRef = useRef({ previewKey: "recommended" as PlaybackPreviewKey, title: "", backupUrl: "", autoBackupUsed: false, resumeId: "", recordPreview: false });
   const [isDraggingProgress, setIsDraggingProgress] = useState(false);
   const [progressPreviewTime, setProgressPreviewTime] = useState<number | null>(null);
   const progressDragRef = useRef<{ active: boolean; startX: number; startTime: number }>({ active: false, startX: 0, startTime: 0 });
@@ -837,18 +593,45 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     : preferredLineUrl;
   const lockedRecommendedHint = lockedPlayback && lockedPlayback.movieId === currentMovieId
     ? `${lockedPlayback.label}（播放中锁定）`
-    : (preferredLine?.label || "自动选择");
+    : (preferredLineUrl ? preferredLine?.label || "自动选择" : "等待可用线路");
   const previewOptions = [
     { key: "recommended" as const, label: "推荐", url: lockedRecommendedUrl, hint: lockedRecommendedHint },
     { key: "play" as const, label: "主线", url: absoluteUrl(lines[0]?.url || ""), hint: lineState(lines[0]).label },
     { key: "backup" as const, label: "备用", url: absoluteUrl(lines[1]?.url || ""), hint: lineState(lines[1]).label }
   ];
-  const activePreviewKey = previewKey === "record" && previewRecord?.url ? "record" : previewKey === "record" ? "recommended" : previewKey;
+  const activePreviewKey = previewKey === "record" && (previewRecord?.playUrl || previewRecord?.backupUrl)
+    ? "record"
+    : previewKey === "record" ? "recommended" : previewKey;
+  const recordPlayUrl = absoluteUrl(previewRecord?.playUrl || "");
+  const recordBackupUrl = absoluteUrl(previewRecord?.backupUrl || "");
+  const recordActiveUrl = previewRecord?.activeLine === "backup" ? recordBackupUrl : recordPlayUrl;
   const selectedPreviewOption = previewOptions.find((item) => item.key === activePreviewKey) || previewOptions[0];
-  const previewUrl = activePreviewKey === "record" ? absoluteUrl(previewRecord?.url || "") : selectedPreviewOption.url;
+  const previewUrl = activePreviewKey === "record" ? recordActiveUrl : selectedPreviewOption.url;
   const previewTitle = activePreviewKey === "record"
     ? (previewRecord?.title || "播放记录")
     : `${latest?.movieTitle || latest?.title || latest?.movieId || "当前视频"} · ${previewLineLabel(activePreviewKey)}`;
+  const currentPreviewMovieId = String(activePreviewKey === "record" ? previewRecord?.movieId || "" : latest?.movieId || "").trim();
+  const currentPreviewIsBackup = activePreviewKey === "record"
+    ? previewRecord?.activeLine === "backup"
+    : activePreviewKey === "backup" || Boolean(activePreviewKey === "recommended" && previewUrl && previewUrl === backupLineUrl);
+  const currentPreviewBackupUrl = currentPreviewIsBackup
+    ? ""
+    : activePreviewKey === "record"
+      ? recordBackupUrl
+      : backupLineUrl;
+  const currentPreviewLineLabel = activePreviewKey === "record"
+    ? `播放记录${previewRecord?.activeLine === "backup" ? "备用线路" : "主线路"}`
+    : previewLineLabel(activePreviewKey);
+  const playerMenuPreviewOptions = activePreviewKey === "record"
+    ? [
+        { key: "record-play", label: "记录主线", url: recordPlayUrl, hint: recordPlayUrl ? "当前记录的主线路" : "缺少链接" },
+        { key: "record-backup", label: "记录备用", url: recordBackupUrl, hint: recordBackupUrl ? "当前记录的备用线路" : "缺少链接" },
+        { key: "recommended", label: "最新视频", url: lockedRecommendedUrl, hint: "返回当前详情" }
+      ]
+    : previewOptions;
+  const activePlayerMenuPreviewKey = activePreviewKey === "record"
+    ? `record-${previewRecord?.activeLine === "backup" ? "backup" : "play"}`
+    : activePreviewKey;
   const previewSourceLabel = isPlaylistUrl(previewUrl) ? "HLS播放列表" : previewUrl ? "视频源" : "等待链接";
   const previewProgress = percent(playerStats.currentTime, playerStats.duration);
   const previewBuffered = percent(playerStats.bufferedEnd, playerStats.duration);
@@ -882,7 +665,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const currentQualityLabel = playerQualityLevel < 0
     ? (playerQualities.length ? "自动清晰度" : "清晰度自动")
     : playerQualities.find((item) => item.level === playerQualityLevel)?.label || `档位 ${playerQualityLevel + 1}`;
-  const controlsShouldStayVisible = !previewUrl || playerStats.paused || playerMoreOpen || playerVolumeOpen || playerRateOpen || Boolean(playerError) || Boolean(holdSeekHint) || playerUiLocked;
+  const controlsShouldStayVisible = !previewUrl || playerStats.paused || playerMoreOpen || playerControlsFocusWithin || Boolean(playerError) || Boolean(holdSeekHint) || playerUiLocked;
   // 全屏 / 横屏矮屏：贴底渐变沉浸控制层；普通竖屏面板才用悬浮圆角卡片。
   const playerControlsTone = (playerFullscreenActive || isCompactLandscape)
     ? "inset-x-0 bottom-0 rounded-none bg-gradient-to-t from-black/92 via-black/55 to-transparent px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-8 sm:px-5 sm:pb-4"
@@ -894,8 +677,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   const playerStageStyle = {
     "--txzz-player-viewport-width": `${playerViewportSize.width || 0}px`,
     "--txzz-player-viewport-height": `${playerViewportSize.height || 0}px`,
-    "--txzz-player-video-position-x": `${playerFullscreenTune.objectPositionX}%`,
-    "--txzz-player-safe-shift-x": `${playerFullscreenTune.shiftX}px`
+    "--txzz-player-video-position-x": `${playerFullscreenTune.objectPositionX}%`
   } as CSSProperties;
   const health = playbackHealth(latest, lines, preferredLine);
   const healthReport = playbackHealthReport(latest, lines, health, currentTask);
@@ -910,6 +692,11 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       setLockedPlayback(null);
     }
   }, [currentMovieId, lockedPlayback]);
+
+  useEffect(() => {
+    // 自动切备用只限制当前视频；切换到另一条历史记录或新详情后重新允许一次恢复。
+    setPlayerAutoBackupUsed(false);
+  }, [currentPreviewMovieId]);
 
   // 起播后锁定当前推荐/选中源，后台探测改分也不切换。
   useEffect(() => {
@@ -968,9 +755,10 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   playerRuntimeRef.current = {
     previewKey: activePreviewKey,
     title: previewTitle,
-    backupUrl: backupLineUrl,
+    backupUrl: currentPreviewBackupUrl,
     autoBackupUsed: playerAutoBackupUsed,
-    resumeId: (activePreviewKey === "record" ? previewRecord?.movieId : latest?.movieId) || ""
+    resumeId: currentPreviewMovieId,
+    recordPreview: activePreviewKey === "record"
   };
 
   const clearControlsTimer = () => {
@@ -1009,13 +797,45 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     setPlayerFullscreenTune(calculateFullscreenTune(videoRef.current, playerFullscreenActive, playerFillMode));
   };
 
-  const scheduleFullscreenDiagnosticRefresh = () => {
+  const clearFullscreenScheduledTasks = () => {
+    fullscreenScheduledTasksRef.current.forEach((task) => {
+      if (task.kind === "animation-frame") window.cancelAnimationFrame(task.id);
+      else window.clearTimeout(task.id);
+    });
+    fullscreenScheduledTasksRef.current = [];
+  };
+
+  const scheduleFullscreenTimeout = (callback: () => void, delay: number, generation: number) => {
+    const id = window.setTimeout(() => {
+      fullscreenScheduledTasksRef.current = fullscreenScheduledTasksRef.current.filter((task) => task.kind !== "timeout" || task.id !== id);
+      if (generation !== fullscreenGenerationRef.current) return;
+      callback();
+    }, delay);
+    fullscreenScheduledTasksRef.current.push({ kind: "timeout", id });
+  };
+
+  const scheduleFullscreenAnimationFrame = (callback: () => void, generation: number) => {
+    const id = window.requestAnimationFrame(() => {
+      fullscreenScheduledTasksRef.current = fullscreenScheduledTasksRef.current.filter((task) => task.kind !== "animation-frame" || task.id !== id);
+      if (generation !== fullscreenGenerationRef.current) return;
+      callback();
+    });
+    fullscreenScheduledTasksRef.current.push({ kind: "animation-frame", id });
+  };
+
+  const scheduleFullscreenDiagnosticRefresh = (generation = fullscreenGenerationRef.current) => {
     // 浏览器进入全屏和 CSS 接管尺寸都有短暂延迟，延后一拍测量能拿到更接近真实显示的容器数据。
-    window.setTimeout(() => {
+    scheduleFullscreenTimeout(() => {
+      if (!wantFullscreenRef.current) return;
       setPlayerFullscreenDiagnostic(measureFullscreenDiagnostic(playerShellRef.current, fullscreenHostElement(), true, videoRef.current));
       setPlayerFullscreenTune(calculateFullscreenTune(videoRef.current, true, playerFillMode));
-    }, 120);
+    }, 120, generation);
   };
+
+  useEffect(() => () => {
+    fullscreenGenerationRef.current += 1;
+    clearFullscreenScheduledTasks();
+  }, []);
 
   const applyPlayerVolume = (nextVolume: number, nextMuted = false) => {
     const volume = Math.max(0, Math.min(1, nextVolume));
@@ -1033,7 +853,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     showPlayerGestureHud({
       kind: "volume",
       text: nextMuted || volume <= 0.001 ? "已静音" : `音量 ${Math.round(volume * 100)}%`,
-      percent: nextMuted ? 0 : Math.round(volume * 100)
+      percent: nextMuted ? 0 : Math.round(volume * 100),
+      sideBar: "right"
     });
     if (!playerUiLocked) revealPlayerControls(true);
   };
@@ -1046,7 +867,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     showPlayerGestureHud({
       kind: "brightness",
       text: `亮度 ${brightness}%`,
-      percent: Math.round(((brightness - 60) / 80) * 100)
+      percent: Math.round(((brightness - 60) / 80) * 100),
+      sideBar: "left"
     });
     if (!playerUiLocked) revealPlayerControls(true);
   };
@@ -1072,14 +894,12 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
 
   const closePlayerPopovers = () => {
     setPlayerMoreOpen(false);
-    setPlayerVolumeOpen(false);
-    setPlayerRateOpen(false);
+    setPlayerContextMenu(null);
   };
 
   const hidePlayerControlsBySurfaceClick = () => {
-    // 用户主动点画面隐藏时，短时间内忽略鼠标移动唤醒，避免 click 后紧跟的 pointer/mouse 事件把悬浮 UI 又弹回来。
+    // 用户主动点画面时立即关闭菜单和悬浮控制，下一次单击再显式唤醒。
     controlsPinnedByClickRef.current = false;
-    controlsRevealSuppressedUntilRef.current = Date.now() + 900;
     clearControlsTimer();
     if (cursorTimerRef.current) window.clearTimeout(cursorTimerRef.current);
     closePlayerPopovers();
@@ -1097,15 +917,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     // 单击唤醒采用固定显示，下一次点击画面再隐藏，避免刚点开菜单就被自动隐藏打断。
     if (playerUiLocked) return;
     controlsPinnedByClickRef.current = true;
-    controlsRevealSuppressedUntilRef.current = 0;
     revealPlayerControls(true);
-  };
-
-  const maybeRevealPlayerControls = () => {
-    if (playerUiLocked) return;
-    if (Date.now() < controlsRevealSuppressedUntilRef.current) return;
-    if (!playerControlsVisible && previewUrl && !playerError && !holdSeekHint) return;
-    revealPlayerControls();
   };
 
   const setPlayerControlsLock = (locked: boolean) => {
@@ -1122,7 +934,9 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       setPlayerStatus("控制层已锁定，点击右下角解锁");
     } else {
       showPlayerGestureHud({ kind: "unlock", text: "已解锁控制层", percent: 100 }, 1000);
-      revealPlayerControls(true);
+      clearControlsTimer();
+      setPlayerControlsVisible(true);
+      setPlayerCursorHidden(false);
       setPlayerStatus("控制层已解锁");
     }
   };
@@ -1161,6 +975,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
         setPlayerImmersive(true);
       } else if (!active) {
         // 系统全屏结束（点缩小 / Esc / 手势）：必须完整回到插件面板，禁止卡在「竖排假全屏」。
+        if (wantFullscreenRef.current) fullscreenGenerationRef.current += 1;
+        clearFullscreenScheduledTasks();
         setBrowserFullscreenActive(false);
         wantFullscreenRef.current = false;
         setPlayerImmersive(false);
@@ -1283,11 +1099,26 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input,textarea,select,[contenteditable='true']")) return;
       const key = event.key.toLowerCase();
+      // 页内报告弹层属于更高层级，由 ModalSheet 自己消费 Esc，播放器不得穿透处理。
+      if (key === "escape" && reportView) return;
+      if (key === "escape" && playerContextMenu) {
+        event.preventDefault();
+        event.stopPropagation();
+        setPlayerContextMenu(null);
+        return;
+      }
+      if (key === "escape" && playerMoreOpen) {
+        // 播放器设置是面板内的第一层，Esc 必须先关闭它，不能越级关闭插件或直接退出全屏。
+        event.preventDefault();
+        event.stopPropagation();
+        closePlayerPopovers();
+        revealPlayerControls(true);
+        return;
+      }
       if (key === "escape" && playerFullscreenActive) {
         event.preventDefault();
+        event.stopPropagation();
         // 锁屏时先解锁，再按一次 Esc 才退出全屏，避免躺着看片误触立刻退出。
         if (playerUiLocked) {
           setPlayerControlsLock(false);
@@ -1296,6 +1127,18 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
         exitPlayerFullscreen().catch(() => setPlayerImmersive(false));
         return;
       }
+      // 不劫持浏览器查找、导航等系统组合键；切换类快捷键也不响应长按重复事件。
+      if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+      if (event.repeat && [" ", "k", "m", "l", "f"].includes(key)) return;
+      // Shadow DOM 会把 event.target 重定向到宿主，必须检查 composedPath 才能识别真实按钮和滑块。
+      const isInteractiveTarget = event.composedPath().some((node) => (
+        node instanceof HTMLElement
+        && node.matches("button,input,textarea,select,[role='slider'],[role='tab'],[contenteditable='true']")
+      ));
+      const shadowActive = fullscreenHostElement()?.shadowRoot?.activeElement;
+      const isInteractiveFocus = shadowActive instanceof HTMLElement
+        && shadowActive.matches("button,input,textarea,select,[role='slider'],[role='tab'],[contenteditable='true']");
+      if (isInteractiveTarget || isInteractiveFocus) return;
       if (!previewUrl || !artRef.current) return;
       if (playerUiLocked && key !== "l") return;
       if (key === " " || key === "k") {
@@ -1327,9 +1170,9 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
         togglePlayerFullscreen().catch((err) => setPlayerError(err instanceof Error ? err.message : String(err)));
       }
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [playerFullscreenActive, playerMuted, playerSeekStep, playerVolume, playerUiLocked, previewUrl]);
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [playerContextMenu, playerFullscreenActive, playerMoreOpen, playerMuted, playerSeekStep, playerVolume, playerUiLocked, previewUrl, reportView]);
 
   useEffect(() => {
     // 全屏播放时申请屏幕常亮（Wake Lock），避免手机看片途中自动息屏打断观影；退出全屏或暂停后立即释放。
@@ -1359,19 +1202,6 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       }
     };
   }, [playerFullscreenActive, playerStats.paused]);
-
-  useEffect(() => {
-    // 全屏时支持鼠标滚轮调节音量：向上滚增大、向下滚减小，对齐桌面播放器软件的使用习惯。
-    const shell = playerShellRef.current;
-    if (!shell || !playerFullscreenActive) return undefined;
-    const handleWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const nextVolume = Math.max(0, Math.min(1, playerVolume + (event.deltaY < 0 ? 0.05 : -0.05)));
-      applyPlayerVolume(nextVolume, nextVolume <= 0.001);
-    };
-    shell.addEventListener("wheel", handleWheel, { passive: false });
-    return () => shell.removeEventListener("wheel", handleWheel);
-  }, [playerFullscreenActive, playerVolume, playerMuted]);
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
@@ -1436,9 +1266,9 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     videoRef.current = null;
     container.innerHTML = "";
     setPlayerMoreOpen(false);
+    setPlayerContextMenu(null);
     setPlayerMorePanel("line");
     controlsPinnedByClickRef.current = false;
-    controlsRevealSuppressedUntilRef.current = 0;
     setPlayerControlsVisible(true);
     setPlayerError("");
     setPlayerResumeTip("");
@@ -1453,6 +1283,10 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     };
     const setSafeError = (message: string) => {
       if (!disposed) setPlayerError(message);
+    };
+    const clearRecoveredPlaybackError = () => {
+      if (disposed) return;
+      setPlayerError((current) => /^(网络连接异常|视频解码|播放内核|视频加载失败)/.test(current) ? "" : current);
     };
     const rememberSnapshot = () => {
       const next = playerSnapshot(videoRef.current);
@@ -1488,8 +1322,14 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       const runtime = playerRuntimeRef.current;
       if (!runtime.autoBackupUsed && runtime.previewKey !== "backup" && runtime.backupUrl) {
         setPlayerAutoBackupUsed(true);
-        setPreviewRecord(null);
-        setPreviewKey("backup");
+        if (runtime.recordPreview) {
+          setPreviewRecord((current) => current?.backupUrl
+            ? { ...current, activeLine: "backup" }
+            : current);
+        } else {
+          setPreviewRecord(null);
+          setPreviewKey("backup");
+        }
         setPlayerReloadKey((value) => value + 1);
         setSafeStatus("播放异常，已自动切换备用线路");
       }
@@ -1530,7 +1370,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       lock: false,
       gesture: false,
       fastForward: false,
-      autoPlayback: true,
+      // 已由插件按 movieId + URL 管理断点，关闭 ArtPlayer 自带的重复续播浮层。
+      autoPlayback: false,
       autoOrientation: false,
       airplay: false,
       moreVideoAttr: {
@@ -1566,7 +1407,24 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               lowLatencyMode: false,
               enableSoftwareAES: true
             });
+            // 只统计连续致命错误；成功解析或成功加载分片后必须归零，避免把零散抖动累计成误切线。
+            let fatalErrorCount = 0;
+            let mediaRecoveryAttempted = false;
+            let recoveryMessageVisible = false;
+            let backupSwitchRequested = false;
+            const markHlsRecovered = () => {
+              const shouldAnnounceRecovery = recoveryMessageVisible;
+              fatalErrorCount = 0;
+              mediaRecoveryAttempted = false;
+              recoveryMessageVisible = false;
+              backupSwitchRequested = false;
+              if (shouldAnnounceRecovery) {
+                setSafeError("");
+                setSafeStatus("网络已恢复，播放线路稳定");
+              }
+            };
             hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+              markHlsRecovered();
               const levels = (data.levels || []).map((level, index) => ({ level: index, label: hlsQualityLabel(level, index) }));
               setPlayerQualities(levels);
               setPlayerQualityLevel(-1);
@@ -1575,9 +1433,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
               setPlayerQualityLevel(Number(data.level ?? hls.currentLevel ?? -1));
             });
+            hls.on(Hls.Events.FRAG_LOADED, markHlsRecovered);
             // 细粒度错误分类处理：网络错误、媒体解码错误和其他错误采用不同恢复策略
-            let fatalErrorCount = 0;
-            let mediaRecoveryAttempted = false;
             hls.on(Hls.Events.ERROR, (_event, data) => {
               if (!data.fatal) {
                 // 非致命错误（分片加载抖动等），静默记录，不打扰用户
@@ -1587,6 +1444,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                 return;
               }
               fatalErrorCount += 1;
+              recoveryMessageVisible = true;
               if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                 setSafeStatus("网络请求失败，正在重新加载");
                 setSafeError("网络连接异常，已自动重试；反复失败时建议切换备用线路。");
@@ -1609,7 +1467,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                 setSafeError(`播放内核遇到未知错误（${String(data.details || data.type || "unknown")}），建议切换备用线路或重载。`);
               }
               // 连续3次致命错误才触发自动备用线路切换，避免误触
-              if (fatalErrorCount >= 3) {
+              if (fatalErrorCount >= 3 && !backupSwitchRequested) {
+                backupSwitchRequested = true;
                 switchBackupOnError();
               }
             });
@@ -1691,6 +1550,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       revealPlayerControls();
     });
     art.on("video:pause", () => {
+      if (!disposed) setPlayerBuffering(false);
       rememberSnapshot();
       revealPlayerControls(true);
     });
@@ -1701,9 +1561,11 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     });
     art.on("video:playing", () => {
       if (!disposed) setPlayerBuffering(false);
+      clearRecoveredPlaybackError();
     });
     art.on("video:canplay", () => {
       if (!disposed) setPlayerBuffering(false);
+      clearRecoveredPlaybackError();
     });
     art.on("video:volumechange", () => {
       setPlayerVolume(art.volume);
@@ -1721,6 +1583,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       setSafeStatus("播放异常");
       setSafeError("视频加载失败，可切换备用线路、重载播放器或打开完整链接。");
       if (!disposed) setPlayerBuffering(false);
+      rememberSnapshot();
       revealPlayerControls(true);
       switchBackupOnError();
     });
@@ -1766,7 +1629,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       if (!wantFullscreenRef.current) return;
       setPlayerImmersive(true);
       setSafeStatus("浏览器全屏受限，已切换沉浸全屏");
-      setSafeError("当前页面限制了浏览器全屏，已自动使用插件内沉浸全屏兜底。");
+      setSafeError("");
+      art.notice.show = "浏览器全屏受限，已使用沉浸全屏";
     });
 
     return () => {
@@ -1781,6 +1645,9 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
 
   const exitPlayerFullscreen = async () => {
     // 完整退出：系统全屏 + CSS 沉浸态 + 内联强制样式，必须全部清掉才能回到插件面板。
+    const generation = fullscreenGenerationRef.current + 1;
+    fullscreenGenerationRef.current = generation;
+    clearFullscreenScheduledTasks();
     const art = artRef.current;
     const shell = playerShellRef.current;
     const container = playerContainerRef.current;
@@ -1807,12 +1674,13 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     } catch {
       // 忽略
     }
+    if (generation !== fullscreenGenerationRef.current) return;
     // 再试一次：部分机型第一次 exit 无效
-    window.setTimeout(() => {
-      if (isRealBrowserFullscreen()) {
+    scheduleFullscreenTimeout(() => {
+      if (!wantFullscreenRef.current && isRealBrowserFullscreen()) {
         exitFullscreen().catch(() => {});
       }
-    }, 50);
+    }, 50, generation);
 
     restoreHostAfterBrowserFullscreen(host);
     clearForcedFullscreenStyles({ shell, container, stage, video, fill });
@@ -1825,7 +1693,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     setPlayerError("");
 
     // 下一帧再清一次，覆盖 fullscreenchange 竞态又写回的样式
-    window.requestAnimationFrame(() => {
+    scheduleFullscreenAnimationFrame(() => {
+      if (wantFullscreenRef.current) return;
       clearForcedFullscreenStyles({
         shell: playerShellRef.current,
         container: playerContainerRef.current,
@@ -1834,8 +1703,9 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
         fill
       });
       restoreHostAfterBrowserFullscreen(fullscreenHostElement());
-    });
-    window.setTimeout(() => {
+    }, generation);
+    scheduleFullscreenTimeout(() => {
+      if (wantFullscreenRef.current) return;
       clearForcedFullscreenStyles({
         shell: playerShellRef.current,
         container: playerContainerRef.current,
@@ -1845,34 +1715,36 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       });
       restoreHostAfterBrowserFullscreen(fullscreenHostElement());
       applyAdaptiveVideoLayout(videoRef.current, fill);
-    }, 120);
+    }, 120, generation);
   };
 
-  const fixFullscreenVideoPaint = () => {
+  const fixFullscreenVideoPaint = (generation = fullscreenGenerationRef.current) => {
     const shell = playerShellRef.current;
     const container = playerContainerRef.current;
     const video = videoRef.current || artRef.current?.video || null;
     // 全屏后连续多帧校正 + 强制重绘，覆盖 Kiwi/Chrome「进度在走画面全黑」
-    const run = () => forceFullscreenVideoVisible({
-      shell,
-      container,
-      video: videoRef.current || artRef.current?.video || video,
-      fill: playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain"
-    });
+    clearFullscreenScheduledTasks();
+    const run = () => {
+      if (generation !== fullscreenGenerationRef.current || !wantFullscreenRef.current) return;
+      forceFullscreenVideoVisible({
+        shell,
+        container,
+        video: videoRef.current || artRef.current?.video || video,
+        fill: playerFillMode === "cover" || playerFillMode === "fill" ? playerFillMode : "contain"
+      });
+    };
     run();
-    window.requestAnimationFrame(run);
-    window.setTimeout(run, 32);
-    window.setTimeout(run, 80);
-    window.setTimeout(run, 160);
-    window.setTimeout(run, 320);
-    window.setTimeout(run, 600);
-    window.setTimeout(run, 1000);
+    scheduleFullscreenAnimationFrame(run, generation);
+    [32, 80, 160, 320, 600, 1000].forEach((delay) => scheduleFullscreenTimeout(run, delay, generation));
   };
 
   const enterPlayerFullscreen = async () => {
     const art = artRef.current;
     const shell = playerShellRef.current;
     if (!art || !shell) return false;
+    const generation = fullscreenGenerationRef.current + 1;
+    fullscreenGenerationRef.current = generation;
+    clearFullscreenScheduledTasks();
     closePlayerPopovers();
     wantFullscreenRef.current = true;
     const host = fullscreenHostElement();
@@ -1888,7 +1760,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     if (isRealBrowserFullscreen() && isPlayerFullscreenElement(fullscreenElement(), shell, host)) {
       setBrowserFullscreenActive(true);
       setPlayerImmersive(true);
-      fixFullscreenVideoPaint();
+      fixFullscreenVideoPaint(generation);
       revealPlayerControls(true);
       const status = "已进入浏览器全屏";
       setPlayerStatus(status);
@@ -1896,9 +1768,11 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       requestScreenOrientation(playerOrientationMode, playerVideoLandscape, {
         preferLandscapeFallback: !playerVideoPortrait
       }).then((message) => {
-        if (artRef.current && message) artRef.current.notice.show = message;
+        if (generation === fullscreenGenerationRef.current && wantFullscreenRef.current && artRef.current && message) {
+          artRef.current.notice.show = message;
+        }
       });
-      scheduleFullscreenDiagnosticRefresh();
+      scheduleFullscreenDiagnosticRefresh(generation);
       return true;
     }
 
@@ -1908,15 +1782,27 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       video,
       pluginHost: host
     });
+    if (generation !== fullscreenGenerationRef.current || !wantFullscreenRef.current) {
+      if (result.real && isPlayerFullscreenElement(fullscreenElement(), shell, host)) {
+        await exitFullscreen().catch(() => {});
+      }
+      return false;
+    }
 
     const orientationMessage = await requestScreenOrientation(playerOrientationMode, playerVideoLandscape, {
       preferLandscapeFallback: !playerVideoPortrait
     });
+    if (generation !== fullscreenGenerationRef.current || !wantFullscreenRef.current) {
+      if (result.real && isPlayerFullscreenElement(fullscreenElement(), shell, host)) {
+        await exitFullscreen().catch(() => {});
+      }
+      return false;
+    }
     setBrowserFullscreenActive(result.real);
     setPlayerImmersive(true);
     prepareHostForBrowserFullscreen(host);
     // 关键：全屏状态落地后强制把 video 画出来
-    fixFullscreenVideoPaint();
+    fixFullscreenVideoPaint(generation);
     revealPlayerControls(true);
 
     if (result.ok && result.real) {
@@ -1929,10 +1815,11 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       art.notice.show = result.message;
     } else {
       setPlayerStatus("浏览器全屏受限，已页面内铺满");
-      setPlayerError(result.message);
+      // 浏览器拒绝后已成功进入页面内沉浸兜底，不应伪装成“播放中断”。
+      setPlayerError("");
       art.notice.show = orientationMessage ? `铺满兜底 · ${orientationMessage}` : "铺满兜底";
     }
-    scheduleFullscreenDiagnosticRefresh();
+    scheduleFullscreenDiagnosticRefresh(generation);
     return true;
   };
 
@@ -1950,6 +1837,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     const host = fullscreenHostElement();
     const shell = playerShellRef.current;
     if (!shell) return;
+    const generation = fullscreenGenerationRef.current;
     host?.classList.add(playerFullscreenHostClass);
     shell.style.left = "0";
     shell.style.top = "0";
@@ -1976,7 +1864,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       setPlayerFullscreenTune(nextTune);
       revealPlayerControls(true);
       artRef.current?.notice && (artRef.current.notice.show = `已重新测量全屏居中 · ${nextTune.label}`);
-      scheduleFullscreenDiagnosticRefresh();
+      scheduleFullscreenDiagnosticRefresh(generation);
     }
   };
 
@@ -2061,33 +1949,18 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       return;
     }
     try {
-      if (art.playing) await art.pause();
+      // HLS 首次缓冲期间 ArtPlayer.playing 可能滞后于原生 video.paused，控制意图必须以 video 为准。
+      if (!art.video.paused) await art.pause();
       else await art.play();
       setPlayerStats(playerSnapshot(art.video));
       setPlayerError("");
-      setPlayerStatus(art.playing ? "播放中" : "已暂停");
+      setPlayerStatus(art.video.paused ? "已暂停" : "播放中");
       revealPlayerControls(true);
     } catch (err) {
       setPlayerError(err instanceof Error ? err.message : String(err));
       setPlayerStatus("播放失败");
       revealPlayerControls(true);
     }
-  };
-
-  const cyclePlayerQuality = () => {
-    const art = artRef.current as (Artplayer & { hls?: Hls }) | null;
-    const hls = art?.hls;
-    if (!hls || !playerQualities.length) {
-      artRef.current?.notice && (artRef.current.notice.show = "当前线路没有可切换清晰度");
-      return;
-    }
-    const order = [-1, ...playerQualities.map((item) => item.level)];
-    const index = order.indexOf(playerQualityLevel);
-    const nextLevel = order[(index + 1 + order.length) % order.length];
-    hls.currentLevel = nextLevel;
-    setPlayerQualityLevel(nextLevel);
-    const label = nextLevel < 0 ? "自动清晰度" : playerQualities.find((item) => item.level === nextLevel)?.label || `档位 ${nextLevel + 1}`;
-    art.notice.show = `清晰度：${label}`;
   };
 
   const applyPlayerRate = (nextRate: number) => {
@@ -2097,7 +1970,6 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     art.notice.show = `倍速：${nextRate}x`;
     setPlayerStats(playerSnapshot(art.video));
     showPlayerGestureHud({ kind: "rate", text: `${nextRate}x`, percent: Math.round((nextRate / 2) * 100) }, 800);
-    setPlayerRateOpen(false);
     revealPlayerControls(true);
   };
 
@@ -2171,7 +2043,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       art.pip = !art.pip;
       revealPlayerControls(true);
     } catch {
-      setPlayerError("当前页面暂不支持画中画，可继续使用完整播放器或打开完整链接。");
+      setPlayerStatus("当前页面暂不支持画中画");
+      art.notice.show = "画中画不可用，可继续在播放器内观看";
       revealPlayerControls(true);
     }
   };
@@ -2183,19 +2056,27 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       await art.screenshot(`${previewTitle || "糖心志者截图"}.png`);
       art.notice.show = "截图已生成";
     } catch (err) {
-      setPlayerError(`截图失败：${err instanceof Error ? err.message : String(err)}`);
+      const message = err instanceof Error ? err.message : String(err);
+      setPlayerStatus("截图失败，播放不受影响");
+      art.notice.show = `截图失败：${message}`;
     } finally {
       revealPlayerControls(true);
     }
   };
 
   const switchPlayerBackup = () => {
-    const backupUrl = absoluteUrl(lines[1]?.url || "");
-    if (!backupUrl || activePreviewKey === "backup") return;
-    setPreviewRecord(null);
-    setPreviewKey("backup");
-    if (currentMovieId) {
-      setLockedPlayback({ movieId: currentMovieId, url: backupUrl, label: "备用线路" });
+    const backupUrl = currentPreviewBackupUrl;
+    if (!backupUrl || currentPreviewIsBackup) return;
+    if (activePreviewKey === "record") {
+      setPreviewRecord((current) => current?.backupUrl
+        ? { ...current, activeLine: "backup" }
+        : current);
+    } else {
+      setPreviewRecord(null);
+      setPreviewKey("backup");
+      if (currentMovieId) {
+        setLockedPlayback({ movieId: currentMovieId, url: backupUrl, label: "备用线路" });
+      }
     }
     setPlayerMoreOpen(false);
     revealPlayerControls(true);
@@ -2239,11 +2120,11 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     backup: recordRows.filter((row) => Boolean(row.item.backupLink)).length
   };
   const recordFilterItems: { key: PlaybackRecordFilter; label: string; value: number; color: string }[] = [
-    { key: "all", label: "全部", value: recordStats.total, color: "text-purple-600" },
-    { key: "downloadable", label: "可下载", value: recordStats.downloadable, color: "text-pink-600" },
-    { key: "saveable", label: "可保存", value: recordStats.saveable, color: "text-emerald-600" },
-    { key: "failed", label: "失败", value: recordStats.failed, color: "text-rose-600" },
-    { key: "backup", label: "有备用", value: recordStats.backup, color: "text-sky-600" }
+    { key: "all", label: "全部", value: recordStats.total, color: "text-brand-600" },
+    { key: "downloadable", label: "可下载", value: recordStats.downloadable, color: "text-info-600" },
+    { key: "saveable", label: "可保存", value: recordStats.saveable, color: "text-success-600" },
+    { key: "failed", label: "失败", value: recordStats.failed, color: "text-danger-600" },
+    { key: "backup", label: "有备用", value: recordStats.backup, color: "text-warning-600" }
   ];
   const recordSortItems: { key: PlaybackRecordSort; label: string; tip: string }[] = [
     { key: "recent", label: "最近", tip: "按获取时间倒序" },
@@ -2285,128 +2166,62 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
     { key: "records", label: "记录", icon: Film, badge: recordStats.total ? `${recordStats.total}` : undefined }
   ];
 
-  // 信息头按钮：内联底色，避免 Shadow DOM 下 Tailwind 半透明白底失效。
-  const heroActionStyle = {
-    background: "rgba(255,255,255,0.24)",
-    color: "#ffffff",
-    border: "1px solid rgba(255,255,255,0.28)",
-    boxShadow: "0 4px 12px rgba(88, 28, 135, 0.18)"
-  } as CSSProperties;
-  const heroPrimaryStyle = {
-    background: "#ffffff",
-    color: "#7c3aed",
-    border: "1px solid #ffffff",
-    boxShadow: "0 4px 12px rgba(88, 28, 135, 0.18)"
-  } as CSSProperties;
-
   return (
-    <div className="txzz-playback-root txzz-page space-y-3 p-3 sm:p-3.5" style={playerStageStyle}>
-      {/* 紧凑信息头：标题 + 关键状态 + 主操作，把视觉重心留给播放器 */}
-      <div
-        className="txzz-playback-hidden-during-fullscreen txzz-playback-hero relative overflow-hidden rounded-2xl p-3.5 text-white"
-        style={{
-          background: "linear-gradient(145deg, #7c3aed 0%, #c026d3 46%, #ec4899 100%)",
-          boxShadow: "0 12px 32px rgba(168, 85, 247, 0.28)",
-          color: "#ffffff"
-        }}
-      >
-        <div className="pointer-events-none absolute -right-3 -top-4 select-none text-5xl opacity-[0.12]">🎬</div>
-        <div className="relative flex items-start justify-between gap-2">
+    <div className="txzz-playback-root txzz-page mx-auto w-full max-w-[1120px] space-y-4 p-4 sm:p-5 lg:p-6" style={playerStageStyle}>
+      {/* 播放页信息头只承担上下文和高频动作，视觉重心交给播放器。 */}
+      <section className="txzz-playback-hidden-during-fullscreen rounded-2xl border border-slate-200 bg-white p-4 shadow-[var(--txzz-shadow-sm)] sm:p-5">
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-medium tracking-wide" style={{ color: "rgba(255,255,255,0.72)" }}>当前视频</p>
-            <h3 className="mt-0.5 line-clamp-2 text-[13px] font-bold leading-snug" style={{ color: "#ffffff" }}>
+            <p className="text-[11px] font-semibold tracking-[0.12em] text-brand-600">PLAYBACK WORKSPACE</p>
+            <h2 className="mt-1 line-clamp-2 text-[18px] font-bold leading-snug tracking-[-0.02em] text-slate-900 sm:text-xl">
               {latest?.movieTitle || latest?.title || latest?.movieId || "等待播放详情"}
-            </h3>
-            <p className="mt-1 flex items-center gap-1 text-[10px]" style={{ color: "rgba(255,255,255,0.88)" }}>
-              {latest ? <CheckCircle size={11} className="shrink-0" color="#a7f3d0" /> : <AlertCircle size={11} className="shrink-0" color="#fde68a" />}
+            </h2>
+            <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-slate-500">
+              {latest ? <CheckCircle size={13} className="shrink-0 text-success-500" /> : <AlertCircle size={13} className="shrink-0 text-warning-500" />}
               <span className="truncate">
                 {latest
-                  ? `${readyCount} 条线路 · ${segmentTotal || "?"} 分片${duration ? ` · ${formatDuration(duration)}` : ""} · 体检 ${health.score}`
+                  ? `${readyCount} 条可用线路 · ${segmentTotal || "?"} 个分片${duration ? ` · ${formatDuration(duration)}` : ""}`
                   : "打开网站视频详情页后自动获取播放资源"}
               </span>
             </p>
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <span
-              className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold"
-              style={{ background: "rgba(255,255,255,0.22)", color: "#ffffff" }}
-            >
-              {health.label}
-            </span>
-            {fetchedAt && <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.68)" }}>{shortTime(fetchedAt)}</span>}
+          <div className={`flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl ${health.bg}`} title={`播放保障评分 ${health.score}`}>
+            <span className={`text-lg font-bold tabular-nums ${health.tone}`}>{health.score}</span>
+            <span className={`text-[11px] font-medium ${health.tone}`}>{health.label}</span>
           </div>
         </div>
-        <div className="relative mt-2.5 flex flex-wrap gap-1">
-          {["M3U8", latest?.accountLabel || latest?.accountUser || "自动账号", localizeFlowText(latest?.action || "full_detail")].map((text) => (
-            <span
-              key={text}
-              className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium"
-              style={{ background: "rgba(0,0,0,0.18)", color: "#ffffff" }}
-            >
-              {text}
-            </span>
-          ))}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <Pill className="bg-slate-100 text-slate-600">M3U8</Pill>
+          <Pill className="bg-brand-50 text-brand-700">{latest?.accountLabel || latest?.accountUser || "自动账号"}</Pill>
+          <Pill className="bg-info-50 text-info-600">{localizeFlowText(latest?.action || "full_detail")}</Pill>
           {preferredLineUrl && (
-            <span
-              className="inline-flex max-w-full items-center gap-1 truncate rounded-full px-2.5 py-0.5 font-mono text-[10px] font-medium"
-              style={{ background: "rgba(0,0,0,0.18)", color: "#ffffff" }}
-            >
-              <Link size={9} color="#ffffff" />
+            <span className="inline-flex max-w-full items-center gap-1.5 truncate rounded-full bg-success-50 px-2.5 py-1 font-mono text-[11px] font-medium text-success-600">
+              <Link size={10} />
               <span className="truncate">{preferredLine?.label} · {maskUrl(preferredLineUrl)}</span>
             </span>
           )}
+          {fetchedAt && <Pill className="bg-slate-50 text-slate-500">{shortTime(fetchedAt)} 更新</Pill>}
         </div>
-        <div className="relative mt-2.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-          <button
-            type="button"
-            onClick={() => onAction("refresh-full-detail", { movieId: latest?.movieId || "" })}
-            className="txzz-playback-hero-btn flex min-h-8 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-semibold transition active:scale-95"
-            style={heroActionStyle}
-          >
-            <RefreshCw size={12} color="#ffffff" /> 刷新
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setPanelTab("download");
-            }}
-            className="txzz-playback-hero-btn flex min-h-8 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-semibold transition active:scale-95"
-            style={heroActionStyle}
-          >
-            <Download size={12} color="#ffffff" /> 下载
-          </button>
-          <button
-            type="button"
-            disabled={!preferredLine?.url}
-            onClick={() => preferredLine && onAction(preferredLine.copyAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}
-            className="txzz-playback-hero-btn flex min-h-8 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-semibold transition active:scale-95 disabled:opacity-40"
-            style={heroActionStyle}
-          >
-            <Copy size={12} color="#ffffff" /> 复制
-          </button>
-          <button
-            type="button"
-            disabled={!preferredLine?.url}
-            onClick={() => preferredLine && onAction(preferredLine.openAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}
-            className="txzz-playback-hero-btn flex min-h-8 items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-semibold transition active:scale-95 disabled:opacity-40"
-            style={heroPrimaryStyle}
-          >
-            <ExternalLink size={12} color="#7c3aed" /> 打开
-          </button>
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+          <SoftButton size="sm" variant="secondary" icon={RefreshCw} onClick={() => onAction("refresh-full-detail", { movieId: latest?.movieId || "" })}>刷新资源</SoftButton>
+          <SoftButton size="sm" icon={Download} onClick={() => setPanelTab("download")}>下载当前视频</SoftButton>
+          <SoftButton size="sm" variant="ghost" icon={Copy} disabled={!preferredLine?.url} onClick={() => preferredLine && onAction(preferredLine.copyAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}>复制推荐链接</SoftButton>
+          <SoftButton size="sm" variant="ghost" icon={ExternalLink} disabled={!preferredLine?.url} onClick={() => preferredLine && onAction(preferredLine.openAction, { url: preferredLineUrl, label: `${preferredLine.label}完整链接` })}>新窗口打开</SoftButton>
         </div>
-      </div>
+      </section>
 
       {/* 播放器主卡片：保留内核/手势/控制栏，仅优化外壳 */}
-      <div className="txzz-player-card space-y-2.5 overflow-hidden rounded-2xl border border-sky-100/90 bg-white/95 p-2.5 shadow-[0_8px_28px_rgba(14,165,233,0.08)] sm:p-3">
+      <div className="txzz-playback-workspace grid items-start gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(21rem,0.85fr)]">
+      <div className="txzz-player-card space-y-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-[var(--txzz-shadow-sm)] sm:p-4 xl:sticky xl:top-4">
         <div className="txzz-player-card-title flex items-center justify-between gap-2 px-0.5">
           <div className="min-w-0">
-            <h3 className="flex items-center gap-1.5 text-[13px] font-bold tracking-tight text-purple-800">
-              <Film size={14} className="text-sky-400" /> 完整播放器
+            <h3 className="flex items-center gap-1.5 text-[14px] font-semibold tracking-tight text-slate-900">
+              <Film size={15} className="text-brand-600" /> 播放器
             </h3>
-            <p className="mt-0.5 truncate text-[10px] text-purple-400">{previewTitle}</p>
+            <p className="mt-0.5 truncate text-[11px] text-slate-500">{previewTitle}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            <Pill className={previewUrl ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"}>
+            <Pill className={previewUrl ? "bg-success-50 text-success-600" : "bg-danger-50 text-danger-600"}>
               {previewUrl ? playerStatus : "无链接"}
             </Pill>
           </div>
@@ -2474,6 +2289,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             }}
             onToggleControls={(show) => {
               if (Date.now() - controlActionStampRef.current < 280) return;
+              setPlayerContextMenu(null);
               if (show) revealPlayerControlsBySurfaceClick();
               else hidePlayerControlsBySurfaceClick();
             }}
@@ -2494,11 +2310,22 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             }}
             onHoldRateEnd={endHoldRateBoost}
             onLockHint={() => setPlayerStatus("控制层已锁定，点击右下角解锁")}
+            onContextMenu={(position) => {
+              setPlayerMoreOpen(false);
+              setPlayerContextMenu(position);
+            }}
           />
           <PlayerGestureHudOverlay hud={playerGestureHud} holdHint={holdSeekHint} />
+          <PlayerContextMenu
+            open={Boolean(playerContextMenu)}
+            x={playerContextMenu?.x || 0}
+            y={playerContextMenu?.y || 0}
+            onClose={() => setPlayerContextMenu(null)}
+            onCopyLink={() => onAction("copy-play-link", { url: previewUrl, label: `${currentPreviewLineLabel}完整链接` })}
+            onOpenLink={() => onAction("open-playback-url", { url: previewUrl, label: `${currentPreviewLineLabel}完整链接` })}
+            onDiagnostic={() => openReportView("播放器诊断", playerDiagnosticReportRef.current)}
+          />
           <PlayerOverlays
-            holdSeekHint=""
-            gestureHud={{ kind: "", text: "" }}
             buffering={playerBuffering}
             hasUrl={Boolean(previewUrl)}
             error={playerError}
@@ -2514,7 +2341,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               revealPlayerControls(true);
             }}
             onSwitchBackup={switchPlayerBackup}
-            canSwitchBackup={Boolean(backupLineUrl) && activePreviewKey !== "backup"}
+            canSwitchBackup={Boolean(currentPreviewBackupUrl) && !currentPreviewIsBackup}
             onUnlock={() => setPlayerControlsLock(false)}
           />
           <PlayerTopBar
@@ -2559,21 +2386,19 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             brightness={playerBrightness}
             moreOpen={playerMoreOpen}
             morePanel={playerMorePanel}
-            volumeOpen={playerVolumeOpen}
-            rateOpen={playerRateOpen}
-            previewOptions={previewOptions}
-            activePreviewKey={activePreviewKey}
+            previewOptions={playerMenuPreviewOptions}
+            activePreviewKey={activePlayerMenuPreviewKey}
             previewSourceLabel={previewSourceLabel}
             playerStatus={playerStatus}
-            currentLineLabel={previewLineLabel(activePreviewKey)}
+            currentLineLabel={currentPreviewLineLabel}
             fullscreenDiagnosticLabel={fullscreenDiagnosticLabel}
             rateOptions={playerRateOptions}
             seekStepOptions={playerSeekStepOptions}
             qualities={playerQualities}
             qualityLevel={playerQualityLevel}
-            canBackup={Boolean(backupLineUrl)}
-            isBackupActive={activePreviewKey === "backup"}
-            hasMovieId={Boolean(latest?.movieId)}
+            canBackup={Boolean(currentPreviewBackupUrl)}
+            isBackupActive={currentPreviewIsBackup}
+            hasMovieId={Boolean(currentPreviewMovieId)}
             fitMode={playerFitMode}
             fillMode={playerFillMode}
             orientationMode={playerOrientationMode}
@@ -2607,6 +2432,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               setIsDraggingProgress(false);
               setProgressPreviewTime(null);
             }}
+            onKeyboardSeek={seekPlayer}
             onTogglePlay={() => {
               togglePlayerPlay();
               revealPlayerControls();
@@ -2620,27 +2446,19 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               revealPlayerControls();
             }}
             onToggleMore={() => {
-              setPlayerVolumeOpen(false);
-              setPlayerRateOpen(false);
+              setPlayerContextMenu(null);
               setPlayerMoreOpen((value) => !value);
+              revealPlayerControls(true);
+            }}
+            onCloseMore={() => {
+              setPlayerMoreOpen(false);
               revealPlayerControls(true);
             }}
             onToggleLock={() => setPlayerControlsLock(true)}
             onToggleFullscreen={() => togglePlayerFullscreen().catch((err) => setPlayerError(err instanceof Error ? err.message : String(err)))}
             onToggleMute={() => applyPlayerVolume(playerVolume || 0.8, !playerMuted)}
             onVolumeChange={(volume) => applyPlayerVolume(volume, volume <= 0.001)}
-            onToggleVolumePanel={() => {
-              setPlayerMoreOpen(false);
-              setPlayerRateOpen(false);
-              setPlayerVolumeOpen((value) => !value);
-              revealPlayerControls(true);
-            }}
-            onToggleRatePanel={() => {
-              setPlayerMoreOpen(false);
-              setPlayerVolumeOpen(false);
-              setPlayerRateOpen((value) => !value);
-              revealPlayerControls(true);
-            }}
+            onCycleRate={cyclePlayerRate}
             onSetRate={applyPlayerRate}
             onSetSeekStep={(step) => {
               setPlayerSeekStep(step);
@@ -2649,6 +2467,17 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             }}
             onSetMorePanel={setPlayerMorePanel}
             onSelectPreview={(key) => {
+              if (key === "record-play" || key === "record-backup") {
+                const nextLine = key === "record-backup" ? "backup" : "play";
+                setPreviewRecord((current) => {
+                  if (!current) return current;
+                  const nextUrl = nextLine === "backup" ? current.backupUrl : current.playUrl;
+                  return nextUrl ? { ...current, activeLine: nextLine } : current;
+                });
+                setPlayerMoreOpen(false);
+                revealPlayerControls(true);
+                return;
+              }
               setPreviewRecord(null);
               setPreviewKey(key as PlaybackPreviewKey);
               // 用户手动切线时更新锁定，避免之后探测又改回去。
@@ -2663,7 +2492,6 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               setPlayerMoreOpen(false);
               revealPlayerControls(true);
             }}
-            onCycleQuality={cyclePlayerQuality}
             onSetQuality={applyPlayerQuality}
             onCycleFit={cyclePlayerFit}
             onCycleFill={cyclePlayerFill}
@@ -2677,11 +2505,12 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             }}
             onPip={togglePlayerPip}
             onRecenter={() => recenterFullscreenPlayer().catch((err) => setPlayerError(err instanceof Error ? err.message : String(err)))}
-            onCopyLink={() => onAction("copy-play-link", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}
-            onOpenLink={() => onAction("open-playback-url", { url: previewUrl, label: `${previewLineLabel(activePreviewKey)}完整链接` })}
-            onDownload={() => onAction("download-full-video", { movieId: latest?.movieId || "" })}
+            onCopyLink={() => onAction("copy-play-link", { url: previewUrl, label: `${currentPreviewLineLabel}完整链接` })}
+            onOpenLink={() => onAction("open-playback-url", { url: previewUrl, label: `${currentPreviewLineLabel}完整链接` })}
+            onDownload={() => onAction("download-full-video", { movieId: currentPreviewMovieId })}
             onCopyDiagnostic={() => openReportView("播放器诊断", playerDiagnosticReportRef.current)}
             onBrightnessChange={applyPlayerBrightness}
+            onFocusWithinChange={setPlayerControlsFocusWithin}
           />
           </div>
         </div>
@@ -2710,7 +2539,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           </SoftButton>
           <SoftButton
             size="sm"
-            variant="sky"
+            variant="primary"
             icon={ExternalLink}
             disabled={!previewUrl}
             className="w-full"
@@ -2723,8 +2552,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       </div>
 
       {/* 次级信息分段：资源 / 下载 / 记录 */}
-      <div className="txzz-playback-hidden-during-fullscreen space-y-2.5">
-        <div className="grid grid-cols-3 gap-1 rounded-2xl border border-pink-100 bg-white p-1 shadow-sm">
+      <div className="txzz-playback-hidden-during-fullscreen min-w-0 space-y-3">
+        <div className="grid grid-cols-3 gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1 shadow-[var(--txzz-shadow-sm)]">
           {panelTabs.map((tab) => {
             const active = panelTab === tab.key;
             const Icon = tab.icon;
@@ -2733,10 +2562,10 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                 key={tab.key}
                 type="button"
                 onClick={() => setPanelTab(tab.key)}
-                className={`relative flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] font-semibold transition ${
+                className={`relative flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-[12px] font-semibold transition ${
                   active
-                    ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm"
-                    : "text-purple-400 hover:bg-purple-50"
+                    ? "bg-white text-brand-700 shadow-sm ring-1 ring-slate-200"
+                    : "text-slate-500 hover:bg-white/70 hover:text-slate-700"
                 }`}
               >
                 <span className="flex items-center gap-1">
@@ -2744,7 +2573,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                   {tab.label}
                 </span>
                 {tab.badge && (
-                  <span className={`text-[9px] ${active ? "text-white/85" : "text-purple-300"}`}>{tab.badge}</span>
+                  <span className={`text-[10px] ${active ? "text-brand-500" : "text-slate-400"}`}>{tab.badge}</span>
                 )}
               </button>
             );
@@ -2753,74 +2582,74 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
 
         {panelTab === "resource" && (
           <SectionCard
-            title="播放资源"
+            title="播放保障"
             icon={ShieldCheck}
-            hint={playbackTip(latest)}
+            hint={`${playbackTip(latest)} · 自动评分并在起播失败时切换备用线路`}
             action={
-              <Pill className={readyCount ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-500"}>
-                {readyCount ? `${readyCount} 条可用` : "待获取"}
+              <Pill className={readyCount ? "bg-success-50 text-success-600" : "bg-danger-50 text-danger-600"}>
+                {readyCount ? `自动优选 · ${readyCount} 线` : "待获取"}
               </Pill>
             }
           >
             <div className="space-y-3">
               <div className="grid grid-cols-3 gap-2">
                 <div className={`rounded-xl px-2.5 py-2 ${health.bg}`}>
-                  <p className={`flex items-center gap-1 text-[10px] font-semibold ${health.tone}`}><Gauge size={11} /> 体检</p>
+                  <p className={`flex items-center gap-1 text-[11px] font-semibold ${health.tone}`}><Gauge size={12} /> 健康评分</p>
                   <p className={`mt-1 text-lg font-bold tabular-nums ${health.tone}`}>{health.score}</p>
-                  <p className="text-[9px] text-purple-400">{health.label}</p>
+                  <p className="text-[11px] text-slate-500">{health.label}</p>
                 </div>
-                <div className="rounded-xl bg-sky-50 px-2.5 py-2">
-                  <p className="flex items-center gap-1 text-[10px] font-semibold text-sky-600"><Signal size={11} /> 推荐</p>
-                  <p className="mt-1 truncate text-sm font-bold text-sky-600">{health.recommendedLabel}</p>
-                  <p className="text-[9px] text-purple-400">{readyCount ? `${readyCount} 条线路` : "等待"}</p>
+                <div className="rounded-xl bg-info-50 px-2.5 py-2">
+                  <p className="flex items-center gap-1 text-[11px] font-semibold text-info-600"><Signal size={12} /> 当前推荐</p>
+                  <p className="mt-1 truncate text-sm font-bold text-info-600">{health.recommendedLabel}</p>
+                  <p className="text-[11px] text-slate-500">{readyCount ? `${readyCount} 条可用` : "等待资源"}</p>
                 </div>
-                <div className="rounded-xl bg-purple-50 px-2.5 py-2">
-                  <p className="flex items-center gap-1 text-[10px] font-semibold text-purple-600"><Layers size={11} /> 分片</p>
-                  <p className="mt-1 text-lg font-bold text-purple-700 tabular-nums">{segmentTotal || "—"}</p>
-                  <p className="text-[9px] text-purple-400">{duration ? formatDuration(duration) : "时长未知"}</p>
+                <div className="rounded-xl bg-slate-100 px-2.5 py-2">
+                  <p className="flex items-center gap-1 text-[11px] font-semibold text-slate-600"><Layers size={12} /> 媒体分片</p>
+                  <p className="mt-1 text-lg font-bold text-slate-800 tabular-nums">{segmentTotal || "—"}</p>
+                  <p className="text-[11px] text-slate-500">{duration ? formatDuration(duration) : "时长未知"}</p>
                 </div>
               </div>
 
               {(health.risks || []).length > 0 && (
-                <div className="space-y-1 rounded-xl bg-purple-50/80 px-2.5 py-2">
+                <div className="space-y-1.5 rounded-xl border border-warning-100 bg-warning-50/60 px-3 py-2.5">
                   {health.risks.slice(0, 3).map((item) => (
-                    <p key={item} className="flex items-start gap-1.5 text-[10px] leading-relaxed text-purple-500">
-                      <Activity size={10} className="mt-0.5 shrink-0 text-purple-300" />
+                    <p key={item} className="flex items-start gap-1.5 text-[11px] leading-relaxed text-warning-600">
+                      <Activity size={11} className="mt-0.5 shrink-0" />
                       <span>{item}</span>
                     </p>
                   ))}
                 </div>
               )}
 
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="txzz-playback-lines grid gap-2 sm:grid-cols-2">
                 {lines.map((line) => {
                   const stateInfo = lineState(line);
                   const lineUrl = absoluteUrl(line.url || "");
                   return (
-                    <div key={line.key} className={`rounded-2xl ${stateInfo.bg} p-2.5`}>
+                    <div key={line.key} className={`rounded-2xl border ${stateInfo.bg} p-3`}>
                       <div className="mb-1.5 flex items-center justify-between gap-2">
                         <p className={`flex items-center gap-1 text-[11px] font-semibold ${stateInfo.color}`}>
                           <Route size={12} /> {line.label}
                         </p>
-                        <span className={`text-[10px] font-medium ${stateInfo.color}`}>
+                        <span className={`text-[11px] font-medium ${stateInfo.color}`}>
                           {stateInfo.label}
                           {Number.isFinite(stateInfo.score) && stateInfo.score > -500 ? ` · ${Math.round(stateInfo.score)}分` : ""}
                         </span>
                       </div>
-                      <p className="truncate font-mono text-[10px] text-purple-500">{lineUrl ? maskUrl(lineUrl) : "暂无链接"}</p>
-                      <div className="mt-1.5 flex flex-wrap gap-1 text-[9px]">
-                        <Pill className="bg-white/80 text-purple-500">{line.stat?.segments ? `${line.stat.segments} 分片` : "分片?"}</Pill>
-                        <Pill className="bg-white/80 text-purple-500">{line.stat?.duration ? formatDuration(line.stat.duration) : "时长?"}</Pill>
-                        {line.stat?.latencyMs ? <Pill className="bg-white/80 text-sky-600">{line.stat.latencyMs}ms</Pill> : null}
-                        {line.stat?.status ? <Pill className="bg-white/80 text-purple-500">HTTP {line.stat.status}</Pill> : null}
-                        {preferredLine?.key === line.key ? <Pill className="bg-emerald-100 text-emerald-600">推荐</Pill> : null}
+                      <p className="truncate font-mono text-[11px] text-slate-600">{lineUrl ? maskUrl(lineUrl) : "暂无链接"}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <Pill className="bg-white/80 text-slate-600">{line.stat?.segments ? `${line.stat.segments} 分片` : "分片未知"}</Pill>
+                        <Pill className="bg-white/80 text-slate-600">{line.stat?.duration ? formatDuration(line.stat.duration) : "时长未知"}</Pill>
+                        {line.stat?.latencyMs ? <Pill className="bg-white/80 text-info-600">{line.stat.latencyMs}ms</Pill> : null}
+                        {line.stat?.status ? <Pill className="bg-white/80 text-slate-600">HTTP {line.stat.status}</Pill> : null}
+                        {preferredLine?.url && preferredLine.key === line.key ? <Pill className="bg-success-50 text-success-600">推荐</Pill> : null}
                       </div>
-                      {line.stat?.error && <p className="mt-1.5 line-clamp-2 text-[10px] text-amber-600">{line.stat.error}</p>}
+                      {line.stat?.error && <p className="mt-2 line-clamp-2 text-[11px] text-warning-600">{line.stat.error}</p>}
                       <div className="mt-2 grid grid-cols-2 gap-1.5">
                         <SoftButton size="xs" variant="secondary" icon={Copy} disabled={!line.url} className="w-full" onClick={() => onAction(line.copyAction, { url: lineUrl, label: `${line.label}完整链接` })}>
                           复制
                         </SoftButton>
-                        <SoftButton size="xs" variant="sky" icon={ExternalLink} disabled={!line.url} className="w-full" onClick={() => onAction(line.openAction, { url: lineUrl, label: `${line.label}完整链接` })}>
+                        <SoftButton size="xs" variant="primary" icon={ExternalLink} disabled={!line.url} className="w-full" onClick={() => onAction(line.openAction, { url: lineUrl, label: `${line.label}完整链接` })}>
                           打开
                         </SoftButton>
                       </div>
@@ -2838,7 +2667,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               >
                 查看体检报告
               </SoftButton>
-              <p className="text-center text-[10px] text-purple-300">线路探测在后台静默完成，不会改写当前播放源，也不会写入剪贴板。</p>
+              <p className="text-center text-[11px] leading-relaxed text-slate-500">线路探测在后台静默完成；播放开始后会锁定当前源，只有起播失败才自动切换备用线路。</p>
             </div>
           </SectionCard>
         )}
@@ -2853,10 +2682,10 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           >
             <div className="space-y-3">
               <div>
-                <p className="mb-1.5 text-[11px] font-semibold text-purple-600">下载线路</p>
+                <p className="mb-2 text-[12px] font-semibold text-slate-700">下载线路</p>
                 <div className="grid grid-cols-3 gap-1.5">
                   {([
-                    { key: "auto" as const, label: "自动优选", tip: preferredLine?.label ? `当前推荐 ${preferredLine.label}` : "按探测分选择" },
+                    { key: "auto" as const, label: "自动优选", tip: preferredLineUrl ? `当前推荐 ${preferredLine?.label || "可用线路"}` : "等待可用线路" },
                     { key: "play" as const, label: "主线路", tip: lines[0]?.url ? `分 ${Math.round(lineScore(lines[0]))}` : "无链接" },
                     { key: "backup" as const, label: "备用线路", tip: lines[1]?.url ? `分 ${Math.round(lineScore(lines[1]))}` : "无链接" }
                   ]).map((item) => {
@@ -2868,14 +2697,14 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                         type="button"
                         disabled={disabled}
                         onClick={() => setDownloadLineKey(item.key)}
-                        className={`rounded-xl px-2 py-2 text-center transition disabled:opacity-40 ${
+                        className={`rounded-xl border px-2 py-2.5 text-center transition disabled:opacity-40 ${
                           active
-                            ? "bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-sm"
-                            : "bg-amber-50 text-amber-700 ring-1 ring-amber-100"
+                            ? "border-brand-600 bg-brand-600 text-white shadow-sm"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-brand-200 hover:bg-brand-50"
                         }`}
                       >
-                        <p className="text-[11px] font-bold">{item.label}</p>
-                        <p className={`mt-0.5 text-[9px] ${active ? "text-white/85" : "text-amber-500"}`}>{item.tip}</p>
+                        <p className="text-[12px] font-semibold">{item.label}</p>
+                        <p className={`mt-0.5 text-[10px] ${active ? "text-white/80" : "text-slate-500"}`}>{item.tip}</p>
                       </button>
                     );
                   })}
@@ -2883,39 +2712,39 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
               </div>
 
               {currentTask ? (
-                <div className="space-y-2 rounded-2xl bg-amber-50/70 p-3">
+                <div className="space-y-2.5 rounded-2xl border border-warning-100 bg-warning-50/50 p-3">
                   <div className="flex flex-wrap gap-1.5">
-                    <Pill className="bg-white text-purple-500">{downloadFormat(currentTask)}</Pill>
-                    <Pill className="bg-white text-pink-500">{downloadLineLabel(currentTask.lineKey)}</Pill>
-                    <Pill className="bg-white text-sky-500">
+                    <Pill className="bg-white text-slate-600">{downloadFormat(currentTask)}</Pill>
+                    <Pill className="bg-white text-brand-700">{downloadLineLabel(currentTask.lineKey)}</Pill>
+                    <Pill className="bg-white text-info-600">
                       {currentTask.totalBytes
                         ? `${formatBytes(currentTask.bytes)} / ${formatBytes(currentTask.totalBytes)}`
                         : formatBytes(currentTask.bytes)}
                     </Pill>
                     {downloadSpeedText(currentTask) && (
-                      <Pill className="bg-white text-emerald-600">{downloadSpeedText(currentTask)}</Pill>
+                      <Pill className="bg-white text-success-600">{downloadSpeedText(currentTask)}</Pill>
                     )}
                     <Pill className="bg-white text-slate-400">{shortTime(currentTask.updatedAt)}</Pill>
                   </div>
                   {currentTaskUrl && (
                     <div className="flex items-center gap-1.5 rounded-xl bg-white px-2.5 py-1.5">
-                      <Link size={11} className="shrink-0 text-purple-300" />
-                      <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-purple-500">{maskUrl(currentTaskUrl)}</span>
+                      <Link size={12} className="shrink-0 text-slate-400" />
+                      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-slate-600">{maskUrl(currentTaskUrl)}</span>
                     </div>
                   )}
                   {currentTask.stage !== "complete" && (
                     <div>
-                      <div className="mb-1 flex justify-between text-[10px] text-purple-400">
+                      <div className="mb-1.5 flex justify-between text-[11px] text-slate-500">
                         <span>{downloadStageLabel(currentTask.stage)}</span>
-                        <span className="tabular-nums font-semibold text-amber-600">
+                        <span className="tabular-nums font-semibold text-warning-600">
                           {taskProgress}%
                           {currentTask.total ? ` · ${currentTask.current || 0}/${currentTask.total} 片` : ""}
                         </span>
                       </div>
                       <div className="h-2 overflow-hidden rounded-full bg-white">
-                        <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${taskProgress}%` }} />
+                        <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${taskProgress}%` }} />
                       </div>
-                      <div className="mt-1 flex justify-between text-[9px] text-purple-300">
+                      <div className="mt-1.5 flex justify-between gap-2 text-[11px] text-slate-500">
                         <span>
                           {currentTask.totalBytes
                             ? `已下载 ${formatBytes(currentTask.bytes || 0)} / 约 ${formatBytes(currentTask.totalBytes)}`
@@ -2928,7 +2757,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                     </div>
                   )}
                   {(currentTask.error || currentTask.transmuxError) && (
-                    <p className="rounded-xl bg-rose-50 p-2 text-[10px] leading-relaxed text-rose-600">
+                    <p className="rounded-xl bg-danger-50 p-2.5 text-[11px] leading-relaxed text-danger-600">
                       {currentTask.error || `MP4转封装失败，TS已保留：${currentTask.transmuxError}`}
                     </p>
                   )}
@@ -2980,7 +2809,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                         : "创建下载"}
                 </SoftButton>
                 {currentTaskUrl && (
-                  <SoftButton size="sm" variant="sky" icon={Copy} onClick={() => onAction("copy-download-url", { taskId: currentTask?.taskId || "" })}>
+                  <SoftButton size="sm" variant="secondary" icon={Copy} onClick={() => onAction("copy-download-url", { taskId: currentTask?.taskId || "" })}>
                     复制链接
                   </SoftButton>
                 )}
@@ -3010,8 +2839,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
             }
           >
             <div className="space-y-2.5">
-              <div className="flex items-center gap-2 rounded-xl bg-purple-50/80 px-2.5 py-2 ring-1 ring-purple-100">
-                <Search size={13} className="shrink-0 text-purple-300" />
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <Search size={14} className="shrink-0 text-slate-400" />
                 <SoftInput
                   value={recordSearch}
                   onChange={(event) => setRecordSearch(event.target.value)}
@@ -3031,18 +2860,18 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                       key={filterItem.key}
                       type="button"
                       onClick={() => setRecordFilter(filterItem.key)}
-                      className={`rounded-xl px-0.5 py-1.5 text-center transition ${
-                        active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "bg-purple-50/80 text-purple-400"
+                      className={`rounded-xl border px-0.5 py-1.5 text-center transition ${
+                        active ? "border-brand-200 bg-brand-50 text-brand-700 shadow-sm" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
                       }`}
                     >
-                      <p className={`text-sm font-bold tabular-nums ${active ? "text-white" : filterItem.color}`}>{filterItem.value}</p>
-                      <p className="mt-0.5 text-[9px]">{filterItem.label}</p>
+                      <p className={`text-sm font-bold tabular-nums ${active ? "text-brand-700" : filterItem.color}`}>{filterItem.value}</p>
+                      <p className="mt-0.5 text-[10px]">{filterItem.label}</p>
                     </button>
                   );
                 })}
               </div>
 
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                 {recordSortItems.map((item) => {
                   const active = recordSort === item.key;
                   return (
@@ -3051,8 +2880,8 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                       type="button"
                       onClick={() => setRecordSort(item.key)}
                       title={item.tip}
-                      className={`flex min-h-8 items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold transition ${
-                        active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "bg-white text-purple-400 ring-1 ring-purple-100"
+                      className={`flex min-h-10 items-center justify-center gap-1 rounded-xl border px-1 text-[11px] font-semibold transition ${
+                        active ? "border-brand-200 bg-brand-50 text-brand-700 shadow-sm" : "border-slate-200 bg-white text-slate-500"
                       }`}
                     >
                       <SortDesc size={11} /> {item.label}
@@ -3068,49 +2897,53 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                   const recordPrimaryAction = recordTask?.stage === "error" ? "重试" : recordCanSave ? "保存" : recordRunning ? "查看" : "下载";
                   const recordReport = playbackRecordReport(item, recordTask);
                   return (
-                    <div key={`${item.movieId}-${index}`} className="overflow-hidden rounded-2xl border border-purple-50 bg-gradient-to-b from-white to-purple-50/30 p-2.5 shadow-sm">
+                    <div key={`${item.movieId}-${index}`} className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-[var(--txzz-shadow-sm)]">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-bold text-purple-800">{item.movieTitle || item.title || item.movieId || "播放详情"}</p>
-                          <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-purple-400">
-                            {recordUrl ? <CheckCircle size={10} className="shrink-0 text-emerald-400" /> : <AlertCircle size={10} className="shrink-0 text-rose-400" />}
+                          <p className="truncate text-[13px] font-semibold text-slate-900">{item.movieTitle || item.title || item.movieId || "播放详情"}</p>
+                          <p className="mt-1 flex items-center gap-1 truncate text-[11px] text-slate-500">
+                            {recordUrl ? <CheckCircle size={11} className="shrink-0 text-success-500" /> : <AlertCircle size={11} className="shrink-0 text-danger-500" />}
                             {recordUrl ? maskUrl(recordUrl) : "缺少播放链接"}
                           </p>
                         </div>
                         <Pill className={recordTaskState.color}>{recordTaskState.label}</Pill>
                       </div>
                       <div className="mt-1.5 flex flex-wrap gap-1">
-                        <Pill className="bg-purple-50 text-purple-500"><Wifi size={9} /> M3U8</Pill>
-                        <Pill className="bg-sky-50 text-sky-500"><Layers size={9} /> {item.fullStat?.segments || "?"} 分片</Pill>
+                        <Pill className="bg-slate-100 text-slate-600"><Wifi size={10} /> M3U8</Pill>
+                        <Pill className="bg-info-50 text-info-600"><Layers size={10} /> {item.fullStat?.segments || "?"} 分片</Pill>
                         {item.fullStat?.duration ? (
-                          <Pill className="bg-violet-50 text-violet-500"><Timer size={9} /> {formatDuration(item.fullStat.duration)}</Pill>
+                          <Pill className="bg-brand-50 text-brand-700"><Timer size={10} /> {formatDuration(item.fullStat.duration)}</Pill>
                         ) : null}
-                        <Pill className="bg-pink-50 text-pink-500">{item.accountLabel || item.accountUser || "自动账号"}</Pill>
-                        <Pill className="bg-slate-50 text-slate-400"><Clock size={9} /> {shortTime(String((item as { ts?: string }).ts || item.fetchedAt || ""))}</Pill>
+                        <Pill className="bg-success-50 text-success-600">{item.accountLabel || item.accountUser || "自动账号"}</Pill>
+                        <Pill className="bg-slate-50 text-slate-500"><Clock size={10} /> {shortTime(String((item as { ts?: string }).ts || item.fetchedAt || ""))}</Pill>
                       </div>
                       {recordTask && recordTask.stage !== "complete" && (
                         <div className="mt-2">
-                          <div className="mb-1 flex justify-between text-[10px] text-purple-400">
+                          <div className="mb-1 flex justify-between text-[11px] text-slate-500">
                             <span>{downloadStageLabel(recordTask.stage)}</span>
                             <span className="tabular-nums">{recordTask.total ? `${recordTask.current || 0}/${recordTask.total}` : `${recordTaskProgress}%`}</span>
                           </div>
-                          <div className="h-1.5 overflow-hidden rounded-full bg-pink-100">
-                            <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-400 transition-all" style={{ width: `${recordTaskProgress}%` }} />
+                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                            <div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${recordTaskProgress}%` }} />
                           </div>
                         </div>
                       )}
                       <div className="mt-2 grid grid-cols-3 gap-1.5 sm:grid-cols-5">
                         <SoftButton
                           size="xs"
-                          variant="emerald"
+                          variant="primary"
                           icon={Film}
                           disabled={!recordUrl}
                           className="w-full"
-                          onClick={() => {
+                           onClick={() => {
+                            const playUrl = absoluteUrl(item.playLink || "");
+                            const backupUrl = absoluteUrl(item.backupLink || "");
                             setPreviewRecord({
-                              url: recordUrl,
                               title: item.movieTitle || item.title || item.movieId || "播放记录",
-                              movieId: item.movieId
+                              movieId: item.movieId,
+                              playUrl,
+                              backupUrl,
+                              activeLine: playUrl ? "play" : "backup"
                             });
                             setPreviewKey("record");
                             setPlayerReloadKey((value) => value + 1);
@@ -3118,7 +2951,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
                         >
                           预览
                         </SoftButton>
-                        <SoftButton size="xs" variant="sky" icon={ExternalLink} disabled={!recordUrl} className="w-full" onClick={() => onAction("open-playback-url", { url: recordUrl, label: "播放记录完整链接" })}>
+                        <SoftButton size="xs" variant="secondary" icon={ExternalLink} disabled={!recordUrl} className="w-full" onClick={() => onAction("open-playback-url", { url: recordUrl, label: "播放记录完整链接" })}>
                           打开
                         </SoftButton>
                         <SoftButton size="xs" variant="secondary" icon={Activity} className="w-full" onClick={() => openReportView("播放记录报告", recordReport)}>
@@ -3154,32 +2987,13 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
           </SectionCard>
         )}
       </div>
+      </div>
 
       {/* 报告仅页内查看，不写入系统剪贴板 */}
-      {reportView && (
-        <div
-          className="txzz-candy-interactive fixed inset-0 z-[70] flex items-end justify-center bg-black/40 p-3 backdrop-blur-[4px] sm:items-center"
-          onClick={() => setReportView(null)}
-        >
-          <div
-            className="flex max-h-[min(72vh,520px)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-purple-100 bg-white shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="flex items-center justify-between border-b border-purple-50 px-4 py-3">
-              <h3 className="text-sm font-bold text-purple-800">{reportView.title}</h3>
-              <SoftButton size="xs" variant="ghost" onClick={() => setReportView(null)}>关闭</SoftButton>
-            </div>
-            <pre className="flex-1 overflow-y-auto whitespace-pre-wrap break-words px-4 py-3 text-[11px] leading-relaxed text-purple-700">
-              {reportView.body}
-            </pre>
-            <p className="border-t border-purple-50 px-4 py-2 text-center text-[10px] text-purple-300">
-              仅面板内查看，不会复制到系统剪贴板
-            </p>
-          </div>
-        </div>
-      )}
+      <ModalSheet open={Boolean(reportView)} onClose={() => setReportView(null)} title={reportView?.title || "播放报告"}>
+        <pre className="max-h-[56vh] overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-700">{reportView?.body || ""}</pre>
+        <p className="mt-3 text-center text-[11px] text-slate-500">仅在面板内查看，不会自动写入系统剪贴板</p>
+      </ModalSheet>
     </div>
   );
 }

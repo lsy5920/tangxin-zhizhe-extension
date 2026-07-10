@@ -1,4 +1,4 @@
-import { useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useEffect, useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { ChevronLeft, ChevronRight, Lock, Pause, Play, Sun, Unlock, Volume2, VolumeX, Zap } from "lucide-react";
 import { formatDuration } from "../../helpers";
 
@@ -52,6 +52,7 @@ export type GestureSurfaceProps = {
   onHoldRateStart: (rate: number) => void;
   onHoldRateEnd: () => void;
   onLockHint?: () => void;
+  onContextMenu?: (position: { x: number; y: number }) => void;
 };
 
 type SwipeMode = "none" | "seek" | "volume" | "brightness";
@@ -105,6 +106,7 @@ export function PlayerGestureSurface({
   playing,
   holdRate = 3,
   onShowHud,
+  onClearHud,
   onToggleControls,
   onTogglePlay,
   onSeekBy,
@@ -113,7 +115,8 @@ export function PlayerGestureSurface({
   onBrightness,
   onHoldRateStart,
   onHoldRateEnd,
-  onLockHint
+  onLockHint,
+  onContextMenu
 }: GestureSurfaceProps) {
   const clickRef = useRef<{ count: number; x: number; timer?: number; lastDoubleAt: number; lastDoubleZone: "left" | "center" | "right" | "" }>({
     count: 0,
@@ -139,6 +142,8 @@ export function PlayerGestureSurface({
     allowMouseDrag: false
   });
   const cumulativeSeekRef = useRef(0);
+  const cleanupCallbacksRef = useRef({ onHoldRateEnd, onClearHud });
+  cleanupCallbacksRef.current = { onHoldRateEnd, onClearHud };
 
   const clearHoldTimers = () => {
     const hold = holdRef.current;
@@ -188,6 +193,18 @@ export function PlayerGestureSurface({
     return wasActive;
   };
 
+  useEffect(() => () => {
+    // 清理延迟单击、长按和连续快退定时器，避免切线或卸载后继续修改播放器状态。
+    if (clickRef.current.timer) window.clearTimeout(clickRef.current.timer);
+    clearHoldTimers();
+    if (holdRef.current.active && holdRef.current.side === "right") {
+      cleanupCallbacksRef.current.onHoldRateEnd();
+    }
+    holdRef.current = { active: false, side: "" };
+    swipeRef.current.active = false;
+    cleanupCallbacksRef.current.onClearHud?.();
+  }, []);
+
   const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     event.stopPropagation();
     if (suppressClickRef.current) {
@@ -211,20 +228,9 @@ export function PlayerGestureSurface({
       const zone = zoneOf(clickX, rect.left, rect.width);
 
       if (locked) {
-        if (count < 2) {
-          onShowHud({ kind: "lock", text: "控制层已锁定", percent: 100 }, 900);
-          onLockHint?.();
-          return;
-        }
-        if (zone === "left") {
-          onSeekBy(-seekStep);
-          onShowHud({ kind: "double-left", text: `-${seekStep}s`, zone: "left", percent: 35 }, 650);
-        } else if (zone === "right") {
-          onSeekBy(seekStep);
-          onShowHud({ kind: "double-right", text: `+${seekStep}s`, zone: "right", percent: 65 }, 650);
-        } else {
-          onShowHud({ kind: "lock", text: "点击右下角解锁", percent: 100, zone: "center" }, 1000);
-        }
+        // 锁屏的语义是停止全部画面手势；只保留右下角独立解锁按钮。
+        onShowHud({ kind: "lock", text: "已锁定 · 点击右下角解锁", percent: 100, zone: count >= 2 ? zone : "center" }, 1000);
+        onLockHint?.();
         return;
       }
 
@@ -432,9 +438,20 @@ export function PlayerGestureSurface({
     }, 700);
   };
 
+  const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!enabled || locked || !onContextMenu) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    onContextMenu({
+      x: clamp(event.clientX - rect.left, 8, Math.max(8, rect.width - 8)),
+      y: clamp(event.clientY - rect.top, 8, Math.max(8, rect.height - 8))
+    });
+  };
+
   return (
     <div
-      className="txzz-player-gesture-surface"
+      className={`txzz-player-gesture-surface ${!enabled || locked ? "txzz-player-gesture-surface--disabled" : ""}`}
       role="presentation"
       aria-label="视频手势操作区域"
       onClick={handleClick}
@@ -444,6 +461,7 @@ export function PlayerGestureSurface({
       onPointerCancel={handlePointerUp}
       onLostPointerCapture={handlePointerUp}
       onWheel={handleWheel}
+      onContextMenu={handleContextMenu}
     />
   );
 }
@@ -496,7 +514,7 @@ export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProp
           <div className="txzz-gesture-side-track">
             <div className="txzz-gesture-side-fill bg-amber-300" style={{ height: `${barPercent}%` }} />
           </div>
-          <span className="mt-1.5 text-[9px] font-semibold text-white/90">{Math.round(60 + (barPercent / 100) * 80)}</span>
+          <span className="mt-1.5 text-[10px] font-semibold text-white/90">{Math.round(60 + (barPercent / 100) * 80)}</span>
         </div>
       )}
 
@@ -507,7 +525,7 @@ export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProp
           <div className="txzz-gesture-side-track">
             <div className="txzz-gesture-side-fill bg-sky-400" style={{ height: `${barPercent}%` }} />
           </div>
-          <span className="mt-1.5 text-[9px] font-semibold text-white/90">{barPercent}</span>
+          <span className="mt-1.5 text-[10px] font-semibold text-white/90">{barPercent}</span>
         </div>
       )}
 
