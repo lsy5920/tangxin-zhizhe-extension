@@ -1505,7 +1505,6 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
       container,
       url: source,
       type: isPlaylistUrl(source) ? "m3u8" : "mp4",
-      title: playerRuntimeRef.current.title,
       theme: "#38bdf8",
       volume: playerVolume,
       muted: playerMuted,

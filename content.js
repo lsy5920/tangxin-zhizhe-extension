@@ -1366,6 +1366,17 @@
   }
 
   function emitFlow(title, detail, level = "info") {
+    const previous = state.flow[state.flow.length - 1];
+    const previousTime = Date.parse(previous?.ts || "");
+    if (
+      previous?.title === title &&
+      previous?.detail === detail &&
+      previous?.level === level &&
+      Number.isFinite(previousTime) &&
+      Date.now() - previousTime < 4000
+    ) {
+      return;
+    }
     const item = { title, detail, level, ts: new Date().toISOString() };
     state.flow.push(item);
     state.flow = state.flow.slice(-80);
@@ -1563,7 +1574,7 @@
       state.observations.push(normalized);
       state.observations = state.observations.slice(-120);
       renderObservations();
-      emitFlow("账号状态记录", `${categoryLabel(normalized.category)} / ${flags.join(",") || normalized.status || "observed"}`, "ok");
+      // 被动网络观察仅保留在诊断记录中，不弹出全局提示，避免请求频繁时提示常驻。
       publishState();
     }
   }
@@ -1979,23 +1990,24 @@
     return account;
   }
 
-  function validateAccountCredential(account = {}, mode = payloadText("accountCredentialMode", "password") || "password") {
-    if (mode === "password" && (!account.username || !account.password)) {
+  function validateAccountCredential(account = {}, mode = payloadText("accountCredentialMode", "password") || "password", existing = null) {
+    if (mode === "password" && (!account.username || (!account.password && !existing?.hasPassword && !existing?.password))) {
       throw new Error("账号密码模式需要填写用户名和密码");
     }
-    if (mode === "qrcode" && !account.qrcode) {
+    if (mode === "qrcode" && !account.qrcode && !existing?.hasQrcode && !existing?.qrcode) {
       throw new Error("账号凭证模式需要填写账号凭证内容");
     }
-    if (mode === "token" && (!account.deviceId || !account.userToken)) {
+    if (mode === "token" && ((!account.deviceId || !account.userToken) && !existing?.hasToken && !(existing?.deviceId && existing?.userToken))) {
       throw new Error("token/deviceId 模式需要同时填写 deviceId 和 userToken");
     }
   }
 
   async function saveAccount(payload = uiState.lastActionPayload || {}) {
-    const selected = uiState.editingAccountId ? state.accountPool.find((item) => item.id === uiState.editingAccountId) : null;
+    const editingId = payloadText("accountId") || uiState.editingAccountId;
+    const selected = editingId ? state.accountPool.find((item) => item.id === editingId) : null;
     if (selected && isCloudAccount(selected)) throw new Error("云端账号只显示脱敏摘要，不能在插件前端修改；请先切换到本地账号或新建本地账号。");
     const account = accountFromForm(payload);
-    validateAccountCredential(account, payloadText("accountCredentialMode", "password") || "password");
+    validateAccountCredential(account, payloadText("accountCredentialMode", "password") || "password", selected);
     const existing = state.accountPool.find((item) => item.id === account.id);
     if (existing && isCloudAccount(existing) && existing.id !== uiState.editingAccountId) throw new Error("云端账号只显示摘要，不能用同 ID 覆盖；请换一个账号 ID");
     const response = await sendRuntime("upsertAccount", { account });
@@ -2016,7 +2028,11 @@
       }
     });
     syncSavedState(response.state || {});
-    emitFlow("远程账号池", "已保存 Worker 配置并尝试同步账号池", "ok");
+    if (response.state?.remote?.lastError) {
+      emitFlow("云端配置已保存", response.state.remote.lastError, "error");
+    } else {
+      emitFlow("云端配置", "配置验证通过并已同步账号池", "ok");
+    }
   }
 
   async function syncRemoteAccounts() {
@@ -2034,10 +2050,11 @@
   }
 
   async function uploadAccountRemote(payload = uiState.lastActionPayload || {}) {
-    const selected = uiState.editingAccountId ? state.accountPool.find((item) => item.id === uiState.editingAccountId) : null;
+    const editingId = payloadText("accountId") || uiState.editingAccountId;
+    const selected = editingId ? state.accountPool.find((item) => item.id === editingId) : null;
     if (selected && isCloudAccount(selected)) throw new Error("云端账号只显示脱敏摘要，不能直接重复上传；请先在表单中新建本地账号或导入当前会话。");
     const account = accountFromForm(payload);
-    validateAccountCredential(account, payloadText("accountCredentialMode", "password") || "password");
+    validateAccountCredential(account, payloadText("accountCredentialMode", "password") || "password", selected);
     const existing = state.accountPool.find((item) => item.id === account.id);
     if (existing && isCloudAccount(existing) && existing.id !== uiState.editingAccountId) throw new Error("云端已有同 ID 账号，不能重复覆盖；请换一个账号 ID");
     const response = await sendRuntime("uploadAccountToRemote", { account });

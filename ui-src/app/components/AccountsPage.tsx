@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle, Cloud, Coins, Crown, Edit2, Eye, EyeOff, HardDrive, Heart, Key, Plus, RefreshCw, ShieldCheck, Trash2, Upload, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, Cloud, Coins, Crown, Edit2, Eye, EyeOff, HardDrive, Heart, Key, Plus, RefreshCw, Search, ShieldCheck, Trash2, Upload, XCircle } from "lucide-react";
 import type { AccountItem, AccountsPageIntent, BridgeState } from "../types";
 import { accountAvailable, accountName, accountRights, accountStats, accountStatusLabel, formatRelativeTime, isCloudAccount, visibleAccounts } from "../helpers";
 import {
@@ -34,31 +34,65 @@ function accountTypeText(type: AddType) {
   return "token / deviceId";
 }
 
+/** 校验并规范云端服务地址，线上仅允许 HTTPS，本机调试允许 HTTP。 */
+function normalizeWorkerAddress(value: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(String(value || "").trim());
+  } catch (_) {
+    throw new Error("请输入包含 https:// 的完整云端服务地址");
+  }
+  const localHost = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(parsed.hostname);
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && localHost)) {
+    throw new Error("云端服务地址必须使用 HTTPS；只有本机调试地址可使用 HTTP");
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error("云端服务地址不能包含账号、密码、查询参数或锚点");
+  }
+  const path = parsed.pathname.replace(/\/+$/, "");
+  return `${parsed.origin}${path === "/" ? "" : path}`;
+}
+
+const emptyAccountForm = {
+  accountNickname: "",
+  accountUsername: "",
+  accountPassword: "",
+  accountDeviceId: "",
+  accountToken: "",
+  accountQrcode: "",
+  accountNotes: ""
+};
+
 export function AccountsPage({ state, onAction, intent }: Props) {
   const [showInvalid, setShowInvalid] = useState(false);
   const [workerUrl, setWorkerUrl] = useState(state.remote?.baseUrl || "");
   const [sourceMode, setSourceMode] = useState(state.remote?.accountSourceMode || "cloud");
+  const [configError, setConfigError] = useState("");
+  const [query, setQuery] = useState("");
   const [addType, setAddType] = useState<AddType>("password");
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTypeSelect, setShowTypeSelect] = useState(false);
-  const [form, setForm] = useState({
-    accountNickname: "",
-    accountUsername: "",
-    accountPassword: "",
-    accountDeviceId: "",
-    accountToken: "",
-    accountQrcode: "",
-    accountNotes: ""
-  });
+  const [editingAccountId, setEditingAccountId] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<AccountItem | null>(null);
+  const [formError, setFormError] = useState("");
+  const [form, setForm] = useState(emptyAccountForm);
 
   const stats = accountStats(state);
-  const accounts = useMemo(() => visibleAccounts(state, showInvalid), [state, showInvalid]);
+  const accounts = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+    const source = visibleAccounts(state, showInvalid);
+    if (!normalizedQuery) return source;
+    return source.filter((account) => [accountName(account), account.username, account.id, account.notes]
+      .filter(Boolean)
+      .some((value) => String(value).toLocaleLowerCase("zh-CN").includes(normalizedQuery)));
+  }, [state, showInvalid, query]);
   const cloudAccounts = accounts.filter(isCloudAccount);
   const localAccounts = accounts.filter((a) => !isCloudAccount(a));
 
   useEffect(() => {
     setWorkerUrl(state.remote?.baseUrl || "");
     setSourceMode(state.remote?.accountSourceMode || "cloud");
+    setConfigError("");
   }, [state.remote?.baseUrl, state.remote?.accountSourceMode]);
 
   useEffect(() => {
@@ -66,17 +100,84 @@ export function AccountsPage({ state, onAction, intent }: Props) {
     if (intent?.openAdd) setShowTypeSelect(true);
   }, [intent?.showInvalid, intent?.openAdd]);
 
-  const saveRemote = () => onAction("save-remote", { remoteBaseUrl: workerUrl, accountSourceMode: sourceMode });
+  const saveRemote = () => {
+    try {
+      const normalizedUrl = normalizeWorkerAddress(workerUrl);
+      setWorkerUrl(normalizedUrl);
+      setConfigError("");
+      onAction("save-remote", {
+        remoteBaseUrl: normalizedUrl,
+        accountSourceMode: sourceMode
+      });
+    } catch (err: unknown) {
+      setConfigError(err instanceof Error ? err.message : "云端服务地址无效");
+    }
+  };
 
   const submitAccount = (upload: boolean) => {
-    onAction(upload ? "upload-account-remote" : "save-account", { ...form, accountCredentialMode: addType });
+    const existing = state.accountPool?.find((account) => account.id === editingAccountId);
+    const canKeepExisting = addType === "password"
+      ? Boolean(existing?.hasPassword)
+      : addType === "qrcode"
+        ? Boolean(existing?.hasQrcode)
+        : Boolean(existing?.hasToken);
+    if (addType === "password" && !form.accountUsername.trim()) {
+      setFormError("请填写登录用户名");
+      return;
+    }
+    const hasNewCredential = addType === "password"
+      ? Boolean(form.accountPassword)
+      : addType === "qrcode"
+        ? Boolean(form.accountQrcode.trim())
+        : Boolean(form.accountDeviceId.trim() && form.accountToken.trim());
+    const hasPartialTokenCredential = addType === "token" && Boolean(form.accountDeviceId.trim() || form.accountToken.trim());
+    if (hasPartialTokenCredential && !canKeepExisting && !hasNewCredential) {
+      setFormError("首次保存 token 账号时，deviceId 和 userToken 必须同时填写");
+      return;
+    }
+    if (!hasNewCredential && !canKeepExisting) {
+      setFormError(addType === "password" ? "请填写登录密码" : addType === "qrcode" ? "请填写账号凭证" : "请同时填写 deviceId 和 userToken");
+      return;
+    }
+    setFormError("");
+    onAction(upload ? "upload-account-remote" : "save-account", {
+      ...form,
+      accountId: editingAccountId,
+      accountCredentialMode: addType
+    });
     setShowAddModal(false);
+    setEditingAccountId("");
+    setForm(emptyAccountForm);
   };
 
   const chooseType = (type: AddType) => {
     setAddType(type);
+    setEditingAccountId("");
+    setForm(emptyAccountForm);
+    setFormError("");
     setShowTypeSelect(false);
     setShowAddModal(true);
+  };
+
+  const editAccount = (account: AccountItem) => {
+    const credentialType: AddType = account.hasQrcode ? "qrcode" : account.hasToken ? "token" : "password";
+    setAddType(credentialType);
+    setEditingAccountId(account.id || "");
+    setForm({
+      ...emptyAccountForm,
+      accountNickname: account.label || accountName(account),
+      accountUsername: account.username || "",
+      accountNotes: account.notes || ""
+    });
+    setFormError("");
+    setShowAddModal(true);
+  };
+
+  const closeAccountModal = () => {
+    setShowAddModal(false);
+    setEditingAccountId("");
+    setFormError("");
+    setForm(emptyAccountForm);
   };
 
   const renderAccount = (account: AccountItem) => {
@@ -149,8 +250,8 @@ export function AccountsPage({ state, onAction, intent }: Props) {
                 {selected ? "已选" : "选择"}
               </SoftButton>
               <SoftButton size="xs" variant="ghost" icon={Upload} title="上传至云端" onClick={() => onAction("upload-local-account-remote", { accountId: account.id || "" })} />
-              <SoftButton size="xs" variant="ghost" icon={Edit2} title="编辑" onClick={() => onAction("edit-account", { accountId: account.id || "" })} />
-              <SoftButton size="xs" variant="danger" icon={Trash2} title="删除" onClick={() => onAction("remove-account", { accountId: account.id || "" })} />
+              <SoftButton size="xs" variant="ghost" icon={Edit2} title="编辑账号" onClick={() => editAccount(account)} />
+              <SoftButton size="xs" variant="danger" icon={Trash2} title="删除账号" onClick={() => setPendingDelete(account)} />
             </>
           )}
         </div>
@@ -169,13 +270,17 @@ export function AccountsPage({ state, onAction, intent }: Props) {
         ]}
       />
 
-      <SectionCard title="远程配置" icon={Cloud} hint="配置云端服务地址与账号来源策略" tone="sky">
+      <SectionCard title="云端连接" icon={Cloud} hint="填写服务地址后即可直接体检、同步和使用" tone="sky">
         <div className="space-y-3">
           <div>
-            <FieldLabel>云端服务地址</FieldLabel>
+            <FieldLabel htmlFor="txzz-worker-url">云端服务地址</FieldLabel>
             <SoftInput
+              id="txzz-worker-url"
+              type="url"
+              inputMode="url"
+              autoComplete="url"
               value={workerUrl}
-              onChange={(e) => setWorkerUrl(e.target.value)}
+              onChange={(e) => { setWorkerUrl(e.target.value); setConfigError(""); }}
               placeholder="https://txzzsecure.lsy20.top"
             />
           </div>
@@ -189,6 +294,7 @@ export function AccountsPage({ state, onAction, intent }: Props) {
                     key={mode.val}
                     type="button"
                     onClick={() => setSourceMode(mode.val)}
+                    aria-pressed={active}
                     className={`rounded-xl border px-3 py-2 text-left transition ${
                       active
                         ? "border-transparent bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-md"
@@ -203,11 +309,16 @@ export function AccountsPage({ state, onAction, intent }: Props) {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <SoftButton className="w-full" onClick={saveRemote}>保存配置</SoftButton>
+            <SoftButton className="w-full" icon={ShieldCheck} onClick={saveRemote}>保存并验证</SoftButton>
             <SoftButton className="w-full" variant="sky" icon={RefreshCw} onClick={() => onAction("sync-remote")}>同步云端</SoftButton>
           </div>
+          {configError && (
+            <p className="flex items-start gap-1.5 rounded-xl bg-rose-50 px-2.5 py-2 text-[10px] leading-relaxed text-rose-600" role="alert">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />{configError}
+            </p>
+          )}
           {state.remote?.lastSyncAt && (
-            <p className="text-[10px] text-purple-300">上次同步：{formatRelativeTime(state.remote.lastSyncAt)}</p>
+            <p className="flex items-center gap-1 text-[10px] text-emerald-500"><CheckCircle size={11} />上次同步：{formatRelativeTime(state.remote.lastSyncAt)}</p>
           )}
           {state.remote?.lastError && (
             <p className="rounded-xl bg-rose-50 px-2.5 py-1.5 text-[10px] text-rose-500">{state.remote.lastError}</p>
@@ -215,10 +326,22 @@ export function AccountsPage({ state, onAction, intent }: Props) {
         </div>
       </SectionCard>
 
+      <div className="relative">
+        <Search size={14} className="pointer-events-none absolute left-3 top-1/2 z-[1] -translate-y-1/2 text-purple-300" />
+        <SoftInput
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          className="pl-9 pr-16"
+          placeholder="搜索账号名称、用户名或备注"
+          aria-label="搜索账号"
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-purple-300">{accounts.length} 个</span>
+      </div>
+
       <SectionCard
         title="云端账号"
         icon={Cloud}
-        hint="只读轮换账号，不可手动删除"
+        hint={query ? `找到 ${cloudAccounts.length} 个云端账号` : "只读轮换账号，不可手动删除"}
         action={
           <SoftButton size="xs" variant="ghost" icon={showInvalid ? EyeOff : Eye} onClick={() => setShowInvalid((v) => !v)}>
             {showInvalid ? "隐藏失效" : "查看失效"}
@@ -240,7 +363,7 @@ export function AccountsPage({ state, onAction, intent }: Props) {
       <SectionCard
         title="本地账号"
         icon={HardDrive}
-        hint="可手动添加、选择、上传与删除"
+        hint={query ? `找到 ${localAccounts.length} 个本地账号` : "可手动添加、选择、上传与删除"}
         action={
           <SoftButton size="xs" icon={Plus} onClick={() => setShowTypeSelect(true)}>
             添加
@@ -281,54 +404,89 @@ export function AccountsPage({ state, onAction, intent }: Props) {
 
       <ModalSheet
         open={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        title={accountTypeText(addType)}
+        onClose={closeAccountModal}
+        title={editingAccountId ? `编辑${accountTypeText(addType)}` : accountTypeText(addType)}
         footer={
           <div className="grid grid-cols-2 gap-2">
-            <SoftButton variant="secondary" className="w-full" onClick={() => submitAccount(false)}>保存本地</SoftButton>
-            <SoftButton className="w-full" icon={Upload} onClick={() => submitAccount(true)}>保存并上传</SoftButton>
+            <SoftButton variant="secondary" className="w-full" onClick={() => submitAccount(false)}>{editingAccountId ? "保存修改" : "保存本地"}</SoftButton>
+            <SoftButton className="w-full" icon={Upload} onClick={() => submitAccount(true)}>{editingAccountId ? "修改并上传" : "保存并上传"}</SoftButton>
           </div>
         }
       >
         <div className="space-y-2.5">
+          {editingAccountId && (
+            <p className="rounded-xl bg-sky-50 px-3 py-2 text-[10px] leading-relaxed text-sky-600">
+              凭据输入框留空会保留原凭据；只有填写新内容时才会替换。
+            </p>
+          )}
           <div>
-            <FieldLabel>账号昵称</FieldLabel>
-            <SoftInput placeholder="显示名称" value={form.accountNickname} onChange={(e) => setForm({ ...form, accountNickname: e.target.value })} />
+            <FieldLabel htmlFor="txzz-account-nickname">账号昵称</FieldLabel>
+            <SoftInput id="txzz-account-nickname" autoComplete="nickname" placeholder="显示名称" value={form.accountNickname} onChange={(e) => setForm({ ...form, accountNickname: e.target.value })} />
           </div>
           {addType === "password" && (
             <>
               <div>
-                <FieldLabel>用户名</FieldLabel>
-                <SoftInput placeholder="登录用户名" value={form.accountUsername} onChange={(e) => setForm({ ...form, accountUsername: e.target.value })} />
+                <FieldLabel htmlFor="txzz-account-username">用户名</FieldLabel>
+                <SoftInput id="txzz-account-username" autoComplete="username" placeholder="登录用户名" value={form.accountUsername} onChange={(e) => setForm({ ...form, accountUsername: e.target.value })} />
               </div>
               <div>
-                <FieldLabel>密码</FieldLabel>
-                <SoftInput type="password" placeholder="登录密码" value={form.accountPassword} onChange={(e) => setForm({ ...form, accountPassword: e.target.value })} />
+                <FieldLabel htmlFor="txzz-account-password">密码</FieldLabel>
+                <SoftInput id="txzz-account-password" type="password" autoComplete="current-password" placeholder={editingAccountId ? "留空保留原密码" : "登录密码"} value={form.accountPassword} onChange={(e) => setForm({ ...form, accountPassword: e.target.value })} />
               </div>
             </>
           )}
           {addType === "qrcode" && (
             <div>
-              <FieldLabel>账号凭证</FieldLabel>
-              <SoftTextarea rows={3} placeholder="粘贴凭证内容" value={form.accountQrcode} onChange={(e) => setForm({ ...form, accountQrcode: e.target.value })} />
+              <FieldLabel htmlFor="txzz-account-qrcode">账号凭证</FieldLabel>
+              <SoftTextarea id="txzz-account-qrcode" rows={3} placeholder={editingAccountId ? "留空保留原账号凭证" : "粘贴凭证内容"} value={form.accountQrcode} onChange={(e) => setForm({ ...form, accountQrcode: e.target.value })} />
             </div>
           )}
           {addType === "token" && (
             <>
               <div>
-                <FieldLabel>deviceId</FieldLabel>
-                <SoftInput placeholder="设备 ID" value={form.accountDeviceId} onChange={(e) => setForm({ ...form, accountDeviceId: e.target.value })} />
+                <FieldLabel htmlFor="txzz-account-device">deviceId</FieldLabel>
+                <SoftInput id="txzz-account-device" autoComplete="off" placeholder={editingAccountId ? "留空保留原设备 ID" : "设备 ID"} value={form.accountDeviceId} onChange={(e) => setForm({ ...form, accountDeviceId: e.target.value })} />
               </div>
               <div>
-                <FieldLabel>userToken</FieldLabel>
-                <SoftInput placeholder="用户 token" value={form.accountToken} onChange={(e) => setForm({ ...form, accountToken: e.target.value })} />
+                <FieldLabel htmlFor="txzz-account-token">userToken</FieldLabel>
+                <SoftInput id="txzz-account-token" type="password" autoComplete="off" placeholder={editingAccountId ? "留空保留原用户 token" : "用户 token"} value={form.accountToken} onChange={(e) => setForm({ ...form, accountToken: e.target.value })} />
               </div>
             </>
           )}
           <div>
-            <FieldLabel>备注（可选）</FieldLabel>
-            <SoftInput placeholder="备注说明" value={form.accountNotes} onChange={(e) => setForm({ ...form, accountNotes: e.target.value })} />
+            <FieldLabel htmlFor="txzz-account-notes">备注（可选）</FieldLabel>
+            <SoftInput id="txzz-account-notes" placeholder="备注说明" value={form.accountNotes} onChange={(e) => setForm({ ...form, accountNotes: e.target.value })} />
           </div>
+          {formError && <p className="rounded-xl bg-rose-50 px-3 py-2 text-[10px] text-rose-600" role="alert">{formError}</p>}
+        </div>
+      </ModalSheet>
+
+      <ModalSheet
+        open={Boolean(pendingDelete)}
+        onClose={() => setPendingDelete(null)}
+        title="确认删除本地账号？"
+        footer={
+          <div className="grid grid-cols-2 gap-2">
+            <SoftButton variant="secondary" className="w-full" onClick={() => setPendingDelete(null)}>取消</SoftButton>
+            <SoftButton
+              variant="danger"
+              className="w-full"
+              icon={Trash2}
+              onClick={() => {
+                onAction("remove-account", { accountId: pendingDelete?.id || "" });
+                setPendingDelete(null);
+              }}
+            >
+              确认删除
+            </SoftButton>
+          </div>
+        }
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-500"><AlertTriangle size={18} /></div>
+          <p className="text-xs leading-relaxed text-purple-500">
+            将删除“{pendingDelete ? accountName(pendingDelete) : "该账号"}”及其本地凭据。云端已上传的账号不会一并删除。
+          </p>
         </div>
       </ModalSheet>
     </PageShell>

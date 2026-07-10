@@ -1,10 +1,10 @@
 {
   "name": "糖心志者",
-  "version": "3.5.5",
+  "version": "3.6.0",
   "extensionId": "ghbbddahmhhmjknofkmdkcflbmplcace",
   "package": "tangxin-zhizhe-latest.crx",
-  "versionedPackage": "tangxin-zhizhe-3.5.5.crx",
-  "packedAt": "2026-07-09T18:12:25.421Z",
+  "versionedPackage": "tangxin-zhizhe-3.6.0.crx",
+  "packedAt": "2026-07-10T02:12:20.666Z",
   "format": "crx",
-  "size": 525301
+  "size": 535337
 }

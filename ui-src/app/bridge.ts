@@ -1,4 +1,4 @@
-import type { BridgeState, UiActionPayload } from "./types";
+import type { BridgeState, CloudDiagnosticsResponse, UiActionPayload } from "./types";
 
 const STATE_EVENT = "txzz:state";
 const ACTION_EVENT = "txzz:ui-action";
@@ -33,4 +33,11 @@ export function sendUiAction(action: string, payload: Record<string, unknown> = 
 
 export function notifyUiReady() {
   window.dispatchEvent(new CustomEvent(READY_EVENT));
+}
+
+/** 云端体检由扩展后台按服务地址发起，并只向界面返回脱敏结果。 */
+export async function requestCloudDiagnostics(): Promise<CloudDiagnosticsResponse> {
+  const response = await chrome.runtime.sendMessage({ type: "checkRemoteDiagnostics" }) as CloudDiagnosticsResponse;
+  if (!response?.ok && response?.error) throw new Error(response.error);
+  return response || {};
 }

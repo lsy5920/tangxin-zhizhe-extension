@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Activity, AlertTriangle, Ban, CheckCircle, Copy, ExternalLink, Info, Lightbulb, Radio, RefreshCw, Sparkles, Trash2, Users } from "lucide-react";
 import type { BridgeState, Page, WorkerDiagnostics } from "../types";
+import { requestCloudDiagnostics } from "../bridge";
 import { formatRelativeTime } from "../helpers";
 import { APP_BUILD, APP_VERSION_LABEL, ART_PLAYER_VERSION, HLS_CORE_VERSION } from "../constants";
 import { UpdateCenter } from "../update/UpdateCenter";
@@ -30,47 +31,41 @@ function normalizeServiceBaseUrl(baseUrl: string) {
   return String(baseUrl || "").trim().replace(/\/+$/, "");
 }
 
-// 按新旧服务端能力逐级探测，兼容还没有升级智能诊断接口的旧部署。
+// 体检由扩展后台按已保存的服务地址代发，页面只接收脱敏诊断摘要。
 async function inspectCloudService(baseUrl: string): Promise<CloudServiceCheck> {
   const base = normalizeServiceBaseUrl(baseUrl);
-  const endpoints = ["/v1/diagnostics", "/v1/status", "/v1/health"];
-  let lastError = "";
-
-  for (const endpoint of endpoints) {
-    try {
-      const res = await fetch(`${base}${endpoint}`, { signal: AbortSignal.timeout(5000) });
-      const data = await res.json().catch(() => ({}));
-      const diagnostics: WorkerDiagnostics | undefined = data?.diagnostics || data?.status?.diagnostics;
-      if (res.ok && diagnostics) {
-        return {
-          ok: data?.ok !== false && diagnostics.level !== "error",
-          text: diagnostics.summary || "云端服务诊断完成。",
-          diagnostics,
-          baseUrl: base
-        };
-      }
-      if (res.ok && data?.ok) {
-        return {
-          ok: true,
-          text: `云端服务在线，当前部署暂未提供智能诊断摘要。`,
-          diagnostics: {
-            level: "info",
-            score: 72,
-            summary: "连接正常，但建议升级云端服务以获得密钥、数据库和账号池分项诊断。",
-            checkedAt: data.time,
-            checks: [{ key: "health", label: "基础连接", level: "ok", message: `服务在线，构建 ${data.build || "未记录"}。` }],
-            suggestions: ["部署新版云端服务后，可在此查看完整体检结果和处理建议。"]
-          },
-          baseUrl: base
-        };
-      }
-      lastError = `HTTP ${res.status}`;
-    } catch (err: unknown) {
-      lastError = err instanceof Error ? err.message : String(err);
+  try {
+    const response = await requestCloudDiagnostics();
+    const diagnostics = response.diagnostics || undefined;
+    if (diagnostics) {
+      return {
+        ok: response.ok !== false && diagnostics.level !== "error",
+        text: diagnostics.summary || "云端服务诊断完成。",
+        diagnostics,
+        baseUrl: response.baseUrl || base
+      };
     }
+    const status = (response.status || {}) as { build?: string; time?: string; ready?: boolean };
+    if (response.ok) {
+      return {
+        ok: true,
+        text: "云端服务在线，当前部署暂未提供智能诊断摘要。",
+        diagnostics: {
+          level: "info",
+          score: 72,
+          summary: "连接正常，但建议升级云端服务以获得完整的安全与账号池分项诊断。",
+          checkedAt: status.time,
+          checks: [{ key: "health", label: "基础连接", level: "ok", message: `服务在线，构建 ${status.build || "未记录"}。` }],
+          suggestions: ["部署新版云端服务后，可在此查看完整体检结果和处理建议。"]
+        },
+        baseUrl: response.baseUrl || base
+      };
+    }
+    return { ok: false, text: "云端服务尚未就绪，请检查服务地址和部署配置。", baseUrl: response.baseUrl || base };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, text: `连接失败：${message.slice(0, 120) || "请检查服务地址"}`, baseUrl: base };
   }
-
-  return { ok: false, text: `连接失败：${lastError.slice(0, 80) || "请检查地址是否正确"}`, baseUrl: base };
 }
 
 function levelClasses(level?: string) {
@@ -237,7 +232,7 @@ export function SettingsPage({ state, onAction, onPage }: Props) {
         ]}
       />
 
-      <SectionCard title="云端服务体检" icon={Activity} hint="依次探测智能诊断 / 状态 / 健康接口" tone="sky">
+      <SectionCard title="云端服务体检" icon={Activity} hint="按已填写的服务地址依次探测诊断、状态和健康接口" tone="sky">
         <div className="space-y-3">
           {serviceCheck && !diagnostics && (
             <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs ${serviceCheck.ok ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>

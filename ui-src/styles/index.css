@@ -22,6 +22,24 @@
   width: 100vw;
   height: 100vh;
   pointer-events: none;
+  /*
+   * 宿主网站会在手机端把 html 根字号缩到约 8px，影子界面的 rem 也会随之缩小。
+   * 这里恢复独立的 16px 尺寸基准，确保文字、间距和触控目标不受网页样式影响。
+   */
+  font-size: 16px;
+  line-height: 1.5;
+  --spacing: 4px;
+  --container-xs: 320px;
+  --container-sm: 384px;
+  --container-md: 448px;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 20px;
+  --text-5xl: 48px;
+  --radius: 10px;
+  --radius-2xl: 16px;
 }
 
 #txzz-candy-ui *,
@@ -46,6 +64,29 @@
 
 .txzz-candy-interactive {
   pointer-events: auto;
+}
+
+/* 提升浅色卡片上的正文对比度，避免原紫色层级在低亮度手机上过淡。 */
+#txzz-candy-ui .text-purple-300 {
+  color: #8b5cf6;
+}
+
+#txzz-candy-ui .text-purple-400 {
+  color: #7e22ce;
+}
+
+#txzz-candy-ui input::placeholder,
+#txzz-candy-ui textarea::placeholder {
+  color: #a78bfa;
+  opacity: 0.86;
+}
+
+.txzz-page .text-\[9px\] {
+  font-size: 0.625rem;
+}
+
+.txzz-page .text-\[10px\] {
+  font-size: 0.6875rem;
 }
 
 /* 面板业务页统一滚动与触控体验 */
@@ -116,6 +157,49 @@
   animation: txzz-panel-in 0.22s ease-out;
 }
 
+/* 键盘操作提供统一且清晰的焦点环，鼠标点击时不额外干扰视觉。 */
+#txzz-candy-ui :where(button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid #a855f7 !important;
+  outline-offset: 2px !important;
+}
+
+.txzz-app-toast {
+  animation: txzz-toast-in 0.18s ease-out;
+  width: min(calc(100vw - 24px), 416px) !important;
+  min-height: 44px;
+  bottom: calc(76px + env(safe-area-inset-bottom)) !important;
+  padding: 10px 12px !important;
+  gap: 8px !important;
+  align-items: center !important;
+}
+
+.txzz-app-toast-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.txzz-app-toast-close {
+  min-width: 32px;
+  min-height: 32px;
+}
+
+@media (min-width: 640px) {
+  .txzz-app-toast {
+    bottom: 32px !important;
+  }
+}
+
+@keyframes txzz-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
 @keyframes txzz-panel-in {
   from {
     opacity: 0;
@@ -140,6 +224,51 @@
       opacity: 1;
       transform: none;
     }
+  }
+
+  /* 手机端业务按钮保留足够触控高度，降低误触。 */
+  .txzz-page button:not(.txzz-player-control-button) {
+    min-height: 36px;
+  }
+
+  /* 顶部与浮层小图标同样提供完整触控区，避免只能点中图标本身。 */
+  .txzz-app-header button:not(.hidden),
+  .txzz-app-toast button {
+    min-width: 36px;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 非全屏播放器在手机面板内也保持至少 36px 的可点击控制尺寸。 */
+  .txzz-player-control-panel .txzz-player-control-button {
+    min-width: 36px !important;
+    min-height: 36px !important;
+  }
+}
+
+@media (max-width: 359px) {
+  .txzz-page .grid-cols-4,
+  .txzz-page .txzz-quick-action-btn {
+    min-width: 0;
+  }
+
+  .txzz-page > .grid.grid-cols-4,
+  .txzz-page .grid:has(> .txzz-quick-action-btn) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 尊重系统“减少动态效果”设置，避免面板和播放器动画造成不适。 */
+@media (prefers-reduced-motion: reduce) {
+  #txzz-candy-ui *,
+  #txzz-candy-ui *::before,
+  #txzz-candy-ui *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
@@ -1067,8 +1196,8 @@
 }
 
 .txzz-player-control-panel--compact .txzz-player-control-button {
-  min-height: 34px !important;
-  min-width: 34px !important;
+  min-height: 36px !important;
+  min-width: 36px !important;
   border-radius: 10px !important;
   padding-left: 6px !important;
   padding-right: 6px !important;
@@ -1129,11 +1258,11 @@
 
 /* 多级菜单：强制小图标与紧凑点击区，避免遮挡播放画面。 */
 .txzz-player-more-sheet .txzz-player-chip {
-  min-height: 1.75rem;
+  min-height: 32px;
   font-size: 10px;
   line-height: 1.1;
-  padding-left: 0.4rem;
-  padding-right: 0.4rem;
+  padding-left: 6px;
+  padding-right: 6px;
 }
 
 .txzz-player-more-sheet .txzz-player-chip svg {
@@ -1143,11 +1272,11 @@
 }
 
 .txzz-player-more-sheet .txzz-player-control-button {
-  min-height: 1.75rem !important;
-  min-width: 1.75rem !important;
+  min-height: 32px !important;
+  min-width: 32px !important;
   font-size: 10px !important;
-  padding-left: 0.35rem !important;
-  padding-right: 0.35rem !important;
+  padding-left: 6px !important;
+  padding-right: 6px !important;
 }
 
 .txzz-player-more-sheet .txzz-player-control-button svg {

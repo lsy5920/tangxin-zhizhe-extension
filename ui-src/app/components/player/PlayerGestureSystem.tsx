@@ -275,8 +275,10 @@ export function PlayerGestureSurface({
     if (locked) return;
 
     const rect = event.currentTarget.getBoundingClientRect();
-    const isTouch = event.pointerType === "touch";
-    const isMouse = event.pointerType === "mouse" || event.pointerType === "";
+    // 旧浏览器可能返回空 pointerType，统一按鼠标处理。
+    const pointerType = String(event.pointerType || "mouse");
+    const isTouch = pointerType === "touch";
+    const isMouse = pointerType === "mouse";
     // 仅鼠标左键参与拖拽手势；右键留给浏览器/菜单。
     if (isMouse && event.button !== 0) return;
 

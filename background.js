@@ -22,6 +22,9 @@ const REMOTE_CONFIG = {
   fallbackLocal: true
 };
 
+// 内置服务访问密钥：与 Worker 中的同名常量保持一致，用户只需填写服务地址。
+const BUILT_IN_REMOTE_ACCESS_TOKEN = "txzz_builtin_5b8d0ce4a7f341d99e6c2f183b704ad6_7c15f8a2";
+
 const REPOSITORY_CONFIG = {
   owner: "lsy5920",
   repo: "tangxin-zhizhe-extension",
@@ -63,9 +66,9 @@ const REPOSITORY_CONFIG = {
   timeoutMs: 8000
 };
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-0520";
+const LOCAL_UPDATE_BUILD = "2026-07-10-1010";
 
-const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 05:20 【新增】升级版本到 v3.5.5，正式分发改为 CRX 安装包；检查更新下载优先获取 releases 下的 .crx 文件。";
+const FALLBACK_LOCAL_CHANGELOG_HEAD = "2026-07-10 10:10 【修复】升级 v3.6.0 最终构建，补齐提示关闭时序、VIP 多字段线路保护、账号凭据保留和页面脱敏。";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -276,13 +279,23 @@ function summarizeUserInfo(info) {
   };
 }
 
+/** 为无法直接转成英文编号的文本生成稳定短哈希，避免中文账号编号冲突。 */
+function shortStableHash(value) {
+  let hash = 0x811c9dc5;
+  for (const char of String(value || "")) {
+    hash ^= char.codePointAt(0) || 0;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
 function slug(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
+  const normalized = String(value || "").trim().normalize("NFKC").toLowerCase();
+  const ascii = normalized
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 48);
+  return ascii || (normalized ? `u-${shortStableHash(normalized)}` : "");
 }
 
 function normalizeAccount(raw = {}) {
@@ -325,6 +338,7 @@ function publicAccount(account) {
     ...item,
     password: "",
     qrcode: "",
+    deviceId: "",
     userToken: "",
     hasPassword: Boolean(item.hasPassword || item.password),
     hasQrcode: Boolean(item.hasQrcode || item.qrcode),
@@ -341,11 +355,19 @@ function normalizeRemoteConfig(remote = {}) {
     ? remote.accountSourceMode
     : REMOTE_CONFIG.accountSourceMode;
   const cleanRemote = { ...(remote || {}) };
-  const legacyRemoteKeys = ["client", "admin"].flatMap((name) => [
+  // 地址直连模式不再保存服务访问密钥，同时清理早期版本遗留字段。
+  const legacyRemoteKeys = [
+    "accessToken",
+    "hasAccessToken",
+    "accessTokenMasked",
+    "clearAccessToken",
+    "clientToken",
+    ...["client", "admin"].flatMap((name) => [
     `${name}Token`,
     `has${name[0].toUpperCase()}${name.slice(1)}Token`,
     `${name}TokenMasked`
-  ]);
+    ])
+  ];
   for (const key of legacyRemoteKeys) {
     delete cleanRemote[key];
   }
@@ -421,20 +443,21 @@ function shouldAutoCleanStoredState(storedState = {}) {
 }
 
 function publicRemoteConfig(remote = {}) {
-  const normalized = normalizeRemoteConfig(remote);
-  return {
-    ...normalized,
-  };
+  return normalizeRemoteConfig(remote);
 }
 
 async function remoteRequest(state, endpoint, options = {}) {
   const remote = normalizeRemoteConfig(state.remote);
   if (!remote.enabled || !remote.baseUrl) throw new Error("remote worker is not configured");
+  const { allowErrorPayload = false, timeoutMs = endpoint.includes("full-detail") ? 60000 : 15000, ...fetchOptions } = options;
   const res = await fetch(`${remote.baseUrl}${endpoint}`, {
-    ...options,
+    ...fetchOptions,
+    signal: fetchOptions.signal || AbortSignal.timeout(timeoutMs),
     headers: {
       "Content-Type": "application/json",
-      ...(options.headers || {})
+      ...(fetchOptions.headers || {}),
+      // 内置鉴权头最后写入，避免内部调用参数意外覆盖配套密钥。
+      Authorization: `Bearer ${BUILT_IN_REMOTE_ACCESS_TOKEN}`
     }
   });
   const text = await res.text();
@@ -444,7 +467,12 @@ async function remoteRequest(state, endpoint, options = {}) {
   } catch (_) {
     data = { raw: text };
   }
-  if (!res.ok || data?.ok === false) throw new Error(data?.error || `remote ${endpoint} failed: HTTP ${res.status}`);
+  if (!res.ok || (data?.ok === false && !allowErrorPayload)) {
+    const error = new Error(data?.error || `云端接口 ${endpoint} 请求失败：HTTP ${res.status}`);
+    error.status = res.status;
+    error.code = data?.code || "";
+    throw error;
+  }
   return data;
 }
 
@@ -489,6 +517,18 @@ async function syncRemoteAccounts(state) {
 async function getStateInternal() {
   const stored = await chrome.storage.local.get("txzzState");
   const storedState = stored.txzzState || {};
+  const removedRemoteAccessConfig = [
+    "accessToken",
+    "hasAccessToken",
+    "accessTokenMasked",
+    "clearAccessToken",
+    "clientToken",
+    "hasClientToken",
+    "clientTokenMasked",
+    "adminToken",
+    "hasAdminToken",
+    "adminTokenMasked"
+  ].some((key) => Object.prototype.hasOwnProperty.call(storedState.remote || {}, key));
   const autoCleaned = shouldAutoCleanStoredState(storedState);
   const state = autoCleaned ? buildAutoCleanState(storedState) : { ...DEFAULT_STATE, ...storedState };
   state.remote = normalizeRemoteConfig(state.remote);
@@ -513,6 +553,9 @@ async function getStateInternal() {
   if (autoCleaned) {
     await chrome.storage.local.remove(["txzzUpdateState", "txzzLastWorkerDiagnostics"]);
     await saveState({ ...state, autoCleanedThisLoad: false });
+  } else if (removedRemoteAccessConfig) {
+    // 覆盖升级时主动删除旧密钥字段，避免已取消的配置继续残留在本地存储。
+    await saveState(state);
   }
   return state;
 }
@@ -881,11 +924,24 @@ function looksPlayableLink(value) {
   return /(?:\.m3u8|\.mp4|\/m3u8\/|\/h5\/m3u8\/|\/vod\/|\/video\/|\/media\/|\/link\/)/i.test(text);
 }
 
+/**
+ * 判断明确的播放字段是否已经返回内容。
+ * VIP 线路可能是无扩展名签名地址；为避免误扣金币，只排除空值与常见占位值。
+ */
+function hasReturnedPlayLink(value) {
+  if (typeof value !== "string") return false;
+  const text = value.trim();
+  return Boolean(text && !/^(?:null|undefined|false|none|nil|0|n|no|暂无|无|未购买|未解锁)$/i.test(text));
+}
+
 function collectPlayableLinks(value, bucket = [], trail = []) {
   if (!value || bucket.length >= 16) return bucket;
   if (typeof value === "string") {
     const keyHint = trail.join(".").toLowerCase();
-    if (looksPlayableLink(value) && /play|backup|m3u8|mp4|video|media|source|src|url|link|file/.test(keyHint)) {
+    const explicitPlaybackField = /play|backup|m3u8|mp4|video|media|source|src|link|file/.test(keyHint);
+    const genericUrlField = /url/.test(keyHint);
+    // 嵌套线路也可能是无扩展名签名地址；普通 url 字段仍要求具备明确视频特征，避免把封面当成线路。
+    if ((explicitPlaybackField && hasReturnedPlayLink(value)) || (genericUrlField && looksPlayableLink(value))) {
       bucket.push({ key: keyHint, url: value.trim() });
     }
     return bucket;
@@ -922,7 +978,7 @@ function normalizeFullDetail(detail = null) {
     detail.src,
     detail.source,
     detail.file
-  ].find(looksPlayableLink);
+  ].find(hasReturnedPlayLink);
   const directBackup = [
     detail.backup_link,
     detail.backupLink,
@@ -930,13 +986,14 @@ function normalizeFullDetail(detail = null) {
     detail.backupUrl,
     detail.second_play_link,
     detail.secondPlayLink
-  ].find(looksPlayableLink);
-  const playLink = detail.play_link || directPlay || links.find((item) => /play|m3u8|mp4|video|media|source|src|url|link|file/.test(item.key))?.url || "";
-  const backupLink = detail.backup_link || directBackup || links.find((item) => /backup|second|spare|mirror/.test(item.key))?.url || "";
+  ].find(hasReturnedPlayLink);
+  // 必须先使用通过有效性判断的字段，不能让 "null" 等真值占位字符串覆盖其他真实线路。
+  const playLink = directPlay || links.find((item) => /play|m3u8|mp4|video|media|source|src|url|link|file/.test(item.key))?.url || "";
+  const backupLink = directBackup || links.find((item) => /backup|second|spare|mirror/.test(item.key))?.url || "";
   return {
     ...detail,
-    play_link: playLink || detail.play_link || "",
-    backup_link: backupLink || detail.backup_link || ""
+    play_link: playLink,
+    backup_link: backupLink
   };
 }
 
@@ -945,8 +1002,8 @@ function normalizeFullDetailResponse(response = {}) {
   if (!detail) return response;
   const summary = {
     ...(response.summary || {}),
-    playLink: response.summary?.playLink || detail.play_link || "",
-    backupLink: response.summary?.backupLink || detail.backup_link || ""
+    playLink: hasReturnedPlayLink(response.summary?.playLink) ? response.summary.playLink : detail.play_link || "",
+    backupLink: hasReturnedPlayLink(response.summary?.backupLink) ? response.summary.backupLink : detail.backup_link || ""
   };
   return {
     ...response,
@@ -958,12 +1015,39 @@ function normalizeFullDetailResponse(response = {}) {
 
 function playableDetailReady(detail = null) {
   const normalized = normalizeFullDetail(detail);
-  return Boolean(looksPlayableLink(normalized?.play_link) || looksPlayableLink(normalized?.backup_link));
+  return Boolean(hasReturnedPlayLink(normalized?.play_link) || hasReturnedPlayLink(normalized?.backup_link));
 }
 
 function isLockedCoinVideo(detail = null) {
   const normalized = normalizeFullDetail(detail);
+  // VIP 等账号可能在未标记购买时已直接返回播放地址；有地址就直接播放，严禁误扣金币。
+  if (playableDetailReady(normalized)) return false;
   return normalized?.has_buy !== "y" && normalized?.layer_type === "money" && Number(normalized?.money || 0) > 0;
+}
+
+/** 通过扩展后台按已保存的服务地址执行云端体检。 */
+async function checkRemoteDiagnostics() {
+  const state = await getStateInternal();
+  const endpoints = ["/v1/diagnostics", "/v1/status", "/v1/health"];
+  let lastError = null;
+  for (const endpoint of endpoints) {
+    try {
+      const data = await remoteRequest(state, endpoint, { allowErrorPayload: true });
+      const diagnostics = data?.diagnostics || data?.status?.diagnostics || null;
+      return {
+        ok: data?.ok !== false,
+        endpoint,
+        diagnostics,
+        status: data?.status || data,
+        baseUrl: normalizeRemoteConfig(state.remote).baseUrl
+      };
+    } catch (err) {
+      lastError = err;
+      // 鉴权或服务配置错误无需继续探测旧接口，直接向用户说明。
+      if ([401, 403, 503].includes(Number(err?.status || 0))) break;
+    }
+  }
+  throw lastError || new Error("云端服务体检失败");
 }
 
 function buildM3u8Stat(url, response, text, latencyMs = 0) {
@@ -2279,6 +2363,7 @@ async function upsertAccount(raw) {
       ...incoming,
       password: incoming.password || existing.password,
       qrcode: incoming.qrcode || existing.qrcode,
+      deviceId: incoming.deviceId || existing.deviceId,
       userToken: incoming.userToken || existing.userToken
     };
   } else {
@@ -2291,7 +2376,18 @@ async function upsertAccount(raw) {
 
 async function uploadAccountToRemote(raw) {
   const state = await getStateInternal();
-  const account = normalizeAccount(raw);
+  const incoming = normalizeAccount(raw);
+  const existing = state.accountPool.find((item) => item.id === incoming.id);
+  // 编辑账号时允许凭据输入框留空，上传前从后台私有状态合并原凭据。
+  const account = normalizeAccount({
+    ...(existing || {}),
+    ...raw,
+    id: incoming.id,
+    password: incoming.password || existing?.password || "",
+    qrcode: incoming.qrcode || existing?.qrcode || "",
+    deviceId: incoming.deviceId || existing?.deviceId || "",
+    userToken: incoming.userToken || existing?.userToken || ""
+  });
   const response = await remoteRequest(state, "/v1/accounts/client-upload", {
     method: "POST",
     body: JSON.stringify({ account: { ...account, source: account.qrcode ? "qrcode" : "remote" } })
@@ -2327,10 +2423,11 @@ async function uploadLocalAccountToRemote(accountId = "") {
 
 async function saveRemoteConfig(remote = {}) {
   const state = await getStateInternal();
-  const incoming = normalizeRemoteConfig({
+  const merged = {
     ...state.remote,
     ...remote
-  });
+  };
+  const incoming = normalizeRemoteConfig(merged);
   state.remote = incoming;
   await saveState(state);
   const synced = incoming.enabled && incoming.baseUrl && incoming.accountSourceMode !== "local" ? await syncRemoteAccounts(state) : state;
@@ -2394,6 +2491,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "syncRemoteAccounts") {
       const state = await syncRemoteAccounts(await getStateInternal());
       sendResponse({ ok: true, state: sanitizeState(state) });
+      return;
+    }
+    if (message?.type === "checkRemoteDiagnostics") {
+      sendResponse(await checkRemoteDiagnostics());
       return;
     }
     if (message?.type === "checkRepositoryUpdate") {

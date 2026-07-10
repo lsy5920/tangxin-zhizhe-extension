@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>糖心志者界面预览</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; color: #402250; font-family: "Microsoft YaHei", sans-serif; background: linear-gradient(145deg, #fff7fb, #f6f0ff); }
+      .preview-site { max-width: 1100px; margin: 0 auto; padding: 28px; }
+      .preview-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+      .preview-card { margin-top: 24px; min-height: 420px; padding: 24px; border: 1px solid #f3d7e8; border-radius: 28px; background: rgba(255,255,255,.78); box-shadow: 0 18px 60px rgba(147,51,234,.08); }
+      .preview-line { height: 14px; margin: 14px 0; border-radius: 999px; background: #f5e8f4; }
+    </style>
+  </head>
+  <body>
+    <!-- 预览页模拟目标网站底层内容，便于检查蒙版、悬浮球和移动端覆盖关系。 -->
+    <main class="preview-site">
+      <div class="preview-header"><h1>本地界面预览</h1><span>模拟网站内容</span></div>
+      <section class="preview-card">
+        <h2>视频详情区域</h2>
+        <div class="preview-line" style="width: 82%"></div>
+        <div class="preview-line" style="width: 64%"></div>
+        <div class="preview-line" style="width: 74%"></div>
+      </section>
+    </main>
+    <script>
+      // 同时兼容回调和 Promise 两种扩展存储调用方式。
+      const previewStorage = {};
+      window.chrome = window.chrome || {};
+      window.chrome.runtime = {
+        getURL: (path) => `/${path}`,
+        sendMessage: async (message) => {
+          if (message?.type === "checkRemoteDiagnostics") {
+            return {
+              ok: true,
+              baseUrl: "https://worker.example.com",
+              diagnostics: {
+                level: "ok",
+                score: 96,
+                summary: "云端服务状态良好，服务配置、数据库和账号池均可用。",
+                checkedAt: new Date().toISOString(),
+                checks: [
+                  { key: "env", label: "运行密钥", level: "ok", message: "必填密钥已配置完整。" },
+                  { key: "database", label: "数据库连接", level: "ok", message: "数据库读取正常。" },
+                  { key: "accounts", label: "账号池数量", level: "ok", message: "共有 3 个账号，启用 3 个。" }
+                ],
+                suggestions: ["当前无需处理，可定期重新体检。"],
+                accountsSummary: { total: 3, enabled: 3, ok: 2, error: 0, unverified: 1, avgCoin: 68 }
+              }
+            };
+          }
+          return { ok: true };
+        }
+      };
+      window.chrome.storage = {
+        local: {
+          get: (keys, callback) => {
+            const names = Array.isArray(keys) ? keys : typeof keys === "string" ? [keys] : Object.keys(keys || {});
+            const result = Object.fromEntries(names.map((name) => [name, previewStorage[name]]));
+            callback?.(result);
+            return Promise.resolve(result);
+          },
+          set: (items, callback) => {
+            Object.assign(previewStorage, items || {});
+            callback?.();
+            return Promise.resolve();
+          },
+          remove: (keys, callback) => {
+            for (const key of Array.isArray(keys) ? keys : [keys]) delete previewStorage[key];
+            callback?.();
+            return Promise.resolve();
+          }
+        }
+      };
+
+      window.__txzzBridgeState = {
+        expanded: true,
+        role: "full",
+        displayPatchApplied: true,
+        session: { userId: "10086", nickname: "预览用户", tokenMasked: "abcd...wxyz", hasToken: true, deviceId: "web_preview" },
+        remote: {
+          baseUrl: "https://worker.example.com",
+          accountSourceMode: "cloud",
+          lastSyncAt: new Date(Date.now() - 120000).toISOString()
+        },
+        accountPool: [
+          { id: "cloud-1", label: "云端 VIP 一号", username: "vip001", source: "remote", cloudReadonly: true, status: "ok", hasToken: true, tokenMasked: "12ab...98zy", lastVerifiedAt: new Date().toISOString(), userInfo: { is_vip: true, is_dark_vip: true, coin: 128 } },
+          { id: "cloud-2", label: "云端备用账号", username: "vip002", source: "remote", cloudReadonly: true, status: "idle", hasPassword: true, userInfo: { is_vip: true, coin: 26 } },
+          { id: "local-1", label: "本地测试账号", username: "local001", source: "manual", status: "ok", hasPassword: true, notes: "用于本机兜底" }
+        ],
+        selectedFullAccountId: "local-1",
+        fullDetails: [{ movieId: "9527", movieTitle: "预览视频", accountLabel: "云端 VIP 一号", action: "direct_full_detail", playLink: "https://media.example.com/video.m3u8", fetchedAt: new Date().toISOString() }],
+        downloadTasks: {
+          task_preview: { taskId: "task_preview", movieId: "9527", movieTitle: "预览视频", stage: "segments", current: 18, total: 40, percent: 45, speedBps: 2457600, updatedAt: new Date().toISOString() }
+        },
+        repositoryUpdate: { ok: true, checkedAt: new Date().toISOString(), updateAvailable: false, local: { version: "3.6.0", build: "2026-07-10-1010" }, remote: { version: "3.6.0", build: "2026-07-10-1010" } },
+        adCleaner: { enabled: true, version: "v3", total: 12, removed: 8, blockedClicks: 3, splashHits: 1, countdownHits: 1, selectors: 1, lastRunAt: new Date().toISOString() },
+        flow: [{ title: "本地预览", detail: "界面与数据桥接已就绪", level: "ok", ts: new Date().toISOString() }]
+      };
+
+      window.addEventListener("txzz:ui-ready", () => {
+        window.dispatchEvent(new CustomEvent("txzz:state", { detail: window.__txzzBridgeState }));
+      });
+      window.addEventListener("txzz:ui-action", (event) => {
+        const action = event.detail?.action || "操作";
+        window.__txzzBridgeState = {
+          ...window.__txzzBridgeState,
+          flow: [...(window.__txzzBridgeState.flow || []), { title: "操作反馈", detail: `已触发：${action}`, level: "ok", ts: new Date().toISOString() }]
+        };
+        window.dispatchEvent(new CustomEvent("txzz:state", { detail: window.__txzzBridgeState }));
+      });
+    </script>
+    <script type="module" src="/ui-src/main.tsx"></script>
+  </body>
+</html>

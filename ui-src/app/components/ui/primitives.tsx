@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import { useEffect, useId, useRef } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, LabelHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 import type { LucideIcon } from "lucide-react";
 
 /** 页面统一内边距与纵向间距，保证五页节奏一致。 */
@@ -187,9 +188,10 @@ export function SoftButton({
     <button
       type="button"
       className={`inline-flex items-center justify-center font-semibold transition-all active:scale-[0.97] disabled:pointer-events-none disabled:opacity-45 ${sizeClass} ${btnVariantClass[variant]} ${className}`}
+      aria-label={rest["aria-label"] || (!children && rest.title ? rest.title : undefined)}
       {...rest}
     >
-      {Icon && <Icon size={size === "xs" ? 11 : size === "sm" ? 12 : 13} strokeWidth={2.25} />}
+      {Icon && <Icon aria-hidden="true" size={size === "xs" ? 11 : size === "sm" ? 12 : 13} strokeWidth={2.25} />}
       {children}
     </button>
   );
@@ -208,7 +210,7 @@ export function SegmentedControl<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={`grid gap-1 rounded-2xl border border-pink-100 bg-white p-1 shadow-sm ${className}`} style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+    <div role="group" className={`grid gap-1 rounded-2xl border border-pink-100 bg-white p-1 shadow-sm ${className}`} style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
       {items.map((item) => {
         const active = value === item.key;
         return (
@@ -216,6 +218,7 @@ export function SegmentedControl<T extends string>({
             key={item.key}
             type="button"
             onClick={() => onChange(item.key)}
+            aria-pressed={active}
             className={`rounded-xl px-1 py-2 text-center transition-all ${active ? "bg-gradient-to-r from-pink-400 to-purple-500 text-white shadow-sm" : "text-purple-400 hover:bg-purple-50"}`}
           >
             {typeof item.count === "number" && (
@@ -249,8 +252,8 @@ export function SoftTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>)
   );
 }
 
-export function FieldLabel({ children }: { children: ReactNode }) {
-  return <label className="mb-1 block text-[11px] font-medium text-purple-400">{children}</label>;
+export function FieldLabel({ children, className = "", ...rest }: LabelHTMLAttributes<HTMLLabelElement> & { children: ReactNode }) {
+  return <label className={`mb-1 block text-[11px] font-medium text-purple-500 ${className}`} {...rest}>{children}</label>;
 }
 
 export function EmptyState({
@@ -290,18 +293,64 @@ export function ModalSheet({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  const titleId = useId();
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const root = dialogRef.current?.getRootNode();
+    const previous = root instanceof ShadowRoot ? root.activeElement : document.activeElement;
+    const focusTimer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )).filter((item) => item.offsetParent !== null);
+      if (!focusable.length) return;
+      const active = root instanceof ShadowRoot ? root.activeElement : document.activeElement;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", handleKeyDown, true);
+      if (previous instanceof HTMLElement) previous.focus();
+    };
+  }, [open]);
+
   if (!open) return null;
   return (
-    <div className="txzz-candy-interactive fixed inset-0 z-[60] flex items-end justify-center bg-black/35 p-3 backdrop-blur-[6px] sm:items-center sm:p-5" onClick={onClose}>
+    <div className="txzz-candy-interactive fixed inset-0 z-[60] flex items-end justify-center bg-black/35 p-3 backdrop-blur-[6px] sm:items-center sm:p-5" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div
+        ref={dialogRef}
         className="w-full max-w-sm overflow-hidden rounded-[1.5rem] border border-pink-100 bg-white shadow-[0_24px_80px_rgba(147,51,234,0.22)]"
-        onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
       >
         <div className="flex items-center justify-between border-b border-purple-50 px-4 py-3">
-          <h3 className="text-sm font-bold text-purple-800">{title}</h3>
-          <button type="button" onClick={onClose} className="rounded-full p-1.5 text-purple-300 transition hover:bg-purple-50 hover:text-purple-500" aria-label="关闭">
+          <h3 id={titleId} className="text-sm font-bold text-purple-800">{title}</h3>
+          <button ref={closeButtonRef} type="button" onClick={onClose} className="rounded-full p-1.5 text-purple-300 transition hover:bg-purple-50 hover:text-purple-500" aria-label="关闭弹窗">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
           </button>
         </div>

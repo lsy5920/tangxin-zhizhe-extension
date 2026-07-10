@@ -166,9 +166,13 @@ export type AccountItem = {
   status?: string;
   available?: boolean;
   reason?: string;
+  notes?: string;
+  lastVerifiedAt?: string;
   tokenMasked?: string;
   qrcodeMasked?: string;
   passwordMasked?: string;
+  hasPassword?: boolean;
+  hasQrcode?: boolean;
   hasToken?: boolean;
   deviceId?: string;
   userInfo?: {
@@ -210,6 +214,16 @@ export type WorkerDiagnostics = {
     unverified?: number;
     avgCoin?: number | null;
   } | null;
+};
+
+/** 后台代为执行云端体检后的脱敏结果。 */
+export type CloudDiagnosticsResponse = {
+  ok?: boolean;
+  endpoint?: string;
+  diagnostics?: WorkerDiagnostics | null;
+  status?: Record<string, unknown> | null;
+  baseUrl?: string;
+  error?: string;
 };
 
 export type BridgeState = {

@@ -1,15 +1,17 @@
 {
   "name": "tangxin-zhizhe-extension",
   "private": true,
-  "version": "3.5.5",
+  "version": "3.6.0",
   "type": "module",
   "scripts": {
+    "dev": "vite --host 127.0.0.1",
     "deps:check": "node scripts/check-deps.mjs",
     "deps:repair": "node scripts/check-deps.mjs --repair",
     "prebuild": "node scripts/check-deps.mjs",
     "build": "vite build",
     "precheck": "node scripts/check-deps.mjs",
-    "check": "vite build",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && vite build",
     "pack": "node scripts/pack-crx.mjs",
     "release": "npm run build && npm run pack"
   },
@@ -21,10 +23,15 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "4.3.1",
-    "@vitejs/plugin-react": "6.0.2",
+    "@tailwindcss/vite": "4.3.2",
+    "@types/chrome": "0.2.2",
+    "@types/node": "22.20.1",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "6.0.3",
     "crx": "5.0.1",
-    "tailwindcss": "4.1.12",
-    "vite": "8.0.16"
+    "tailwindcss": "4.3.2",
+    "typescript": "7.0.2",
+    "vite": "8.1.4"
   }
 }

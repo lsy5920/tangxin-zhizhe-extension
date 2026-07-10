@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Download, Info, LayoutDashboard, Play, Settings, Users, X, Zap } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, Download, Info, LayoutDashboard, LoaderCircle, Play, Settings, Users, X, Zap } from "lucide-react";
 import { listenBridgeState, notifyUiReady, sendUiAction } from "./bridge";
 import type { AccountsPageIntent, BridgeState, Page } from "./types";
 import { OverviewPage } from "./components/OverviewPage";
@@ -48,6 +48,29 @@ const flowLevelColors: Record<string, string> = {
   info: "from-pink-500 to-purple-600",
   running: "from-amber-400 to-orange-500"
 };
+
+const UI_PREFERENCES_KEY = "txzzUiPreferencesV1";
+
+type UiPreferences = {
+  page?: Page;
+  ballPos?: { x: number; y: number };
+};
+
+/** 把悬浮球限制在可视区域内，避免拖出屏幕后无法找回。 */
+function clampBallPosition(position: { x: number; y: number }) {
+  const margin = 12;
+  const size = 56;
+  const baseLeft = window.innerWidth - 20 - size;
+  const baseTop = window.innerHeight - 80 - size;
+  return {
+    x: Math.round(Math.min(window.innerWidth - margin - size - baseLeft, Math.max(margin - baseLeft, position.x))),
+    y: Math.round(Math.min(window.innerHeight - margin - size - baseTop, Math.max(margin - baseTop, position.y)))
+  };
+}
+
+function saveUiPreferences(preferences: UiPreferences) {
+  return chrome.storage.local.set({ [UI_PREFERENCES_KEY]: preferences }).catch(() => undefined);
+}
 function action(actionName: string, payload: Record<string, unknown> = {}) {
   sendUiAction(actionName, payload);
 }
@@ -86,9 +109,41 @@ export default function App() {
   const [dismissedUpdateId, setDismissedUpdateId] = useState("");
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
+  const [preferencesReady, setPreferencesReady] = useState(false);
+  const [toast, setToast] = useState<{ text: string; level: string } | null>(null);
   const dragging = useRef(false);
   const dragStart = useRef({ mx: 0, my: 0, bx: 0, by: 0 });
   const moved = useRef(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const lastToastKey = useRef("");
+  const toastStartedAt = useRef(Date.now());
+
+  useEffect(() => {
+    let alive = true;
+    chrome.storage.local.get(UI_PREFERENCES_KEY).then((stored) => {
+      if (!alive) return;
+      const preferences = (stored?.[UI_PREFERENCES_KEY] || {}) as UiPreferences;
+      if (preferences.page && navItems.some((item) => item.id === preferences.page)) setPage(preferences.page);
+      if (preferences.ballPos) setBallPos(clampBallPosition(preferences.ballPos));
+      setPreferencesReady(true);
+    }).catch(() => setPreferencesReady(true));
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+    void saveUiPreferences({ page, ballPos });
+  }, [page, preferencesReady]);
+
+  useEffect(() => {
+    const onResize = () => setBallPos((current) => clampBallPosition(current));
+    window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
+    };
+  }, []);
 
   useEffect(() => {
     const stop = listenBridgeState((next) => {
@@ -112,6 +167,32 @@ export default function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const focusTimer = window.setTimeout(() => panelRef.current?.focus(), 0);
+    return () => window.clearTimeout(focusTimer);
+  }, [open]);
+
+  useEffect(() => {
+    // 面板关闭时立即清空操作提示，避免自动关闭计时器卸载后在下次打开时恢复为常驻提示。
+    if (!open) setToast(null);
+  }, [open]);
+
+  useEffect(() => {
+    const flow = bridgeState.flow || [];
+    const latest = flow[flow.length - 1];
+    const text = flowItemText(latest);
+    const key = `${latest?.ts || ""}|${latest?.level || ""}|${text}`;
+    if (!text || key === lastToastKey.current) return;
+    lastToastKey.current = key;
+    const occurredAt = Date.parse(latest?.ts || "");
+    // 只提示面板打开期间的新操作；历史记录和面板关闭期间的观察日志不在下次打开时补弹。
+    if (!open || (Number.isFinite(occurredAt) && occurredAt < toastStartedAt.current)) return;
+    setToast({ text, level: latest?.level || "info" });
+    const timer = window.setTimeout(() => setToast(null), latest?.level === "error" ? 5200 : 3200);
+    return () => window.clearTimeout(timer);
+  }, [bridgeState.flow, open]);
 
   useEffect(() => {
     const remote = bridgeState.repositoryUpdate?.remote;
@@ -157,16 +238,33 @@ export default function App() {
   const onBallPointerDown = (e: React.PointerEvent) => {
     dragging.current = true; moved.current = false;
     dragStart.current = { mx: e.clientX, my: e.clientY, bx: ballPos.x, by: ballPos.y };
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onBallPointerMove = (e: React.PointerEvent) => {
     if (!dragging.current) return;
     const dx = e.clientX - dragStart.current.mx;
     const dy = e.clientY - dragStart.current.my;
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) moved.current = true;
-    setBallPos({ x: dragStart.current.bx + dx, y: dragStart.current.by + dy });
+    setBallPos(clampBallPosition({ x: dragStart.current.bx + dx, y: dragStart.current.by + dy }));
   };
-  const onBallPointerUp = () => { dragging.current = false; if (!moved.current) openPanel(); };
+  const onBallPointerUp = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    const finalPosition = clampBallPosition({
+      x: dragStart.current.bx + e.clientX - dragStart.current.mx,
+      y: dragStart.current.by + e.clientY - dragStart.current.my
+    });
+    setBallPos(finalPosition);
+    void saveUiPreferences({ page, ballPos: finalPosition });
+    if ((e.currentTarget as HTMLElement).hasPointerCapture?.(e.pointerId)) {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    }
+    if (!moved.current) openPanel();
+  };
+  const onBallPointerCancel = () => {
+    dragging.current = false;
+    setBallPos((current) => clampBallPosition(current));
+  };
 
   const goPage = (target: Page, intent: AccountsPageIntent = {}) => {
     if (target === "accounts") setAccountsIntent(intent);
@@ -214,6 +312,15 @@ export default function App() {
     )).length;
   const { text: flowText, level: flowLevel } = flowMessage(bridgeState, flowIdx);
   const flowGradient = flowLevelColors[flowLevel] || flowLevelColors.info;
+  const remoteConnected = Boolean(bridgeState.remote?.lastSyncAt && !bridgeState.remote?.lastError);
+  const toastTone = toast?.level === "error"
+    ? "border-rose-200 bg-rose-50 text-rose-700"
+    : toast?.level === "ok"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : toast?.level === "running"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-sky-200 bg-sky-50 text-sky-700";
+  const ToastIcon = toast?.level === "error" ? AlertTriangle : toast?.level === "ok" ? CheckCircle2 : LoaderCircle;
 
   return (
     <div className="txzz-candy-app size-full relative overflow-hidden">
@@ -234,17 +341,26 @@ export default function App() {
       )}
 
       {!open && (
-        <div
+        <button
+          type="button"
           onPointerDown={onBallPointerDown}
           onPointerMove={onBallPointerMove}
           onPointerUp={onBallPointerUp}
-          className="txzz-candy-interactive fixed z-50 cursor-pointer select-none touch-none"
+          onPointerCancel={onBallPointerCancel}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              openPanel();
+            }
+          }}
+          className="txzz-candy-interactive fixed z-50 cursor-pointer select-none touch-none border-0 bg-transparent p-0"
           style={{
             right: "max(1.25rem, env(safe-area-inset-right))",
             bottom: "max(5rem, calc(env(safe-area-inset-bottom) + 4.5rem))",
             transform: `translate(${ballPos.x}px, ${ballPos.y}px)`
           }}
-          title="点击打开糖心志者面板"
+          title="打开糖心志者面板"
+          aria-label={`打开糖心志者面板${activeDownloads > 0 ? `，有 ${activeDownloads} 个下载任务` : ""}${updateAvailable ? "，有新版本" : ""}`}
         >
           <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-pink-400 via-rose-400 to-purple-600 shadow-xl shadow-pink-500/35 ring-2 ring-white/45 transition-transform duration-150 active:scale-95 after:absolute after:inset-0 after:rounded-full after:bg-gradient-to-t after:from-black/10 after:to-white/10 after:pointer-events-none">
             <span className="relative z-[1] select-none text-xl font-bold text-white drop-shadow-sm">志</span>
@@ -259,15 +375,22 @@ export default function App() {
               <span className="text-[9px] font-bold text-white">{activeDownloads}</span>
             </div>
           )}
-        </div>
+        </button>
       )}
 
       {open && (
         <div className="txzz-app-panel-overlay txzz-candy-interactive fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-5">
-          <div className="txzz-app-panel-backdrop absolute inset-0 bg-black/38 backdrop-blur-[10px]" onClick={closePanel} />
-          <div className="txzz-app-panel-frame relative flex h-full w-full flex-col overflow-hidden rounded-none border border-pink-100/80 bg-[#fffafc]/95 shadow-[0_28px_90px_rgba(147,51,234,0.22)] backdrop-blur-2xl sm:h-auto sm:max-h-[min(92vh,880px)] sm:w-[820px] sm:max-w-full sm:flex-row sm:rounded-[1.85rem]">
+          <div className="txzz-app-panel-backdrop absolute inset-0 bg-black/38 backdrop-blur-[10px]" onClick={closePanel} aria-hidden="true" />
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="txzz-panel-title"
+            tabIndex={-1}
+            className="txzz-app-panel-frame relative flex h-full w-full flex-col overflow-hidden rounded-none border border-pink-100/80 bg-[#fffafc]/95 shadow-[0_28px_90px_rgba(147,51,234,0.22)] backdrop-blur-2xl outline-none sm:h-auto sm:max-h-[min(92vh,900px)] sm:w-[920px] sm:max-w-full sm:flex-row sm:rounded-[1.85rem]"
+          >
 
-            <aside className="txzz-app-sidebar hidden w-[5.75rem] shrink-0 flex-col items-center gap-0.5 bg-gradient-to-b from-pink-400 via-rose-400 to-purple-600 py-5 sm:flex">
+            <aside aria-label="主要导航" className="txzz-app-sidebar hidden w-[5.75rem] shrink-0 flex-col items-center gap-0.5 bg-gradient-to-b from-pink-400 via-rose-400 to-purple-600 py-5 sm:flex">
               <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/22 shadow-inner ring-1 ring-white/35 backdrop-blur">
                 <span className="text-xl font-bold text-white drop-shadow-sm">志</span>
               </div>
@@ -281,6 +404,8 @@ export default function App() {
                   <button
                     key={item.id}
                     onClick={() => setPage(item.id)}
+                    aria-current={active ? "page" : undefined}
+                    aria-label={`前往${item.label}页`}
                     className={`relative mb-0.5 flex w-[4.25rem] flex-col items-center gap-1 rounded-2xl py-2.5 transition-all ${active ? "bg-white/28 shadow-inner ring-1 ring-white/25" : "hover:bg-white/12"}`}
                   >
                     <item.icon size={18} className="text-white" strokeWidth={active ? 2.4 : 2} />
@@ -300,7 +425,8 @@ export default function App() {
               <button
                 onClick={closePanel}
                 className="mt-auto flex h-10 w-10 items-center justify-center rounded-full bg-white/15 transition-all hover:bg-white/28"
-                title="关闭面板 (Esc)"
+                title="关闭面板（Esc）"
+                aria-label="关闭面板"
               >
                 <X size={16} className="text-white" />
               </button>
@@ -309,15 +435,30 @@ export default function App() {
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-gradient-to-b from-[#fffafc] via-white to-pink-50/40">
               <header className="txzz-app-header flex shrink-0 items-center justify-between border-b border-pink-100/80 bg-white/88 px-4 py-2.5 pt-[max(0.65rem,env(safe-area-inset-top))] backdrop-blur-md">
                 <div className="flex items-center gap-2.5">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-pink-400 to-purple-600 shadow-sm shadow-pink-400/30 sm:hidden">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-pink-400 to-purple-600 shadow-sm shadow-pink-400/30 sm:hidden">
                     <span className="text-sm font-bold text-white">志</span>
                   </div>
-                  <div>
-                    <h1 className="text-[13px] font-bold tracking-tight text-purple-900 sm:text-sm">{pageTitles[page]}</h1>
+                  <div className="min-w-0">
+                    <h1 id="txzz-panel-title" className="text-[13px] font-bold tracking-tight text-purple-900 sm:text-sm">{pageTitles[page]}</h1>
                     <p className="text-[10px] text-purple-400">{pageSubtitles[page]} · {APP_VERSION_LABEL}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPage("accounts")}
+                    className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors md:flex ${
+                      bridgeState.remote?.lastError
+                        ? "border-rose-200 bg-rose-50 text-rose-600"
+                        : remoteConnected
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-600"
+                          : "border-amber-200 bg-amber-50 text-amber-600"
+                    }`}
+                    title={bridgeState.remote?.lastError || (remoteConnected ? "云端账号已同步" : "云端尚未同步")}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${bridgeState.remote?.lastError ? "bg-rose-400" : remoteConnected ? "bg-emerald-400" : "bg-amber-400"}`} />
+                    {bridgeState.remote?.lastError ? "云端异常" : remoteConnected ? "云端正常" : "待同步"}
+                  </button>
                   {showUpdateBanner && (
                     <button
                       onClick={() => {
@@ -344,10 +485,10 @@ export default function App() {
                       </span>
                     </button>
                   )}
-                  <button onClick={() => action("about")} className="rounded-full p-1.5 text-purple-400 transition-colors hover:bg-purple-50" title="打开项目主页">
+                  <button onClick={() => action("about")} className="rounded-full p-1.5 text-purple-400 transition-colors hover:bg-purple-50" title="打开项目主页" aria-label="打开项目主页">
                     <Info size={16} />
                   </button>
-                  <button onClick={closePanel} className="rounded-full p-1.5 text-purple-400 transition-colors hover:bg-pink-50 sm:hidden">
+                  <button onClick={closePanel} className="rounded-full p-1.5 text-purple-400 transition-colors hover:bg-pink-50 sm:hidden" aria-label="关闭面板">
                     <X size={16} />
                   </button>
                 </div>
@@ -367,14 +508,16 @@ export default function App() {
                 {renderPage()}
               </main>
 
-              <nav className="txzz-app-mobile-nav flex shrink-0 items-center border-t border-pink-100/90 bg-white/97 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1 backdrop-blur-md sm:hidden">
+              <nav aria-label="移动端主要导航" className="txzz-app-mobile-nav flex shrink-0 items-center border-t border-pink-100/90 bg-white/97 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1 backdrop-blur-md sm:hidden">
                 {navItems.map((item) => {
                   const active = page === item.id;
                   const hasBadge = item.id === "downloads" && activeDownloads > 0;
                   return (
                     <button
-                      key={item.id}
-                      onClick={() => setPage(item.id)}
+                    key={item.id}
+                    onClick={() => setPage(item.id)}
+                    aria-current={active ? "page" : undefined}
+                    aria-label={`前往${item.label}页`}
                       className={`relative flex flex-1 flex-col items-center gap-0.5 py-1.5 transition-all ${active ? "text-pink-500" : "text-purple-300"}`}
                     >
                       <div className={`rounded-xl p-1.5 transition-all ${active ? "scale-105 bg-gradient-to-br from-pink-400 to-purple-500 shadow-md shadow-pink-400/30" : "hover:bg-pink-50"}`}>
@@ -390,6 +533,19 @@ export default function App() {
               </nav>
             </div>
           </div>
+          {toast && (
+            <div
+              className={`txzz-app-toast fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] left-1/2 z-[70] flex w-[min(calc(100vw-1.5rem),26rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border px-3 py-2.5 shadow-xl backdrop-blur sm:bottom-8 ${toastTone}`}
+              role={toast.level === "error" ? "alert" : "status"}
+              aria-live={toast.level === "error" ? "assertive" : "polite"}
+            >
+              <ToastIcon size={15} className={`mt-0.5 shrink-0 ${toast.level === "running" ? "animate-spin" : ""}`} aria-hidden="true" />
+              <span className="txzz-app-toast-text min-w-0 flex-1 text-[11px] font-medium leading-relaxed">{toast.text}</span>
+              <button type="button" onClick={() => setToast(null)} className="txzz-app-toast-close flex h-8 w-8 shrink-0 items-center justify-center rounded-full opacity-60 transition hover:bg-black/5 hover:opacity-100" aria-label="关闭操作提示">
+                <X size={13} />
+              </button>
+            </div>
+          )}
         </div>
       )}
 

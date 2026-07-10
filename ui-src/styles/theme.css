@@ -27,6 +27,12 @@
 }
 
 @theme inline {
+  /* 固定响应式断点，避免宿主网站缩放 html 根字号后提前触发桌面布局。 */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

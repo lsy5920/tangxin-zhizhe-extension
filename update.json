@@ -1,9 +1,9 @@
 {
   "schema": 2,
   "name": "糖心志者",
-  "version": "3.5.5",
-  "build": "2026-07-10-0520",
-  "releasedAt": "2026-07-10 05:20",
+  "version": "3.6.0",
+  "build": "2026-07-10-1010",
+  "releasedAt": "2026-07-10 10:10",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,18 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-10-1010",
+      "type": "修复",
+      "title": "补齐提示关闭时序、VIP 多字段线路保护与账号凭据脱敏",
+      "detail": "提示显示期间关闭面板会立即清空，下次打开不再恢复为常驻提示；主播放字段为占位值但其他字段已有签名或嵌套线路时绝不购买；token 账号留空编辑会完整保留 deviceId 与 userToken，页面状态不再获得 deviceId 明文，并补齐中文账号稳定编号。"
+    },
+    {
+      "id": "2026-07-10-0927",
+      "type": "优化",
+      "title": "内置密钥、提示降噪、响应式与 VIP 播放策略全面升级",
+      "detail": "用户只需填写服务地址，插件自动携带与 Worker 配套的内置访问密钥；修复账号状态观察提示长期显示、窄屏提示换行、宿主根字号导致按钮和响应式断点缩小等问题。播放策略优先接受主备线路、无扩展名签名地址、相对地址和嵌套签名线路；即使主字段为占位值，只要其他字段存在真实线路，VIP 也绝不触发金币购买。"
+    },
     {
       "id": "2026-07-10-0520",
       "type": "新增",
