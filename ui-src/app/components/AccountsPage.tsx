@@ -3,6 +3,14 @@ import { AlertTriangle, CheckCircle, Cloud, Coins, Crown, Edit2, Eye, EyeOff, Ha
 import type { AccountItem, AccountsPageIntent, BridgeState } from "../types";
 import { accountAvailable, accountName, accountRights, accountStats, accountStatusLabel, formatRelativeTime, isCloudAccount, visibleAccounts } from "../helpers";
 import {
+  ACCOUNT_SOURCE_MODES,
+  accountCredentialLabel,
+  EMPTY_ACCOUNT_FORM,
+  normalizeWorkerAddress,
+  validateAccountForm
+} from "../domain/accounts";
+import type { AccountCredentialType } from "../domain/accounts";
+import {
   EmptyState,
   FieldLabel,
   ModalSheet,
@@ -16,53 +24,11 @@ import {
   StatGrid
 } from "./ui/primitives";
 
-type AddType = "password" | "qrcode" | "token";
 type Props = {
   state: BridgeState;
   onAction: (action: string, payload?: Record<string, unknown>) => void;
   intent?: AccountsPageIntent;
   onIntentHandled?: () => void;
-};
-
-const modeOptions = [
-  { val: "cloud", label: "云端自动轮换", desc: "按金币升序自动选用" },
-  { val: "local", label: "本地选中", desc: "只用本地选中账号" },
-  { val: "cloud-first", label: "云端优先", desc: "云端失败再本地" }
-];
-
-function accountTypeText(type: AddType) {
-  if (type === "password") return "账号密码";
-  if (type === "qrcode") return "账号凭证";
-  return "token / deviceId";
-}
-
-/** 校验并规范云端服务地址，线上仅允许 HTTPS，本机调试允许 HTTP。 */
-function normalizeWorkerAddress(value: string) {
-  let parsed: URL;
-  try {
-    parsed = new URL(String(value || "").trim());
-  } catch (_) {
-    throw new Error("请输入包含 https:// 的完整云端服务地址");
-  }
-  const localHost = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(parsed.hostname);
-  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && localHost)) {
-    throw new Error("云端服务地址必须使用 HTTPS；只有本机调试地址可使用 HTTP");
-  }
-  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
-    throw new Error("云端服务地址不能包含账号、密码、查询参数或锚点");
-  }
-  const path = parsed.pathname.replace(/\/+$/, "");
-  return `${parsed.origin}${path === "/" ? "" : path}`;
-}
-
-const emptyAccountForm = {
-  accountNickname: "",
-  accountUsername: "",
-  accountPassword: "",
-  accountDeviceId: "",
-  accountToken: "",
-  accountQrcode: "",
-  accountNotes: ""
 };
 
 export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props) {
@@ -71,13 +37,13 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
   const [sourceMode, setSourceMode] = useState(state.remote?.accountSourceMode || "cloud");
   const [configError, setConfigError] = useState("");
   const [query, setQuery] = useState("");
-  const [addType, setAddType] = useState<AddType>("password");
+  const [addType, setAddType] = useState<AccountCredentialType>("password");
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTypeSelect, setShowTypeSelect] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState("");
   const [pendingDelete, setPendingDelete] = useState<AccountItem | null>(null);
   const [formError, setFormError] = useState("");
-  const [form, setForm] = useState(emptyAccountForm);
+  const [form, setForm] = useState(EMPTY_ACCOUNT_FORM);
 
   const stats = accountStats(state);
   const accounts = useMemo(() => {
@@ -121,29 +87,8 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
 
   const submitAccount = (upload: boolean) => {
     const existing = state.accountPool?.find((account) => account.id === editingAccountId);
-    const canKeepExisting = addType === "password"
-      ? Boolean(existing?.hasPassword)
-      : addType === "qrcode"
-        ? Boolean(existing?.hasQrcode)
-        : Boolean(existing?.hasToken);
-    if (addType === "password" && !form.accountUsername.trim()) {
-      setFormError("请填写登录用户名");
-      return;
-    }
-    const hasNewCredential = addType === "password"
-      ? Boolean(form.accountPassword)
-      : addType === "qrcode"
-        ? Boolean(form.accountQrcode.trim())
-        : Boolean(form.accountDeviceId.trim() && form.accountToken.trim());
-    const hasPartialTokenCredential = addType === "token" && Boolean(form.accountDeviceId.trim() || form.accountToken.trim());
-    if (hasPartialTokenCredential && !canKeepExisting && !hasNewCredential) {
-      setFormError("首次保存 token 账号时，deviceId 和 userToken 必须同时填写");
-      return;
-    }
-    if (!hasNewCredential && !canKeepExisting) {
-      setFormError(addType === "password" ? "请填写登录密码" : addType === "qrcode" ? "请填写账号凭证" : "请同时填写 deviceId 和 userToken");
-      return;
-    }
+    const validationError = validateAccountForm(addType, form, existing);
+    if (validationError) { setFormError(validationError); return; }
     setFormError("");
     onAction(upload ? "upload-account-remote" : "save-account", {
       ...form,
@@ -152,24 +97,24 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
     });
     setShowAddModal(false);
     setEditingAccountId("");
-    setForm(emptyAccountForm);
+    setForm(EMPTY_ACCOUNT_FORM);
   };
 
-  const chooseType = (type: AddType) => {
+  const chooseType = (type: AccountCredentialType) => {
     setAddType(type);
     setEditingAccountId("");
-    setForm(emptyAccountForm);
+    setForm(EMPTY_ACCOUNT_FORM);
     setFormError("");
     setShowTypeSelect(false);
     setShowAddModal(true);
   };
 
   const editAccount = (account: AccountItem) => {
-    const credentialType: AddType = account.hasQrcode ? "qrcode" : account.hasToken ? "token" : "password";
+    const credentialType: AccountCredentialType = account.hasQrcode ? "qrcode" : account.hasToken ? "token" : "password";
     setAddType(credentialType);
     setEditingAccountId(account.id || "");
     setForm({
-      ...emptyAccountForm,
+      ...EMPTY_ACCOUNT_FORM,
       accountNickname: account.label || accountName(account),
       accountUsername: account.username || "",
       accountNotes: account.notes || ""
@@ -182,7 +127,7 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
     setShowAddModal(false);
     setEditingAccountId("");
     setFormError("");
-    setForm(emptyAccountForm);
+    setForm(EMPTY_ACCOUNT_FORM);
   };
 
   const renderAccount = (account: AccountItem) => {
@@ -196,13 +141,13 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
     return (
       <div
         key={account.id || accountName(account)}
-        className={`rounded-2xl border bg-white p-3.5 shadow-[var(--txzz-shadow-sm)] transition ${
-          selected ? "border-brand-300 ring-2 ring-brand-100" : ok ? "border-slate-200" : "border-danger-100 bg-danger-50/20"
+        className={`rounded-[1.4rem] border bg-white/90 p-3.5 shadow-[var(--txzz-shadow-sm)] transition hover:-translate-y-0.5 hover:shadow-md ${
+          selected ? "border-brand-300 ring-2 ring-brand-100" : ok ? "border-slate-200" : "border-danger-100 bg-danger-50/30"
         }`}
       >
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white ${ok ? "bg-brand-600" : "bg-slate-400"}`}>
+            <div className={`flex h-10 w-10 shrink-0 rotate-[-3deg] items-center justify-center rounded-[0.95rem] border-2 border-white text-sm font-extrabold text-white shadow-sm ${ok ? "bg-gradient-to-br from-brand-400 to-brand-600" : "bg-slate-400"}`}>
               {accountName(account).slice(0, 1)}
             </div>
             <div className="min-w-0">
@@ -267,16 +212,16 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
   return (
     <PageShell>
       <PageIntro
-        eyebrow="ACCOUNT CENTER"
-        title="账号池"
-        description="集中管理云端轮换策略、本地凭据与账号健康状态；敏感凭据仅在扩展后台使用。"
-        actions={<SoftButton size="sm" icon={Plus} onClick={() => setShowTypeSelect(true)}>添加本地账号</SoftButton>}
+        eyebrow="ACCOUNT HOME"
+        title="账号小屋"
+        description="让云端账号自动轮班，也可以保留只在本机使用的伙伴；敏感凭据仍只交给扩展后台处理。"
+        actions={<SoftButton size="sm" icon={Plus} onClick={() => setShowTypeSelect(true)}>邀请账号入住</SoftButton>}
         meta={
           <>
             <Pill className={state.remote?.lastError ? "bg-danger-50 text-danger-600" : state.remote?.lastSyncAt ? "bg-success-50 text-success-600" : "bg-warning-50 text-warning-600"}>
               {state.remote?.lastError ? "云端连接异常" : state.remote?.lastSyncAt ? `云端已于${formatRelativeTime(state.remote.lastSyncAt)}同步` : "云端尚未同步"}
             </Pill>
-            <Pill className="bg-slate-100 text-slate-600">{sourceMode === "local" ? "本地模式" : sourceMode === "cloud-first" ? "云端优先" : "云端自动轮换"}</Pill>
+            <Pill className="bg-[#f2efff] text-[#715fc1]">{sourceMode === "local" ? "本地值班" : sourceMode === "cloud-first" ? "云端优先" : "云端轮班"}</Pill>
           </>
         }
       />
@@ -290,7 +235,7 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
         ]}
       />
 
-      <SectionCard title="云端连接与轮换策略" icon={Cloud} hint="服务密钥已安全内置，只需填写地址；保存后会立即验证连接" tone="sky">
+      <SectionCard title="小屋连接与轮班方式" icon={Cloud} hint="服务标识已安全内置，只需填写地址；保存后会立即敲门验证" tone="sky">
         <div className="space-y-3">
           <div>
             <FieldLabel htmlFor="txzz-worker-url">云端服务地址</FieldLabel>
@@ -307,7 +252,7 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
           <div>
             <FieldLabel>账号来源模式</FieldLabel>
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
-              {modeOptions.map((mode) => {
+              {ACCOUNT_SOURCE_MODES.map((mode) => {
                 const active = sourceMode === mode.val;
                 return (
                   <button
@@ -315,10 +260,10 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
                     type="button"
                     onClick={() => setSourceMode(mode.val)}
                     aria-pressed={active}
-                    className={`rounded-xl border px-3 py-2.5 text-left transition ${
+                    className={`rounded-[1.1rem] border px-3 py-3 text-left transition hover:-translate-y-0.5 ${
                       active
-                        ? "border-brand-600 bg-brand-600 text-white shadow-sm"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-brand-200 hover:bg-brand-50"
+                        ? "border-brand-500 bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-[0_7px_17px_rgba(221,72,108,0.18)]"
+                        : "border-slate-200 bg-white/85 text-slate-700 hover:border-brand-200 hover:bg-brand-50"
                     }`}
                   >
                     <p className="text-[12px] font-semibold">{mode.label}</p>
@@ -360,7 +305,7 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <SectionCard
-        title="云端账号"
+        title="云端房间"
         icon={Cloud}
         hint={query ? `找到 ${cloudAccounts.length} 个云端账号` : "只读轮换账号，不可手动删除"}
         action={
@@ -382,7 +327,7 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
         </SectionCard>
 
         <SectionCard
-        title="本地账号"
+        title="本地房间"
         icon={HardDrive}
         hint={query ? `找到 ${localAccounts.length} 个本地账号` : "可手动添加、选择、上传与删除"}
         action={
@@ -404,18 +349,18 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
         </SectionCard>
       </div>
 
-      <ModalSheet open={showTypeSelect} onClose={() => setShowTypeSelect(false)} title="选择账号类型">
+      <ModalSheet open={showTypeSelect} onClose={() => setShowTypeSelect(false)} title="邀请哪一种账号入住？">
         <div className="space-y-2">
           {([
-            { type: "password" as AddType, label: "账号密码", desc: "使用用户名和密码登录" },
-            { type: "qrcode" as AddType, label: "账号凭证", desc: "使用账号凭证字符串" },
-            { type: "token" as AddType, label: "token / deviceId", desc: "使用 token 和 deviceId" }
+            { type: "password" as AccountCredentialType, label: "账号密码", desc: "使用用户名和密码登录" },
+            { type: "qrcode" as AccountCredentialType, label: "账号凭证", desc: "使用账号凭证字符串" },
+            { type: "token" as AccountCredentialType, label: "token / deviceId", desc: "使用 token 和 deviceId" }
           ]).map((item) => (
             <button
               key={item.type}
               type="button"
               onClick={() => chooseType(item.type)}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-brand-200 hover:bg-brand-50 active:scale-[0.99]"
+              className="w-full rounded-[1.3rem] border border-slate-200 bg-gradient-to-r from-white to-slate-50 p-4 text-left transition hover:-translate-y-0.5 hover:border-brand-200 hover:from-white hover:to-brand-50 active:translate-y-0 active:scale-[0.99]"
             >
               <p className="text-[14px] font-semibold text-slate-900">{item.label}</p>
               <p className="mt-1 text-[12px] text-slate-500">{item.desc}</p>
@@ -427,7 +372,7 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
       <ModalSheet
         open={showAddModal}
         onClose={closeAccountModal}
-        title={editingAccountId ? `编辑${accountTypeText(addType)}` : accountTypeText(addType)}
+        title={editingAccountId ? `编辑${accountCredentialLabel(addType)}` : accountCredentialLabel(addType)}
         footer={
           <div className="grid grid-cols-2 gap-2">
             <SoftButton variant="secondary" className="w-full" onClick={() => submitAccount(false)}>{editingAccountId ? "保存修改" : "保存本地"}</SoftButton>

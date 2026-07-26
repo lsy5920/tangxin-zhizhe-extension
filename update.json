@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "3.7.1",
-  "build": "2026-07-10-2050",
-  "releasedAt": "2026-07-10 20:50",
+  "version": "4.0.0",
+  "build": "2026-07-26-2254",
+  "releasedAt": "2026-07-26 23:04",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,12 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-26-2254",
+      "type": "重构",
+      "title": "糖果手帐可爱风工作台与 4.0.0 正式发布",
+      "detail": "完整重构总览、账号小屋、放映室、下载收纳篮和照料中心，统一糖果手帐设计系统、桌面侧栏与移动底栏；业务结构拆分为 domain、model、hooks 和 layout。因原正式私钥永久丢失，本版本按用户确认轮换为新的签名身份 ddefadnhgebdclpkabeobjidjllkdkhm；旧版必须先移除再手动安装 4.0.0，无法原位覆盖升级。"
+    },
     {
       "id": "2026-07-10-2050",
       "type": "修复",
@@ -118,12 +124,12 @@
       "detail": "升级系统状态机与专业更新弹窗。"
     }
   ],
-  "extensionId": "ghbbddahmhhmjknofkmdkcflbmplcace",
-  "packageSize": 557189,
-  "packageSha256": "68ea89a21c8e88d0b78f782d13b36cb4e47949ce6bf56d1e379686ab13882340",
+  "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
+  "packageSize": 564117,
+  "packageSha256": "5166ba1af90ab14520a3d7422b2d7349e7a3572a8480e8c4633a39dc02f399ab",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
-    "keyId": "sha256:67113307c77c9ade5ac3a25b1cfb2024c14cc6f3c2af43eb8207b1ad9d418884",
-    "value": "lrIDYV6nm9MRmRO90o8LT9jcN8Tdj1Rej86a1rCFEodb46hgFZvPcUqgVXzZhz731KJIAbzP0hH+gnl50hgy6mipbMVPfc7Ov8vEynhsOXcFPFEdVPwTDBe7WEG2hJc1s2eKazDANRBwLe7AJjcaRWEFiNB3GHAqKKL/N3qb1bggTmsNkGV1zlceH27C946V6J8GWH392XJbayhRICxRc+fBh+ICZyMdu8Iq/OiB5wtvo/HRdWvHtqvT6/Hi52DRQj+Y29zyRKUjhhnYRCULfFMaBoPKoUu5H9gSrDw3mBihDtoKaVsCXvPpLknoJms8C9r8EUBa48+908AC9NYLtQ=="
+    "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
+    "value": "ma9SgdgbJo38M1rE8OG8PjkIjLlFSxO+HV3S7X0Vb0OmZCpQ75SvbzTwUhz/XSVDhs++eKl1gjLlqo7O9DFuU5c0EXOoSXM0nwVW1czefnMeghGzSxI9DcBDCYWrnb560hDUeZEWQn1pq9iCUEsrmN4Au/e8qjcGA+rxwS9gLIQI3EbEHjGDoxcm7fg0TfjY8wbok9zu85pxDY4EphXa7wBJ314ltQiz5Qp3khJkqrYLx+BpMOil5EF3XWxxJ8XfDEpLM1hNnQYVDe3WkzTrdozurwDiCjGCBFmTxDXYrlQDBOohfaY3pWvWtf9jqw5uQ8GBoBRkAyYFFWDDN/0IKw=="
   }
 }

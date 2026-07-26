@@ -1,58 +1,63 @@
 :root,
 :host {
   /*
-   * 糖心志者统一设计令牌。
-   * 品牌紫只承担重点操作与选中态，页面主体使用中性灰白，避免大面积彩色造成视觉疲劳。
+   * 「糖果手帐」设计令牌。
+   * 暖白负责长时间阅读，莓果粉只承担关键动作；薰衣草、薄荷与杏子色表达不同业务状态，
+   * 让界面可爱但仍能快速区分成功、等待、异常与普通信息。
    */
   --font-size: 16px;
-  --background: #f6f7fb;
-  --foreground: #172033;
-  --card: #ffffff;
-  --card-foreground: #172033;
-  --popover: #ffffff;
-  --popover-foreground: #172033;
-  --primary: #6d5dfc;
+  --background: #fff8f6;
+  --foreground: #432c3e;
+  --card: #fffefd;
+  --card-foreground: #432c3e;
+  --popover: #fffefd;
+  --popover-foreground: #432c3e;
+  --primary: #f05f83;
   --primary-foreground: #ffffff;
-  --secondary: #f0f2f7;
-  --secondary-foreground: #263248;
-  --muted: #f4f5f8;
-  --muted-foreground: #667085;
-  --accent: #eef0ff;
-  --accent-foreground: #5146d8;
-  --destructive: #e5484d;
+  --secondary: #f8edf1;
+  --secondary-foreground: #5f4255;
+  --muted: #fbf2f3;
+  --muted-foreground: #836c79;
+  --accent: #f1edff;
+  --accent-foreground: #6f5ac6;
+  --destructive: #db5266;
   --destructive-foreground: #ffffff;
-  --border: #e4e7ec;
-  --input: #d0d5dd;
-  --input-background: #ffffff;
-  --switch-background: #cbd1dc;
-  --font-weight-medium: 500;
+  --border: #efdde2;
+  --input: #dfc9d0;
+  --input-background: #fffefd;
+  --switch-background: #d9c7cf;
+  --font-weight-medium: 600;
   --font-weight-normal: 400;
-  --ring: #8175ff;
-  --radius: 0.75rem;
+  --ring: #f17a9a;
+  --radius: 1rem;
 
-  --txzz-canvas: #f6f7fb;
-  --txzz-surface: #ffffff;
-  --txzz-surface-subtle: #f8f9fc;
-  --txzz-surface-strong: #eef1f6;
-  --txzz-text: #172033;
-  --txzz-text-secondary: #475467;
-  --txzz-text-muted: #7a8496;
-  --txzz-border: #e4e7ec;
-  --txzz-border-strong: #d0d5dd;
-  --txzz-brand: #6d5dfc;
-  --txzz-brand-hover: #5b4bec;
-  --txzz-brand-soft: #eeecff;
-  --txzz-success: #159a72;
-  --txzz-success-soft: #e9f8f2;
-  --txzz-warning: #d98417;
-  --txzz-warning-soft: #fff5e6;
-  --txzz-danger: #dc4650;
-  --txzz-danger-soft: #fff0f1;
-  --txzz-info: #2783d8;
-  --txzz-info-soft: #edf6ff;
-  --txzz-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 4px rgba(16, 24, 40, 0.03);
-  --txzz-shadow-md: 0 12px 30px rgba(16, 24, 40, 0.08);
-  --txzz-shadow-lg: 0 28px 80px rgba(9, 16, 33, 0.22);
+  --txzz-canvas: #fff8f6;
+  --txzz-surface: #fffefd;
+  --txzz-surface-subtle: #fff9f8;
+  --txzz-surface-strong: #faedef;
+  --txzz-sidebar: #fff2f5;
+  --txzz-text: #432c3e;
+  --txzz-text-secondary: #674f5f;
+  --txzz-text-muted: #967f8c;
+  --txzz-border: #efdde2;
+  --txzz-border-strong: #dfc8cf;
+  --txzz-brand: #f05f83;
+  --txzz-brand-hover: #df496f;
+  --txzz-brand-soft: #ffe9ef;
+  --txzz-ring: #ef6f91;
+  --txzz-lavender: #8b79df;
+  --txzz-lavender-soft: #f0edff;
+  --txzz-success: #3a9c7a;
+  --txzz-success-soft: #eaf8f1;
+  --txzz-warning: #cf843c;
+  --txzz-warning-soft: #fff3df;
+  --txzz-danger: #d95368;
+  --txzz-danger-soft: #fff0f2;
+  --txzz-info: #5f8fcf;
+  --txzz-info-soft: #edf5ff;
+  --txzz-shadow-sm: 0 2px 3px rgba(101, 59, 79, 0.035), 0 8px 22px rgba(169, 93, 122, 0.055);
+  --txzz-shadow-md: 0 18px 45px rgba(128, 72, 99, 0.11);
+  --txzz-shadow-lg: 0 32px 90px rgba(61, 35, 52, 0.27);
 }
 
 @theme inline {
@@ -85,36 +90,51 @@
   --color-switch-background: var(--switch-background);
   --color-ring: var(--ring);
 
-  --color-brand-50: #f6f5ff;
-  --color-brand-100: #eeecff;
-  --color-brand-200: #ddd9ff;
-  --color-brand-300: #c3bcff;
-  --color-brand-400: #9c91ff;
-  --color-brand-500: #6d5dfc;
-  --color-brand-600: #5b4bec;
-  --color-brand-700: #4b3ec8;
-  --color-brand-800: #3f36a2;
-  --color-brand-900: #37317f;
+  --color-brand-50: #fff6f8;
+  --color-brand-100: #ffe9ef;
+  --color-brand-200: #ffd2de;
+  --color-brand-300: #fda9bd;
+  --color-brand-400: #f77f9d;
+  --color-brand-500: #f05f83;
+  --color-brand-600: #df496f;
+  --color-brand-700: #bd345b;
+  --color-brand-800: #9c2e4e;
+  --color-brand-900: #822c46;
+  --color-brand-950: #4a1226;
 
-  --color-success-50: #effbf6;
-  --color-success-100: #d7f4e7;
-  --color-success-500: #159a72;
-  --color-success-600: #107d5d;
-  --color-warning-50: #fff8eb;
-  --color-warning-100: #feebc7;
-  --color-warning-500: #d98417;
-  --color-warning-600: #b8680b;
-  --color-danger-50: #fff2f3;
-  --color-danger-100: #ffe0e3;
-  --color-danger-500: #dc4650;
-  --color-danger-600: #bc303b;
-  --color-info-50: #eff7ff;
-  --color-info-100: #dceeff;
-  --color-info-500: #2783d8;
-  --color-info-600: #196bb8;
+  --color-slate-50: #fff9f8;
+  --color-slate-100: #f9eff1;
+  --color-slate-200: #efdde2;
+  --color-slate-300: #dfc8cf;
+  --color-slate-400: #a98f9c;
+  --color-slate-500: #836b78;
+  --color-slate-600: #6a5261;
+  --color-slate-700: #543d4b;
+  --color-slate-800: #402c39;
+  --color-slate-900: #30202e;
+  --color-slate-950: #1f131e;
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  --color-success-50: #effaf5;
+  --color-success-100: #d9f2e7;
+  --color-success-500: #43a581;
+  --color-success-600: #318767;
+  --color-warning-50: #fff7e9;
+  --color-warning-100: #fce9c6;
+  --color-warning-500: #d9934b;
+  --color-warning-600: #b66e29;
+  --color-danger-50: #fff3f5;
+  --color-danger-100: #ffdee4;
+  --color-danger-200: #ffc8d2;
+  --color-danger-500: #db5a6d;
+  --color-danger-600: #bb3d52;
+  --color-info-50: #f1f7ff;
+  --color-info-100: #dcecff;
+  --color-info-500: #6a9bd8;
+  --color-info-600: #4e7fbd;
+
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
 }

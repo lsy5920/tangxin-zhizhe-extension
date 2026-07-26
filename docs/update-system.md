@@ -27,7 +27,7 @@
    - 文件长度与签名清单的 `packageSize` 完全一致；
    - SHA-256 与 `packageSha256` 完全一致；
    - CRX 魔数、CRX3 版本、签名头长度和头后的 ZIP 魔数正确；
-   - CRX3 内嵌公钥、`crx_id` 与正式扩展 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 一致；
+   - CRX3 内嵌公钥、`crx_id` 与正式扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` 一致；
    - CRX3 自身 RSA 签名有效。
 
 6. 校验成功后，从这份已验证内存字节生成本地 `data:` 下载源，再调用 `chrome.downloads.download`。浏览器不会重新访问远程镜像，因此没有“探测时是安全文件、实际下载时被替换”的竞态窗口。
@@ -59,6 +59,16 @@
 
 公开公钥元数据位于 `releases/signing-public-key.json`。私钥只允许存在于本机被 Git 忽略的 `keys/txzz-extension.pem`；私钥缺失时打包命令会直接失败，不会自动生成另一个扩展身份。
 
+## 源码版本与已签名发布
+
+开发源码允许先提升 `manifest.json`、`package.json`、前端常量和后台本地构建号，而 `update.json` 与 `releases/` 继续保留上一个已签名版本。`npm run check` 的源码门禁会分别校验两组数据：源码内部必须一致，现有签名清单自身也必须完整；它不会把未签名源码伪装成已经发布。
+
+只有 `npm run release` 会要求源码版本、`update.json`、`latest.json` 和 CRX 完全一致，并使用固定私钥重新签名。当前源码与签名发布均为 `4.0.0 / 2026-07-26-2254`，固定扩展 ID 为 `ddefadnhgebdclpkabeobjidjllkdkhm`。
+
+## 4.0.0 签名身份轮换
+
+原 3.7.1 私钥已永久丢失，无法重新获得旧扩展 ID 的签名能力。经明确确认，4.0.0 生成并启用了新的 RSA 私钥；旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 与新 ID `ddefadnhgebdclpkabeobjidjllkdkhm` 是两个不同的 Chrome 扩展身份，因此旧版不能验证新清单，也不能原位覆盖安装。迁移时应先记录服务地址等仅保存在旧扩展本地存储中的设置，再移除旧版并手动安装 4.0.0。云端 Supabase 账号数据不依赖浏览器扩展 ID，但本地偏好需要重新配置。
+
 ## 模块边界
 
 - `background.js`：签名清单验证、多源比较、防回退、完整 CRX3 验证、状态串行写入和下载提交。
@@ -69,7 +79,7 @@
 - `ui-src/app/update/UpdateModal.tsx`：新版本提醒与关键动作；关闭、稍后处理和忽略此版本语义分离。
 - `scripts/release-config.mjs`：打包和发布门禁共用的正式身份、公开公钥与运行时文件清单。
 - `scripts/pack-crx.mjs`：使用固定私钥打包 CRX3，计算大小/哈希并签署外置 `update.json`。
-- `scripts/check-release.mjs`：验证版本、身份、清单签名、CRX3 包签名、ZIP 中央目录/CRC32，并逐字节核对 CRX 内全部运行时文件。
+- `scripts/check-release.mjs`：源码模式分别校验开发版本与现有签名发布的一致性；完整模式验证两者已对齐，再验证清单签名、CRX3 包签名、ZIP 中央目录/CRC32，并逐字节核对 CRX 内全部运行时文件。
 
 ## 防止哈希自引用
 

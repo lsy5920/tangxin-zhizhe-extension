@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle, Copy, Download, FolderOpen, Link, Loader, MoreHorizontal, RefreshCw, Save, Search, SortDesc, Trash2, XCircle } from "lucide-react";
 import type { BridgeState, DownloadTask } from "../types";
-import { absoluteUrl, canSaveDownload, downloadFormat, downloadLineLabel, downloadProgress, downloadSpeedText, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, isRunningDownloadTask, maskUrl, shortTime } from "../helpers";
+import { absoluteUrl, canSaveDownload, downloadFormat, downloadLineLabel, downloadProgress, downloadSpeedText, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, maskUrl, shortTime } from "../helpers";
+import {
+  groupDownloadFailures,
+  selectDownloadTasks,
+  uniqueRetryMovieIds
+} from "../domain/downloads";
+import type { DownloadFilter, DownloadSort } from "../domain/downloads";
 import {
   EmptyState,
   ModalSheet,
@@ -19,8 +25,6 @@ type Props = {
   onAction: (action: string, payload?: Record<string, unknown>) => void;
 };
 
-type DownloadFilter = "all" | "running" | "ready" | "failed";
-type DownloadSort = "updated" | "failed" | "progress" | "size";
 type DeleteTarget = { type: "all" } | { type: "task"; task: DownloadTask };
 
 function taskTone(task: DownloadTask) {
@@ -47,35 +51,7 @@ export function DownloadsPage({ state, onAction }: Props) {
     retryGeneration.current += 1;
   }, []);
 
-  const statusFilteredTasks = tasks.filter((task) => {
-    if (filter === "running") return isRunningDownloadTask(task);
-    if (filter === "ready") return canSaveDownload(task);
-    if (filter === "failed") return task.stage === "error";
-    return true;
-  });
-  const searchKeyword = searchText.trim().toLowerCase();
-  const searchedTasks = statusFilteredTasks.filter((task) => {
-    if (!searchKeyword) return true;
-    const sourceUrl = absoluteUrl(task.url);
-    return [downloadTitle(task), task.movieId, task.taskId, task.filename, task.url, sourceUrl, downloadFormat(task), downloadStageLabel(task.stage), task.error, task.transmuxError]
-      .filter(Boolean).join(" ").toLowerCase().includes(searchKeyword);
-  });
-  const updatedTime = (task: DownloadTask) => Date.parse(String(task.updatedAt || "")) || 0;
-  const filteredTasks = [...searchedTasks].sort((a, b) => {
-    if (sortMode === "failed") {
-      const diff = Number(b.stage === "error") - Number(a.stage === "error");
-      if (diff) return diff;
-    }
-    if (sortMode === "progress") {
-      const diff = downloadProgress(b) - downloadProgress(a);
-      if (diff) return diff;
-    }
-    if (sortMode === "size") {
-      const diff = Number(b.bytes || 0) - Number(a.bytes || 0);
-      if (diff) return diff;
-    }
-    return updatedTime(b) - updatedTime(a);
-  });
+  const filteredTasks = selectDownloadTasks(tasks, filter, searchText, sortMode);
 
   const filterItems = [
     { key: "all" as const, label: "全部", count: stats.total, tone: "text-brand-600" },
@@ -92,16 +68,10 @@ export function DownloadsPage({ state, onAction }: Props) {
   const filteredTaskIds = filteredTasks.map((task) => task.taskId || task.movieId || task.url || "").filter(Boolean);
   const filteredLinkCount = filteredTasks.filter((task) => Boolean(task.url)).length;
   const failedFilteredTasks = filteredTasks.filter((task) => task.stage === "error");
-  const failedReasonGroups = Array.from(failedFilteredTasks.reduce((map, task) => {
-    const reason = String(task.error || task.transmuxError || "未记录失败原因").trim();
-    const current = map.get(reason) || [];
-    current.push(task);
-    map.set(reason, current);
-    return map;
-  }, new Map<string, DownloadTask[]>()).entries()).sort((a, b) => b[1].length - a[1].length);
+  const failedReasonGroups = groupDownloadFailures(filteredTasks);
   const readyTaskIds = filteredTasks.filter(canSaveDownload).map((task) => task.taskId || "").filter(Boolean);
   const filterLabel = filterItems.find((item) => item.key === filter)?.label || "当前筛选";
-  const retryMovieIds = Array.from(new Set(filteredTasks.filter((task) => task.stage === "error" && task.movieId).map((task) => String(task.movieId))));
+  const retryMovieIds = uniqueRetryMovieIds(filteredTasks);
 
   function runBulkAction(action: string, payload?: Record<string, unknown>) {
     setShowBulkActions(false);
@@ -132,13 +102,13 @@ export function DownloadsPage({ state, onAction }: Props) {
   return (
     <PageShell>
       <PageIntro
-        eyebrow="DOWNLOAD CENTER"
-        title="下载管理"
-        description="筛选、排查并保存视频任务；高风险清理操作均需二次确认。"
+        eyebrow="DOWNLOAD BASKET"
+        title="下载收纳篮"
+        description="每个下载任务都会整齐放在这里；可以筛选、排查、保存，清空前仍会认真向你确认。"
         actions={
           <>
-            <SoftButton size="sm" variant="secondary" icon={FolderOpen} onClick={() => onAction("open-download-folder")}>打开目录</SoftButton>
-            <SoftButton size="sm" icon={Save} disabled={!readyTaskIds.length} onClick={() => onAction("save-ready-downloads", { taskIds: readyTaskIds })}>保存可用项</SoftButton>
+            <SoftButton size="sm" variant="secondary" icon={FolderOpen} onClick={() => onAction("open-download-folder")}>打开文件夹</SoftButton>
+            <SoftButton size="sm" icon={Save} disabled={!readyTaskIds.length} onClick={() => onAction("save-ready-downloads", { taskIds: readyTaskIds })}>收下可用项</SoftButton>
           </>
         }
         meta={
@@ -151,7 +121,7 @@ export function DownloadsPage({ state, onAction }: Props) {
         }
       />
 
-      <SectionCard title="筛选与查找" icon={Search} hint={`当前显示 ${filteredTasks.length} / ${stats.total} 个任务`}>
+      <SectionCard title="整理与查找" icon={Search} hint={`收纳篮里当前显示 ${filteredTasks.length} / ${stats.total} 个任务`}>
         <div className="space-y-3">
           <SegmentedControl items={filterItems} value={filter} onChange={setFilter} />
           <div className="grid gap-2.5 lg:grid-cols-[1fr_auto]">
@@ -199,7 +169,7 @@ export function DownloadsPage({ state, onAction }: Props) {
           const progress = downloadProgress(task);
           const sourceUrl = absoluteUrl(task.url);
           return (
-            <article key={task.taskId || task.movieId || task.url} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[var(--txzz-shadow-sm)]">
+            <article key={task.taskId || task.movieId || task.url} className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white/92 shadow-[var(--txzz-shadow-sm)] transition hover:-translate-y-0.5 hover:border-brand-100 hover:shadow-md">
               <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3.5">
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate text-[13px] font-semibold text-slate-900">{downloadTitle(task)}</h3>
@@ -219,7 +189,7 @@ export function DownloadsPage({ state, onAction }: Props) {
                 {task.stage !== "complete" && (
                   <div>
                     <div className="mb-1.5 flex justify-between text-[11px] text-slate-500"><span>{downloadStageLabel(task.stage)}</span><span className="tabular-nums font-semibold text-warning-600">{progress}%{task.total ? ` · ${task.current || 0}/${task.total} 片` : ""}</span></div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand-500 transition-all" style={{ width: `${progress}%` }} /></div>
+                    <div className="h-2.5 overflow-hidden rounded-full border border-white bg-slate-100 p-0.5"><div className="h-full rounded-full bg-gradient-to-r from-warning-500 to-brand-400 transition-all" style={{ width: `${progress}%` }} /></div>
                     <div className="mt-1.5 flex justify-between gap-2 text-[11px] text-slate-400"><span>{task.totalBytes ? `已下载 ${formatBytes(task.bytes || 0)} / 约 ${formatBytes(task.totalBytes)}` : task.bytes ? `已下载 ${formatBytes(task.bytes)}` : "等待体积统计"}</span><span>{downloadSpeedText(task) || "—"}</span></div>
                   </div>
                 )}
@@ -236,7 +206,7 @@ export function DownloadsPage({ state, onAction }: Props) {
         }) : tasks.length ? (
           <div className="lg:col-span-2"><EmptyState icon={Search} title="当前筛选或搜索没有任务" desc="切换到“全部”或清除搜索词可查看更多下载记录" /></div>
         ) : (
-          <div className="lg:col-span-2"><EmptyState icon={Download} title="暂无下载任务" desc="进入视频详情页点击“下载”即可创建任务" /></div>
+          <div className="lg:col-span-2"><EmptyState icon={Download} title="收纳篮还是空的" desc="进入视频详情页点击“下载”，任务就会来到这里" /></div>
         )}
       </div>
 

@@ -18,12 +18,12 @@ export const RELEASE_INCLUDE_PATHS = [
   "vendor"
 ];
 
-export const EXPECTED_EXTENSION_ID = "ghbbddahmhhmjknofkmdkcflbmplcace";
+export const EXPECTED_EXTENSION_ID = "ddefadnhgebdclpkabeobjidjllkdkhm";
 export const UPDATE_SCHEMA_VERSION = 3;
 export const UPDATE_SIGNATURE_ALGORITHM = "RSASSA-PKCS1-v1_5-SHA-256";
-export const UPDATE_PUBLIC_KEY_SHA256 = "67113307c77c9ade5ac3a25b1cfb2024c14cc6f3c2af43eb8207b1ad9d418884";
+export const UPDATE_PUBLIC_KEY_SHA256 = "334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16";
 export const UPDATE_PUBLIC_KEY_ID = `sha256:${UPDATE_PUBLIC_KEY_SHA256}`;
-export const UPDATE_PUBLIC_KEY_SPKI_BASE64 = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqz6ArUCAkJqEzJr11PywW2T1H8j8/XLRuWn2qp+8qs8i0BiTiHzXjYT/BCTjLG85bx+fy7Z+V2rbveK+YO2arF+iRIR9BG2KhdJJJGXvFtFOI8Z2YzH/jeELt31xeH1Xo/e/63b+mduw2qIOmG68LgHYrysmgqQCmweurz+mYXuwTNt8+CFf961HZz3HT+aIsQ7Axh12YbItOmt2rCVoeGXGVGNlP1uG1Xf/2xnWzAVj2s4m9E3/dAQz3RMFCHJUEMrorC7GXj9JIfgYJmuKNB+EB5rwxBC3Eg6JwmU5fzcUP/Nf5gj/lz6YeJbftkvPKw80FtFuCf9MpX0iY4umaQIDAQAB";
+export const UPDATE_PUBLIC_KEY_SPKI_BASE64 = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAscmukzGVUcjGOVpaoAKPaNtwf6mRUhZmrcsSQuewQgs2Qi9UmEE8jQMkbL56u+zxvWpDUWroUjzVhZ0WV6tcoH+Z85VbnNx6ErN6vpG/Hklda4k7odfLum+iQcPoS0t39t7XSuV3nqohhnAN8jmeh12crWyq0IM6pkc/2dKEkmKYX81lqtU+ZxvQQWkywAbV6ceBg0sw4PwZEsIbH3jMhtgBRYEpuaTrfMP63Uyfv8oTISCzpTHYY1wNwu3fJMf52VB95Ocqy2pKxEwlBDEtjG6aO5/olU7k20Mkbd0u8l+FjQgvYp8PTeagxtH1G5tO38MxK9qegttaI8Xgo/IjqwIDAQAB";
 
 export const OFFICIAL_PACKAGE_URLS = [
   "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",

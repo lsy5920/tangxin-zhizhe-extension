@@ -314,25 +314,32 @@ const previewText = readText("preview.html");
 const readmeText = readText("README.md");
 const packScriptText = readText("scripts/pack-crx.mjs");
 
-const version = String(manifest.version || "");
-const build = String(updateManifest.build || "");
+const sourceVersion = String(manifest.version || "");
+const publishedVersion = String(updateManifest.version || "");
+const publishedBuild = String(updateManifest.build || "");
 const constantsVersion = matchValue(constantsText, /APP_VERSION\s*=\s*["']([^"']+)["']/, "前端 APP_VERSION");
 const constantsBuild = matchValue(constantsText, /APP_BUILD\s*=\s*["']([^"']+)["']/, "前端 APP_BUILD");
 const backgroundBuild = matchValue(backgroundText, /LOCAL_UPDATE_BUILD\s*=\s*["']([^"']+)["']/, "后台 LOCAL_UPDATE_BUILD");
+const version = sourceVersion;
+const build = sourceOnly ? constantsBuild : publishedBuild;
 const pinnedPublicDer = Buffer.from(UPDATE_PUBLIC_KEY_SPKI_BASE64, "base64");
 const pinnedPublicKey = crypto.createPublicKey({ key: pinnedPublicDer, format: "der", type: "spki" });
 
 expect(/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(version), `manifest.json 版本格式无效：${version || "空"}`);
-expect(/^\d{4}-\d{2}-\d{2}-\d{4}$/.test(build), `update.json 构建号格式无效：${build || "空"}`);
+expect(/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(publishedVersion), `update.json 版本格式无效：${publishedVersion || "空"}`);
+expect(/^\d{4}-\d{2}-\d{2}-\d{4}$/.test(constantsBuild), `源码构建号格式无效：${constantsBuild || "空"}`);
+expect(/^\d{4}-\d{2}-\d{2}-\d{4}$/.test(publishedBuild), `update.json 构建号格式无效：${publishedBuild || "空"}`);
 expect(packageJson.version === version, `package.json 版本 ${packageJson.version || "空"} 与 manifest ${version} 不一致`);
-expect(updateManifest.version === version, `update.json 版本 ${updateManifest.version || "空"} 与 manifest ${version} 不一致`);
 expect(constantsVersion === version, `前端版本 ${constantsVersion || "空"} 与 manifest ${version} 不一致`);
-expect(constantsBuild === build, `前端构建 ${constantsBuild || "空"} 与 update.json ${build} 不一致`);
-expect(backgroundBuild === build, `后台构建 ${backgroundBuild || "空"} 与 update.json ${build} 不一致`);
+expect(backgroundBuild === constantsBuild, `后台构建 ${backgroundBuild || "空"} 与前端构建 ${constantsBuild || "空"} 不一致`);
+if (!sourceOnly) {
+  expect(updateManifest.version === version, `update.json 版本 ${updateManifest.version || "空"} 与 manifest ${version} 不一致`);
+  expect(constantsBuild === publishedBuild, `前端构建 ${constantsBuild || "空"} 与 update.json ${publishedBuild} 不一致`);
+}
 expect(Number(updateManifest.schema) === UPDATE_SCHEMA_VERSION, `update.json schema 必须为 ${UPDATE_SCHEMA_VERSION}，当前为 ${updateManifest.schema}`);
 expect(updateManifest.packageFormat === "crx", `update.json packageFormat 必须为 crx，当前为 ${updateManifest.packageFormat || "空"}`);
 expect(updateManifest.extensionId === EXPECTED_EXTENSION_ID, `update.json extensionId 必须为 ${EXPECTED_EXTENSION_ID}`);
-expect(updateManifest.changelog?.[0]?.id === build, `update.json 首条更新 ID ${updateManifest.changelog?.[0]?.id || "空"} 与构建号 ${build} 不一致`);
+expect(updateManifest.changelog?.[0]?.id === publishedBuild, `update.json 首条更新 ID ${updateManifest.changelog?.[0]?.id || "空"} 与构建号 ${publishedBuild} 不一致`);
 expect(updateManifest.homepage === "https://github.com/lsy5920/tangxin-zhizhe-extension", "update.json homepage 必须固定为正式仓库");
 expect(updateManifest.downloadUrl === OFFICIAL_PACKAGE_URLS[0], "update.json 主下载地址不是固定正式路径");
 expect(sameStringArray(updateManifest.downloadCandidates, OFFICIAL_PACKAGE_URLS), "update.json 下载镜像必须与固定 owner/repo/branch/path 清单完全一致");
@@ -356,10 +363,10 @@ expect(!RELEASE_INCLUDE_PATHS.includes("update.json"), "发布文件列表不得
 const accessibleResources = (manifest.web_accessible_resources || []).flatMap((item) => item.resources || []);
 expect(!accessibleResources.includes("update.json"), "manifest web_accessible_resources 不得暴露 update.json");
 expect(!packScriptText.includes("generateKeyPairSync"), "打包脚本不得在私钥缺失时自动生成新身份");
-expect(previewText.includes(`version: "${version}"`) && previewText.includes(`build: "${build}"`), "preview.html 的版本或构建号未同步");
+expect(previewText.includes(`version: "${version}"`) && previewText.includes(`build: "${constantsBuild}"`), "preview.html 的源码版本或构建号未同步");
 expect(readmeText.includes(`\`${version}\``), `README.md 未记录当前版本 ${version}`);
-const buildDisplay = build.replace(/^(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})$/, "$1 $2:$3");
-expect(readmeText.includes(build) || readmeText.includes(buildDisplay), `README.md 未记录当前构建时间 ${build}`);
+const buildDisplay = constantsBuild.replace(/^(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})$/, "$1 $2:$3");
+expect(readmeText.includes(constantsBuild) || readmeText.includes(buildDisplay), `README.md 未记录当前构建时间 ${constantsBuild}`);
 
 if (!sourceOnly) {
   try {
@@ -432,4 +439,4 @@ if (errors.length) {
   process.exit(1);
 }
 
-console.log(`[check-release] 通过：v${version} / ${build}${sourceOnly ? "（源码、身份与签名清单结构）" : "（签名清单 + CRX3 + ZIP 全文件一致性）"}`);
+console.log(`[check-release] 通过：v${version} / ${build}${sourceOnly ? `（源码检查；当前已签名发布为 v${publishedVersion} / ${publishedBuild}）` : "（签名清单 + CRX3 + ZIP 全文件一致性）"}`);

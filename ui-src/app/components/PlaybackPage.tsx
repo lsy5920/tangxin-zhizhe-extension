@@ -2167,13 +2167,14 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
   ];
 
   return (
-    <div className="txzz-playback-root txzz-page mx-auto w-full max-w-[1120px] space-y-4 p-4 sm:p-5 lg:p-6" style={playerStageStyle}>
+    <div className="txzz-playback-root txzz-page mx-auto w-full max-w-[1120px] space-y-4 p-4 pb-6 sm:p-5 sm:pb-7 lg:p-6 lg:pb-8" style={playerStageStyle}>
       {/* 播放页信息头只承担上下文和高频动作，视觉重心交给播放器。 */}
-      <section className="txzz-playback-hidden-during-fullscreen rounded-2xl border border-slate-200 bg-white p-4 shadow-[var(--txzz-shadow-sm)] sm:p-5">
+      <section className="txzz-playback-hidden-during-fullscreen relative overflow-hidden rounded-[1.55rem] border border-brand-100 bg-gradient-to-br from-white/95 via-white/90 to-brand-50/80 p-4 shadow-[var(--txzz-shadow-sm)] sm:p-5">
+        <span className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-[#ddd5ff]/45 blur-2xl" />
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold tracking-[0.12em] text-brand-600">PLAYBACK WORKSPACE</p>
-            <h2 className="mt-1 line-clamp-2 text-[18px] font-bold leading-snug tracking-[-0.02em] text-slate-900 sm:text-xl">
+            <p className="text-[10px] font-bold tracking-[0.15em] text-brand-600">CANDY SCREENING ROOM</p>
+            <h2 className="mt-1 line-clamp-2 text-[18px] font-extrabold leading-snug tracking-[-0.025em] text-slate-900 sm:text-xl">
               {latest?.movieTitle || latest?.title || latest?.movieId || "等待播放详情"}
             </h2>
             <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-slate-500">
@@ -2212,7 +2213,7 @@ export function PlaybackPage({ state, onAction, onPage }: Props) {
 
       {/* 播放器主卡片：保留内核/手势/控制栏，仅优化外壳 */}
       <div className="txzz-playback-workspace grid items-start gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(21rem,0.85fr)]">
-      <div className="txzz-player-card space-y-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-[var(--txzz-shadow-sm)] sm:p-4 xl:sticky xl:top-4">
+      <div className="txzz-player-card space-y-3 overflow-hidden rounded-[1.55rem] border border-slate-200 bg-white/94 p-3 shadow-[var(--txzz-shadow-sm)] sm:p-4 xl:sticky xl:top-4">
         <div className="txzz-player-card-title flex items-center justify-between gap-2 px-0.5">
           <div className="min-w-0">
             <h3 className="flex items-center gap-1.5 text-[14px] font-semibold tracking-tight text-slate-900">

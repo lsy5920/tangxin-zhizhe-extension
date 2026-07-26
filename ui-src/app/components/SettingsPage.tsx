@@ -232,9 +232,9 @@ export function SettingsPage({ state, onAction, onPage, intent = {}, onIntentHan
   return (
     <PageShell>
       <PageIntro
-        eyebrow="SETTINGS"
-        title="设置与维护"
-        description="按类别管理云端体检、使用体验、升级系统和本地数据。"
+        eyebrow="CARE CENTER"
+        title="照料中心"
+        description="把云端体检、体验功能、版本升级和本地数据分开照料，状态更容易看懂。"
         meta={
           <>
             <Pill className="bg-brand-50 text-brand-700">{APP_VERSION_LABEL}</Pill>
@@ -250,15 +250,15 @@ export function SettingsPage({ state, onAction, onPage, intent = {}, onIntentHan
         value={settingsSection}
         onChange={setSettingsSection}
         items={[
-          { key: "service", label: "云端服务" },
-          { key: "experience", label: "体验功能" },
-          { key: "updates", label: "版本升级" },
-          { key: "data", label: "数据管理" }
+          { key: "service", label: "云端体检" },
+          { key: "experience", label: "体验魔法" },
+          { key: "updates", label: "版本更新" },
+          { key: "data", label: "数据收纳" }
         ]}
       />
 
       {settingsSection === "service" && (
-      <SectionCard title="云端服务体检" icon={Activity} hint="按已填写的服务地址依次探测诊断、状态和健康接口" tone="sky">
+      <SectionCard title="云端健康体检" icon={Activity} hint="按已填写的服务地址依次检查诊断、状态与健康接口" tone="sky">
         <div className="space-y-3">
           {serviceCheck && !diagnostics && (
             <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-[12px] ${serviceCheck.ok ? "bg-success-50 text-success-600" : "bg-danger-50 text-danger-600"}`}>
@@ -280,7 +280,7 @@ export function SettingsPage({ state, onAction, onPage, intent = {}, onIntentHan
                     </p>
                   )}
                 </div>
-                <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/90 shadow-sm">
+                <div className="flex h-14 w-14 shrink-0 rotate-[2deg] flex-col items-center justify-center rounded-[1.15rem] border-2 border-white bg-white/90 shadow-sm">
                   <span className={`text-lg font-bold ${diagnosticTone.text}`}>{Math.round(Number(diagnostics.score ?? 0))}</span>
                   <span className="text-[11px] text-slate-400">分</span>
                 </div>
@@ -360,7 +360,7 @@ export function SettingsPage({ state, onAction, onPage, intent = {}, onIntentHan
         ]}
       />
 
-      <SectionCard title="展示覆盖" icon={Sparkles} hint={state.displayPatchApplied ? "VIP 永久、余额 999、尤物圈已生效" : "尚未应用展示覆盖"}>
+      <SectionCard title="展示魔法" icon={Sparkles} hint={state.displayPatchApplied ? "VIP 永久、余额 999、尤物圈已生效" : "尚未应用展示覆盖"}>
         <SoftButton
           className="w-full"
           variant={state.displayPatchApplied ? "emerald" : "primary"}
@@ -397,7 +397,7 @@ export function SettingsPage({ state, onAction, onPage, intent = {}, onIntentHan
       )}
 
       {settingsSection === "data" && (
-      <SectionCard title="重置插件本地数据" icon={Database} hint="这是完整重置，不再用无效复选框暗示可以选择性清理" tone="rose">
+      <SectionCard title="整理本地数据" icon={Database} hint="这是完整重置；界面会明确列出将清理的内容" tone="rose">
         <div className="space-y-4">
           <div className="rounded-2xl border border-danger-100 bg-danger-50/50 p-3.5">
             <p className="text-[12px] font-semibold text-danger-600">将清除以下扩展本地数据</p>

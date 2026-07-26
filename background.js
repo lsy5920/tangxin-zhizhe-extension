@@ -11,11 +11,11 @@ const STORAGE_SCHEMA_VERSION = "2026-07-08-upgrade-system-v3";
 // v7：签名清单、完整 CRX3 字节校验、固定扩展身份与串行状态写入。
 const UPDATE_STATE_SCHEMA_VERSION = "2026-07-10-update-system-v7";
 const UPDATE_MANIFEST_SCHEMA_VERSION = 3;
-const EXPECTED_EXTENSION_ID = "ghbbddahmhhmjknofkmdkcflbmplcace";
+const EXPECTED_EXTENSION_ID = "ddefadnhgebdclpkabeobjidjllkdkhm";
 const UPDATE_SIGNATURE_ALGORITHM = "RSASSA-PKCS1-v1_5-SHA-256";
-const UPDATE_PUBLIC_KEY_SHA256 = "67113307c77c9ade5ac3a25b1cfb2024c14cc6f3c2af43eb8207b1ad9d418884";
+const UPDATE_PUBLIC_KEY_SHA256 = "334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16";
 const UPDATE_PUBLIC_KEY_ID = `sha256:${UPDATE_PUBLIC_KEY_SHA256}`;
-const UPDATE_PUBLIC_KEY_SPKI_BASE64 = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqz6ArUCAkJqEzJr11PywW2T1H8j8/XLRuWn2qp+8qs8i0BiTiHzXjYT/BCTjLG85bx+fy7Z+V2rbveK+YO2arF+iRIR9BG2KhdJJJGXvFtFOI8Z2YzH/jeELt31xeH1Xo/e/63b+mduw2qIOmG68LgHYrysmgqQCmweurz+mYXuwTNt8+CFf961HZz3HT+aIsQ7Axh12YbItOmt2rCVoeGXGVGNlP1uG1Xf/2xnWzAVj2s4m9E3/dAQz3RMFCHJUEMrorC7GXj9JIfgYJmuKNB+EB5rwxBC3Eg6JwmU5fzcUP/Nf5gj/lz6YeJbftkvPKw80FtFuCf9MpX0iY4umaQIDAQAB";
+const UPDATE_PUBLIC_KEY_SPKI_BASE64 = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAscmukzGVUcjGOVpaoAKPaNtwf6mRUhZmrcsSQuewQgs2Qi9UmEE8jQMkbL56u+zxvWpDUWroUjzVhZ0WV6tcoH+Z85VbnNx6ErN6vpG/Hklda4k7odfLum+iQcPoS0t39t7XSuV3nqohhnAN8jmeh12crWyq0IM6pkc/2dKEkmKYX81lqtU+ZxvQQWkywAbV6ceBg0sw4PwZEsIbH3jMhtgBRYEpuaTrfMP63Uyfv8oTISCzpTHYY1wNwu3fJMf52VB95Ocqy2pKxEwlBDEtjG6aO5/olU7k20Mkbd0u8l+FjQgvYp8PTeagxtH1G5tO38MxK9qegttaI8Xgo/IjqwIDAQAB";
 const LEGACY_REMOTE_BASE_URLS = [
   "https://txzz.lsy20.top",
   "https://txzz-secure-pool.3199912548.workers.dev"
@@ -78,7 +78,7 @@ let repositoryArchiveDownloadInFlight = null;
 let repositoryUpdateStateWriteQueue = Promise.resolve();
 let updateVerificationKeyPromise = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-10-2050";
+const LOCAL_UPDATE_BUILD = "2026-07-26-2254";
 
 const DEFAULT_STATE = {
   role: "guest",

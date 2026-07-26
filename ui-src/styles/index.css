@@ -11,10 +11,10 @@
   height: 100vh;
   pointer-events: none;
   color-scheme: light;
-  --radius: 0.625rem;
-  --radius-xl: 0.875rem;
-  --radius-2xl: 1rem;
-  --radius-3xl: 1.5rem;
+  --radius: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
   font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", Arial, sans-serif;
 }
 
@@ -38,8 +38,8 @@
   --text-lg: 18px;
   --text-xl: 20px;
   --text-5xl: 48px;
-  --radius: 10px;
-  --radius-2xl: 16px;
+  --radius: 16px;
+  --radius-2xl: 24px;
 }
 
 #txzz-candy-ui *,
@@ -60,6 +60,281 @@
   height: 100%;
   pointer-events: none;
   font-family: inherit;
+}
+
+/* 糖果手帐外壳：暖白纸张、低对比圆点和轻量彩色光斑共同建立品牌氛围。 */
+.txzz-app-panel-backdrop {
+  background: rgba(48, 29, 43, 0.58);
+  backdrop-filter: blur(9px) saturate(0.92);
+  -webkit-backdrop-filter: blur(9px) saturate(0.92);
+}
+
+.txzz-app-panel-frame {
+  border-color: rgba(255, 255, 255, 0.82) !important;
+  background: var(--txzz-surface);
+  box-shadow: var(--txzz-shadow-lg), 0 0 0 1px rgba(228, 157, 180, 0.16);
+}
+
+/* 面板本身只用于焦点陷阱起点；焦点环保留给真正可操作的控件。 */
+.txzz-app-panel-frame:focus-visible {
+  outline: none !important;
+}
+
+.txzz-app-sidebar {
+  border-right: 1px solid rgba(227, 192, 204, 0.72);
+  background:
+    radial-gradient(circle at 20% 8%, rgba(255, 255, 255, 0.95) 0 2px, transparent 2.5px) 0 0 / 18px 18px,
+    radial-gradient(circle at 88% 18%, rgba(214, 202, 255, 0.62) 0, transparent 30%),
+    linear-gradient(165deg, #fff8f9 0%, var(--txzz-sidebar) 48%, #f4efff 100%);
+}
+
+.txzz-sidebar-brand {
+  border: 1px solid rgba(238, 210, 220, 0.86);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 8px 24px rgba(168, 103, 129, 0.07);
+}
+
+.txzz-sidebar-nav-item {
+  border: 1px solid transparent;
+}
+
+.txzz-sidebar-nav-item:hover {
+  border-color: rgba(237, 212, 220, 0.88);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.txzz-sidebar-nav-item.is-active {
+  border-color: rgba(248, 175, 194, 0.58);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 24px rgba(174, 96, 126, 0.09);
+}
+
+.txzz-sidebar-status {
+  box-shadow: 0 8px 20px rgba(124, 77, 98, 0.05);
+}
+
+.txzz-app-header,
+.txzz-app-mobile-nav {
+  border-color: rgba(231, 205, 214, 0.74) !important;
+  background: rgba(255, 253, 252, 0.9);
+}
+
+.txzz-app-main {
+  background-color: var(--txzz-canvas);
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(218, 161, 180, 0.16) 1px, transparent 0),
+    radial-gradient(circle at 90% 5%, rgba(224, 215, 255, 0.44) 0, transparent 24rem),
+    radial-gradient(circle at 7% 92%, rgba(210, 242, 228, 0.46) 0, transparent 22rem);
+  background-size: 22px 22px, auto, auto;
+}
+
+/* CSS 伙伴形象不依赖远程图片，扩展离线和 CSP 严格环境下仍可稳定显示。 */
+.txzz-brand-companion {
+  position: relative;
+  display: inline-flex;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 12px 16px rgba(184, 89, 121, 0.18));
+}
+
+.txzz-brand-companion-face {
+  position: absolute;
+  bottom: 0;
+  left: 3px;
+  z-index: 2;
+  display: flex;
+  width: 58px;
+  height: 53px;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid rgba(255, 255, 255, 0.96);
+  border-radius: 48% 48% 44% 44%;
+  background: linear-gradient(145deg, #fffefd 0%, #fff0f4 72%, #ffdce7 100%);
+  color: #6b4056;
+  box-shadow: inset 0 -4px 8px rgba(244, 141, 169, 0.11), 0 8px 20px rgba(158, 81, 111, 0.13);
+}
+
+.txzz-brand-companion-eyes {
+  transform: translateY(2px);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.txzz-brand-companion-ear {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  width: 17px;
+  height: 31px;
+  border: 3px solid rgba(255, 255, 255, 0.96);
+  border-radius: 999px 999px 55% 55%;
+  background: linear-gradient(180deg, #fffefd 0%, #ffdce7 100%);
+  transform-origin: bottom center;
+}
+
+.txzz-brand-companion-ear--left {
+  left: 10px;
+  transform: rotate(-13deg);
+}
+
+.txzz-brand-companion-ear--right {
+  right: 10px;
+  transform: rotate(13deg);
+}
+
+.txzz-brand-companion-cheek {
+  position: absolute;
+  top: 31px;
+  width: 7px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(245, 125, 158, 0.43);
+}
+
+.txzz-brand-companion-cheek--left {
+  left: 9px;
+}
+
+.txzz-brand-companion-cheek--right {
+  right: 9px;
+}
+
+.txzz-brand-companion-sparkle {
+  position: absolute;
+  right: -2px;
+  top: 19px;
+  z-index: 3;
+  color: #d79635;
+  filter: drop-shadow(0 1px 0 #fff);
+}
+
+.txzz-brand-companion--compact {
+  width: 42px;
+  height: 42px;
+  filter: drop-shadow(0 7px 10px rgba(184, 89, 121, 0.13));
+}
+
+.txzz-brand-companion--compact .txzz-brand-companion-face {
+  left: 2px;
+  width: 38px;
+  height: 35px;
+  border-width: 2px;
+}
+
+.txzz-brand-companion--compact .txzz-brand-companion-ear {
+  width: 11px;
+  height: 20px;
+  border-width: 2px;
+}
+
+.txzz-brand-companion--compact .txzz-brand-companion-ear--left {
+  left: 7px;
+}
+
+.txzz-brand-companion--compact .txzz-brand-companion-ear--right {
+  right: 7px;
+}
+
+.txzz-brand-companion--compact .txzz-brand-companion-eyes {
+  font-size: 9px;
+}
+
+.txzz-brand-companion--compact .txzz-brand-companion-cheek {
+  top: 20px;
+  width: 4px;
+  height: 3px;
+}
+
+.txzz-brand-companion--compact .txzz-brand-companion-cheek--left {
+  left: 6px;
+}
+
+.txzz-brand-companion--compact .txzz-brand-companion-cheek--right {
+  right: 6px;
+}
+
+.txzz-brand-companion--compact .txzz-brand-companion-sparkle {
+  right: -1px;
+  top: 12px;
+}
+
+.txzz-floating-launcher {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.txzz-floating-launcher-halo {
+  position: absolute;
+  inset: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.94);
+  border-radius: 48% 52% 50% 46%;
+  background: linear-gradient(145deg, rgba(255, 243, 247, 0.92), rgba(237, 231, 255, 0.9));
+  box-shadow: 0 17px 36px rgba(69, 38, 55, 0.26), inset 0 0 0 4px rgba(255, 255, 255, 0.5);
+  transform: rotate(-4deg);
+}
+
+.txzz-floating-launcher .txzz-brand-companion {
+  transform: translateY(-1px) scale(0.84);
+  transition: transform 0.18s ease;
+}
+
+.txzz-floating-launcher:hover .txzz-brand-companion {
+  transform: translateY(-4px) scale(0.9) rotate(2deg);
+}
+
+.txzz-floating-launcher-status {
+  position: absolute;
+  right: 1px;
+  top: 2px;
+  z-index: 4;
+  width: 14px;
+  height: 14px;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  box-shadow: 0 3px 8px rgba(86, 55, 68, 0.2);
+}
+
+.txzz-floating-launcher-badge {
+  position: absolute;
+  bottom: -3px;
+  left: -4px;
+  z-index: 4;
+  display: flex;
+  min-width: 27px;
+  height: 23px;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 6px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: var(--txzz-info);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  box-shadow: 0 5px 12px rgba(74, 111, 162, 0.25);
+}
+
+.txzz-flow-bubble {
+  animation: txzz-flow-bubble-in 0.24s ease-out;
+}
+
+@keyframes txzz-flow-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .txzz-candy-interactive {
@@ -142,6 +417,11 @@
 #txzz-candy-ui :where(button, input, textarea, select, [tabindex]):focus-visible {
   outline: 2px solid var(--txzz-ring, #8175ff) !important;
   outline-offset: 2px !important;
+}
+
+.txzz-app-mobile-nav button:focus-visible {
+  border-radius: 1rem;
+  outline-offset: -2px !important;
 }
 
 .txzz-app-toast {
