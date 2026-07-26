@@ -7,7 +7,7 @@ const API_CONFIG = {
   aesKey: "fd14f9f8e38808fa"
 };
 
-const STORAGE_SCHEMA_VERSION = "2026-07-08-upgrade-system-v3";
+const STORAGE_SCHEMA_VERSION = "2026-07-27-screening-v2";
 // v7：签名清单、完整 CRX3 字节校验、固定扩展身份与串行状态写入。
 const UPDATE_STATE_SCHEMA_VERSION = "2026-07-10-update-system-v7";
 const UPDATE_MANIFEST_SCHEMA_VERSION = 3;
@@ -77,8 +77,9 @@ let repositoryArchiveDownloadInFlight = null;
 // 所有升级状态变更通过同一队列串行执行，防止检测结果覆盖并发写入的忽略 ID 或下载状态。
 let repositoryUpdateStateWriteQueue = Promise.resolve();
 let updateVerificationKeyPromise = null;
+const localPurchaseLocks = new Set();
 
-const LOCAL_UPDATE_BUILD = "2026-07-26-2254";
+const LOCAL_UPDATE_BUILD = "2026-07-27-0100";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -90,6 +91,14 @@ const DEFAULT_STATE = {
     fullplayEnabled: true,
     remote: REMOTE_CONFIG,
     fullDetails: [],
+    screening: {
+      schemaVersion: 2,
+      activeSession: null,
+      history: [],
+      request: { phase: "idle" }
+    },
+    // 本地账号模式也使用持久化账本；该字段不会通过 sanitizeState 暴露给页面。
+    localPurchaseLedger: {},
     fullDetailCache: {},
     downloadTasks: {},
     downloadSnapshots: [],
@@ -417,13 +426,189 @@ function isHealthyAccount(account = {}) {
   return account?.enabled !== false && String(account?.status || "") !== "error";
 }
 
+function playbackProtocol(url = "") {
+  const value = String(url || "").toLowerCase();
+  if (value.includes("m3u8")) return "hls";
+  if (/\.(?:mp4|webm|m4v)(?:[?#]|$)/i.test(value)) return "progressive";
+  return "unknown";
+}
+
+function sourceHealthFromLegacy(stat = null) {
+  if (!stat) return { state: "unknown" };
+  return {
+    state: stat.error ? "failed" : stat.pending ? "probing" : stat.ok === false ? "degraded" : "healthy",
+    status: stat.status,
+    latencyMs: stat.latencyMs,
+    segments: stat.segments,
+    duration: stat.duration,
+    score: stat.score,
+    error: stat.error,
+    checkedAt: stat.checkedAt
+  };
+}
+
+function legacyDetailToPlaybackSession(detail = {}, summary = {}, account = null, options = {}) {
+  const movieId = String(options.movieId || summary.movieId || detail.id || "").trim();
+  const normalizedDetail = normalizeFullDetail({ ...summary, ...detail }) || {};
+  const rows = [
+    { id: "primary", label: "主线路", url: normalizedDetail.play_link || "", stat: summary.fullStat },
+    { id: "backup", label: "备用线路", url: normalizedDetail.backup_link || "", stat: summary.backupStat }
+  ];
+  const sources = rows
+    .map((row) => ({
+      id: row.id,
+      label: row.label,
+      url: absoluteUrl(row.url),
+      protocol: playbackProtocol(row.url),
+      health: sourceHealthFromLegacy(row.stat)
+    }))
+    .filter((source) => Boolean(source.url));
+  const score = (source) => {
+    if (!source?.url || source.health?.state === "failed") return -10000;
+    if (Number.isFinite(Number(source.health?.score))) return Number(source.health.score);
+    return source.health?.state === "healthy" ? 160 : source.health?.state === "degraded" ? 80 : source.health?.state === "probing" ? 35 : 20;
+  };
+  const recommended = [...sources].sort((left, right) => score(right) - score(left) || (left.id === "primary" ? -1 : 1))[0];
+  const fetchedAt = String(summary.fetchedAt || nowIso());
+  return {
+    id: String(options.sessionId || crypto.randomUUID()),
+    movieId,
+    title: String(options.movieTitle || summary.movieTitle || summary.title || detail.title || `视频 ${movieId}`),
+    phase: "ready",
+    sources,
+    decision: {
+      recommendedSourceId: recommended?.id || sources[0]?.id || "",
+      reasonCodes: recommended ? [recommended.health.state === "healthy" ? "healthy-source" : "best-available-source"] : ["no-playable-source"],
+      failoverAllowed: sources.length > 1
+    },
+    account: account ? { id: account.id, label: account.label } : undefined,
+    acquisition: options.acquisition || {
+      mode: "legacy",
+      attempts: Number(summary.rotation?.tried || 1),
+      failed: (summary.rotation?.failed || []).map((item) => ({ ...item, message: item.message || item.error || "未知错误" }))
+    },
+    fetchedAt,
+    expiresAt: String(options.expiresAt || new Date(Date.parse(fetchedAt) + 10 * 60 * 1000).toISOString())
+  };
+}
+
+function normalizeStoredPlaybackSession(session = null) {
+  if (!session?.movieId || !Array.isArray(session.sources)) return null;
+  const sources = session.sources
+    .map((source, index) => ({
+      ...source,
+      id: String(source?.id || (index === 0 ? "primary" : `source-${index + 1}`)),
+      label: String(source?.label || (index === 0 ? "主线路" : `线路 ${index + 1}`)),
+      url: absoluteUrl(source?.url || ""),
+      protocol: source?.protocol || playbackProtocol(source?.url),
+      health: source?.health && typeof source.health === "object" ? source.health : { state: "unknown" }
+    }))
+    .filter((source) => hasReturnedPlayLink(source.url));
+  const requested = String(session.decision?.recommendedSourceId || "");
+  const recommendedSourceId = sources.some((source) => source.id === requested)
+    ? requested
+    : sources.find((source) => source.health?.state !== "failed")?.id || sources[0]?.id || "";
+  return {
+    ...session,
+    movieId: String(session.movieId),
+    sources,
+    decision: {
+      ...(session.decision || {}),
+      recommendedSourceId,
+      reasonCodes: Array.isArray(session.decision?.reasonCodes) ? session.decision.reasonCodes : ["stored-session"],
+      failoverAllowed: sources.length > 1
+    }
+  };
+}
+
+function playbackSessionSummary(session = {}, detail = {}) {
+  const primary = (session.sources || []).find((source) => source.id === "primary");
+  const backup = (session.sources || []).find((source) => source.id === "backup");
+  const toLegacyStat = (source) => source ? {
+    url: source.url,
+    status: source.health?.status,
+    latencyMs: source.health?.latencyMs,
+    segments: source.health?.segments,
+    duration: source.health?.duration,
+    score: source.health?.score,
+    error: source.health?.error,
+    pending: source.health?.state === "probing",
+    ok: source.health?.state === "healthy"
+  } : null;
+  return {
+    movieId: session.movieId,
+    movieTitle: session.title,
+    title: session.title,
+    accountId: session.account?.id,
+    accountLabel: session.account?.label,
+    action: session.acquisition?.mode === "purchased" ? "buy_then_full_detail" : "direct_full_detail",
+    hasBuy: detail?.has_buy,
+    playLink: primary?.url || "",
+    backupLink: backup?.url || "",
+    fullStat: toLegacyStat(primary),
+    backupStat: toLegacyStat(backup),
+    fetchedAt: session.fetchedAt,
+    rotation: {
+      tried: session.acquisition?.attempts || 1,
+      failed: session.acquisition?.failed || [],
+      coinSort: true
+    }
+  };
+}
+
+function normalizeScreeningState(screening = null, legacyDetails = []) {
+  const byMovieId = new Map();
+  for (const raw of Array.isArray(screening?.history) ? screening.history : []) {
+    const session = normalizeStoredPlaybackSession(raw);
+    if (session) byMovieId.set(session.movieId, session);
+  }
+  for (const item of Array.isArray(legacyDetails) ? legacyDetails : []) {
+    const legacy = legacyDetailToPlaybackSession(item, item, null, {
+      movieId: item?.movieId,
+      movieTitle: item?.movieTitle || item?.title
+    });
+    const existing = byMovieId.get(String(legacy.movieId));
+    // 早期 5.0 预构建可能先写入了空 sources；后续抓到真实链接时必须修复，而不是永久沿用空会话。
+    if (legacy.movieId && legacy.sources.length && (!existing || !existing.sources.length)) {
+      byMovieId.set(String(legacy.movieId), legacy);
+    }
+  }
+  const history = [...byMovieId.values()];
+  const rawActive = normalizeStoredPlaybackSession(screening?.activeSession);
+  const activeFromHistory = rawActive?.movieId ? byMovieId.get(String(rawActive.movieId)) : null;
+  const activeSession = activeFromHistory?.sources.length
+    ? activeFromHistory
+    : rawActive?.sources.length
+      ? rawActive
+      : [...history].reverse().find((item) => item.sources.length) || rawActive || history[history.length - 1] || null;
+  return {
+    schemaVersion: 2,
+    activeSession,
+    history: history.slice(-50),
+    request: screening?.request && typeof screening.request === "object" ? screening.request : { phase: "idle" }
+  };
+}
+
+function mergeScreeningSession(screening, session) {
+  const normalized = normalizeScreeningState(screening);
+  const history = normalized.history.filter((item) => String(item.movieId) !== String(session.movieId));
+  return {
+    schemaVersion: 2,
+    activeSession: session,
+    history: [...history, session].slice(-50),
+    request: { phase: "idle", requestId: "", movieId: session.movieId, error: "" }
+  };
+}
+
 function buildAutoCleanState(storedState = {}) {
   const previousRemote = normalizeRemoteConfig(storedState.remote || {});
+  const legacyDetails = Array.isArray(storedState.fullDetails) ? storedState.fullDetails : [];
   return {
     ...DEFAULT_STATE,
-    role: DEFAULT_STATE.role,
-    selectedFullAccountId: "",
-    accountPool: [],
+    ...storedState,
+    role: storedState.role || DEFAULT_STATE.role,
+    selectedFullAccountId: storedState.selectedFullAccountId || "",
+    accountPool: Array.isArray(storedState.accountPool) ? storedState.accountPool : [],
     remote: {
       ...REMOTE_CONFIG,
       accountSourceMode: REMOTE_CONFIG.accountSourceMode,
@@ -431,17 +616,19 @@ function buildAutoCleanState(storedState = {}) {
       fallbackLocal: true,
       lastAutoCleanAt: nowIso(),
       lastAutoCleanReason: isLegacyRemoteBaseUrl(previousRemote.baseUrl)
-        ? "检测到旧 Worker 地址或空地址，已自动切换到当前默认 Worker 并清理旧缓存"
-        : "升级系统已重构，旧账号、播放、下载和更新缓存不再沿用，请重新同步云端账号池"
+        ? "检测到旧 Worker 地址或空地址，已自动切换到当前默认 Worker；账号池和下载记录均已保留"
+        : "播放系统已升级到 5.0；账号池和下载记录均已保留"
     },
-    fullDetails: [],
+    fullDetails: legacyDetails.slice(-80),
+    screening: normalizeScreeningState(storedState.screening, legacyDetails),
     fullDetailCache: {},
     lastFullTrace: null,
     lastGuestTrace: null,
     notes: [],
-    downloadTasks: {},
-    downloadSnapshots: [],
-    downloadDeletedTaskIds: [],
+    downloadTasks: storedState.downloadTasks && typeof storedState.downloadTasks === "object" ? storedState.downloadTasks : {},
+    downloadSnapshots: Array.isArray(storedState.downloadSnapshots) ? storedState.downloadSnapshots : [],
+    downloadDeletedTaskIds: Array.isArray(storedState.downloadDeletedTaskIds) ? storedState.downloadDeletedTaskIds : [],
+    localPurchaseLedger: storedState.localPurchaseLedger && typeof storedState.localPurchaseLedger === "object" ? storedState.localPurchaseLedger : {},
     storageSchemaVersion: STORAGE_SCHEMA_VERSION,
     autoCleanedAt: nowIso()
   };
@@ -558,7 +745,9 @@ async function getStateInternal() {
     state.selectedFullAccountId = state.accountPool[0]?.id || "";
   }
   state.fullDetails = Array.isArray(state.fullDetails) ? state.fullDetails.slice(-80) : [];
+  state.screening = normalizeScreeningState(state.screening, state.fullDetails);
   state.fullDetailCache = state.fullDetailCache && typeof state.fullDetailCache === "object" ? state.fullDetailCache : {};
+  state.localPurchaseLedger = state.localPurchaseLedger && typeof state.localPurchaseLedger === "object" ? state.localPurchaseLedger : {};
   state.downloadTasks = compactDownloadTasks(state.downloadTasks && typeof state.downloadTasks === "object" ? state.downloadTasks : {});
   state.downloadSnapshots = Array.isArray(state.downloadSnapshots) ? state.downloadSnapshots.slice(-30) : [];
   state.downloadDeletedTaskIds = Array.isArray(state.downloadDeletedTaskIds) ? state.downloadDeletedTaskIds.slice(-120).map(String) : [];
@@ -578,6 +767,7 @@ function sanitizeState(state) {
     remote: publicRemoteConfig(state.remote),
     accountPool: (state.accountPool || []).map(publicAccount),
     fullDetails: (state.fullDetails || []).slice(-80),
+    screening: normalizeScreeningState(state.screening, state.fullDetails),
     downloadTasks: state.downloadTasks && typeof state.downloadTasks === "object" ? state.downloadTasks : {},
     downloadSnapshots: Array.isArray(state.downloadSnapshots) ? state.downloadSnapshots.slice(-30) : []
   };
@@ -596,6 +786,8 @@ async function resetAllLocalData() {
     accountPool: [],
     remote: { ...REMOTE_CONFIG },
     fullDetails: [],
+    screening: normalizeScreeningState(null, []),
+    localPurchaseLedger: {},
     fullDetailCache: {},
     downloadTasks: {},
     downloadSnapshots: [],
@@ -639,7 +831,10 @@ async function apiRequest(endpoint, data, session = {}) {
   const response = result.response || {};
   if (!result.httpStatus || result.httpStatus >= 400 || response.status !== "y") {
     const msg = response.error || response.msg || response.message || JSON.stringify(response).slice(0, 240);
-    throw new Error(`${endpoint} failed: ${msg}`);
+    const error = new Error(`${endpoint} failed: ${msg}`);
+    error.httpStatus = result.httpStatus;
+    error.upstreamRejected = result.httpStatus > 0 && result.httpStatus < 400 && response.status !== "y";
+    throw error;
   }
   return response.data;
 }
@@ -1154,117 +1349,306 @@ function resolveDownloadLink(detail = {}, summary = {}, message = {}) {
   return { url: backup, lineKey: backup ? "backup" : "auto" };
 }
 
-async function getFullDetail(message = {}) {
-  const movieId = String(message.movieId || message.id || "").trim();
-  if (!movieId) throw new Error("缺少视频编号 movieId");
+function playbackBusinessError(message, code, status = 400) {
+  const error = new Error(message);
+  error.code = code;
+  error.status = status;
+  return error;
+}
 
+function confirmedBeforeChargeFailure(error) {
+  if (error?.upstreamRejected !== true) return false;
+  return /余额不足|金币不足|insufficient|not enough|视频.*下架|参数.*(?:错误|无效)|invalid parameter/i
+    .test(error?.message || String(error));
+}
+
+function localLedgerBlockingEntry(state, movieId) {
+  return Object.values(state.localPurchaseLedger || {})
+    .filter((row) => String(row?.movieId) === String(movieId) && ["pending", "charged", "resolved", "uncertain"].includes(row?.status))
+    .sort((left, right) => Date.parse(right.updatedAt || "") - Date.parse(left.updatedAt || ""))[0] || null;
+}
+
+async function writeLocalLedger(movieId, accountId, patch) {
+  const fresh = await getStateInternal();
+  const key = `${movieId}:${accountId}`;
+  const previous = fresh.localPurchaseLedger?.[key] || {};
+  fresh.localPurchaseLedger = {
+    ...(fresh.localPurchaseLedger || {}),
+    [key]: {
+      ...previous,
+      ...patch,
+      movieId,
+      accountId,
+      createdAt: previous.createdAt || nowIso(),
+      updatedAt: nowIso()
+    }
+  };
+  await saveState(fresh);
+  return fresh.localPurchaseLedger[key];
+}
+
+async function finishPlaybackSession(options = {}) {
+  const {
+    movieId,
+    movieTitle,
+    detail,
+    account,
+    acquisition,
+    cacheKey = `${account?.id || "default"}:${movieId}`,
+    session: suppliedSession = null
+  } = options;
+  const session = suppliedSession || legacyDetailToPlaybackSession(detail, {}, account, { movieId, movieTitle, acquisition });
+  const summary = playbackSessionSummary(session, detail);
+  const fresh = await getStateInternal();
+  fresh.selectedFullAccountId = account?.id || fresh.selectedFullAccountId;
+  fresh.screening = mergeScreeningSession(fresh.screening, session);
+  fresh.fullDetails = upsertFullDetailList(fresh.fullDetails, summary);
+  fresh.fullDetailCache = {
+    ...(fresh.fullDetailCache || {}),
+    [cacheKey]: {
+      schemaVersion: 2,
+      cachedAt: Date.now(),
+      expiresAt: Date.parse(session.expiresAt || "") || Date.now() + 10 * 60 * 1000,
+      detail,
+      summary: { ...summary, session },
+      account: account ? publicAccount(account) : null
+    }
+  };
+  const entries = Object.entries(fresh.fullDetailCache);
+  if (entries.length > 120) fresh.fullDetailCache = Object.fromEntries(entries.slice(-120));
+  await saveState(fresh);
+  return {
+    ok: true,
+    session,
+    detail,
+    data: detail,
+    summary,
+    account: account ? publicAccount(account) : null,
+    state: sanitizeState(fresh)
+  };
+}
+
+async function reconcileLocalPurchase(message, blocking, errors) {
   const state = await getStateInternal();
-  const visitorDetail = message.visitorDetail || null;
-  const remote = normalizeRemoteConfig(state.remote);
-  const sourceMode = remote.accountSourceMode || "cloud";
-  let remoteError = null;
-  if (sourceMode !== "local" && remote.enabled && remote.baseUrl) {
-    try {
-      const response = normalizeFullDetailResponse(await remoteRequest(state, "/v1/movie/full-detail", {
-        method: "POST",
-        body: JSON.stringify({
-          movieId,
-          visitorDetail,
-          accountMode: sourceMode,
-          accountId: "",
-          bootstrapSession: message.bootstrapSession || message.session || null
-        })
-      }));
-      const fresh = await getStateInternal();
-      if (response.state?.accountPool) fresh.accountPool = response.state.accountPool.map(normalizeAccount);
-      if (response.state?.selectedFullAccountId) fresh.selectedFullAccountId = response.state.selectedFullAccountId;
-      if (response.summary) fresh.fullDetails = upsertFullDetailList(fresh.fullDetails, response.summary);
-      fresh.remote = { ...normalizeRemoteConfig(fresh.remote), lastFullDetailAt: nowIso(), lastError: "" };
-      await saveState(fresh);
-      return { ...response, state: sanitizeState(fresh) };
-    } catch (err) {
-      remoteError = err;
-      state.remote = { ...normalizeRemoteConfig(state.remote), lastError: err?.message || String(err) };
-      await saveState(state);
-      if (sourceMode !== "cloud-first" && !remote.fallbackLocal) throw err;
-    }
+  const account = (state.accountPool || []).find((item) => item.id === blocking.accountId);
+  if (!account) throw playbackBusinessError("本地购买账本对应账号不存在，需要人工核对", "PURCHASE_RECONCILIATION_REQUIRED", 409);
+  if (blocking.status === "pending" && localPurchaseLocks.has(String(message.movieId))) {
+    throw playbackBusinessError("该视频正在解锁，请稍后重试", "PURCHASE_IN_PROGRESS", 409);
   }
-  const cacheKey = `${message.accountId || state.selectedFullAccountId || "default"}:${movieId}`;
-  const cached = state.fullDetailCache?.[cacheKey];
-  if (cached?.detail && playableDetailReady(cached.detail) && Date.now() - Number(cached.cachedAt || 0) < 10 * 60 * 1000) {
-    return {
-      ok: true,
-      detail: cached.detail,
-      data: cached.detail,
-      summary: { ...cached.summary, cacheHit: true },
-      account: cached.account || null,
-      state: sanitizeState(state)
-    };
-  }
-  const localAccounts = sortAccountsByCoin((state.accountPool || []).filter((item) => !isCloudAccount(item) && isHealthyAccount(item)));
-  const selectedLocal = localAccounts.find((item) => item.id === (message.accountId || state.selectedFullAccountId));
-  const candidates = selectedLocal ? [selectedLocal, ...localAccounts.filter((item) => item.id !== selectedLocal.id)] : localAccounts;
-  if (!candidates.length) {
-    if (remoteError) throw new Error(`远程账号池失败：${remoteError?.message || remoteError}；本地账号池为空，无法获取播放详情`);
-    throw new Error("账号池为空，无法获取播放详情");
-  }
-
-  const errors = [];
-  const lockedCandidates = [];
-  const checkedAccountIds = new Set();
-  for (const candidate of candidates) {
-    try {
-      const verified = await updateAccountSession(candidate.id, message.bootstrapSession || message.session || null);
-      const latest = await getStateInternal();
-      const account = latest.accountPool.find((item) => item.id === candidate.id) || candidate;
-      const session = verified.session;
-      const detail = normalizeFullDetail(await apiRequest("/movie/detail", { id: movieId }, session));
-      checkedAccountIds.add(candidate.id);
-      if (isLockedCoinVideo(detail)) {
-        lockedCandidates.push({ account, session, detail });
-        continue;
+  if (blocking.status === "resolved" && playableDetailReady(blocking.detail)) {
+    return finishPlaybackSession({
+      movieId: message.movieId,
+      movieTitle: message.movieTitle,
+      detail: normalizeFullDetail(blocking.detail),
+      account,
+      acquisition: {
+        mode: "purchased",
+        attempts: errors.length + 1,
+        failed: errors,
+        purchase: { status: "resolved", accountId: account.id, price: Number(blocking.price || 0) }
       }
-      if (!playableDetailReady(detail)) throw new Error("播放详情未返回可播放链接");
-      return await finishLocalFullDetail({ state: latest, movieId, detail, account, session, action: "direct_full_detail", cacheKey, errors, checkedAccountIds });
-    } catch (err) {
-      errors.push({ accountId: candidate.id, label: candidate.label, error: err?.message || String(err) });
-    }
+    });
   }
-  if (lockedCandidates.length) {
-    for (const item of lowestCoinRandomOrder(lockedCandidates.map((entry) => entry.account))
-      .map((account) => lockedCandidates.find((entry) => entry.account.id === account.id))
-      .filter(Boolean)) {
+  try {
+    const verified = await updateAccountSession(account.id, message.bootstrapSession || message.session || null);
+    const detail = normalizeFullDetail(await apiRequest("/movie/detail", { id: message.movieId }, verified.session));
+    if (!playableDetailReady(detail)) throw new Error("原购买账号尚未返回可播放线路");
+    await writeLocalLedger(message.movieId, account.id, { status: "resolved", detail, error: "" });
+    return finishPlaybackSession({
+      movieId: message.movieId,
+      movieTitle: message.movieTitle,
+      detail,
+      account,
+      acquisition: {
+        mode: "purchased",
+        attempts: errors.length + 1,
+        failed: errors,
+        purchase: { status: "resolved", accountId: account.id, price: Number(blocking.price || 0) }
+      }
+    });
+  } catch (error) {
+    await writeLocalLedger(message.movieId, account.id, { status: "uncertain", error: error?.message || String(error) });
+    throw playbackBusinessError("该视频存在已扣费或待核对记录，已阻止再次购买", "PURCHASE_RECONCILIATION_REQUIRED", 409);
+  }
+}
+
+async function createPlaybackSession(message = {}) {
+  const movieId = String(message.movieId || message.id || "").trim();
+  if (!movieId) throw playbackBusinessError("缺少视频编号 movieId", "MOVIE_ID_REQUIRED", 400);
+  const requestId = String(message.requestId || crypto.randomUUID());
+  const movieTitle = String(message.movieTitle || "");
+  let state = await getStateInternal();
+  state.screening = {
+    ...normalizeScreeningState(state.screening, state.fullDetails),
+    request: { phase: "resolving", requestId, movieId, startedAt: nowIso(), error: "" }
+  };
+  await saveState(state);
+
+  try {
+    const remote = normalizeRemoteConfig(state.remote);
+    const sourceMode = remote.accountSourceMode || "cloud";
+    let remoteError = null;
+    if (sourceMode !== "local" && remote.enabled && remote.baseUrl) {
       try {
-        await apiRequest("/movie/doBuy", { id: movieId }, item.session);
-        const detail = normalizeFullDetail(await apiRequest("/movie/detail", { id: movieId }, item.session));
-        if (isLockedCoinVideo(detail)) throw new Error("购买后仍显示未购买");
-        if (!playableDetailReady(detail)) throw new Error("购买后播放详情未返回可播放链接");
-        const latest = await getStateInternal();
-        const account = latest.accountPool.find((entry) => entry.id === item.account.id) || item.account;
-        return await finishLocalFullDetail({
-          state: latest,
+        const response = await remoteRequest(state, "/v2/playback/session", {
+          method: "POST",
+          timeoutMs: 60000,
+          body: JSON.stringify({
+            movieId,
+            movieTitle,
+            requestId,
+            forceRefresh: Boolean(message.forceRefresh),
+            bootstrapSession: message.bootstrapSession || message.session || null
+          })
+        });
+        if (!response?.session?.movieId || !Array.isArray(response.session.sources)) {
+          throw new Error("云端 v2 播放接口返回结构不完整");
+        }
+        const fresh = await getStateInternal();
+        if (response.state?.accountPool) fresh.accountPool = response.state.accountPool.map(normalizeAccount);
+        if (response.state?.selectedFullAccountId) fresh.selectedFullAccountId = response.state.selectedFullAccountId;
+        fresh.remote = { ...normalizeRemoteConfig(fresh.remote), lastFullDetailAt: nowIso(), lastError: "" };
+        const account = response.account || response.session.account || null;
+        return await finishPlaybackSession({
           movieId,
+          movieTitle,
+          detail: normalizeFullDetail(response.detail || {}),
+          account,
+          suppliedSession: response.session,
+          session: response.session
+        });
+      } catch (error) {
+        remoteError = error;
+        state = await getStateInternal();
+        state.remote = { ...normalizeRemoteConfig(state.remote), lastError: error?.message || String(error) };
+        await saveState(state);
+        if (sourceMode !== "cloud-first" && !remote.fallbackLocal) throw error;
+      }
+    }
+
+    state = await getStateInternal();
+    const cached = Object.values(state.fullDetailCache || {}).find((row) => (
+      row?.detail
+      && String(row?.summary?.movieId || row?.summary?.session?.movieId || "") === movieId
+      && playableDetailReady(row.detail)
+      && Number(row.expiresAt || Number(row.cachedAt || 0) + 10 * 60 * 1000) > Date.now()
+    ));
+    if (cached) {
+      const session = cached.summary?.session || legacyDetailToPlaybackSession(cached.detail, cached.summary, cached.account, {
+        movieId,
+        movieTitle,
+        acquisition: { mode: "cache", attempts: 1 }
+      });
+      session.acquisition = { ...session.acquisition, mode: "cache" };
+      return finishPlaybackSession({ movieId, movieTitle, detail: cached.detail, account: cached.account, session });
+    }
+
+    const localAccounts = sortAccountsByCoin((state.accountPool || []).filter((item) => !isCloudAccount(item) && isHealthyAccount(item)));
+    const selected = localAccounts.find((item) => item.id === (message.accountId || state.selectedFullAccountId));
+    const candidates = selected ? [selected, ...localAccounts.filter((item) => item.id !== selected.id)] : localAccounts;
+    if (!candidates.length) {
+      const prefix = remoteError ? `远程账号池失败：${remoteError?.message || remoteError}；` : "";
+      throw playbackBusinessError(`${prefix}本地账号池为空，无法获取播放详情`, "ACCOUNT_POOL_EMPTY", 409);
+    }
+
+    const errors = [];
+    const lockedCandidates = [];
+    for (const candidate of candidates) {
+      try {
+        const verified = await updateAccountSession(candidate.id, message.bootstrapSession || message.session || null);
+        const latest = await getStateInternal();
+        const account = latest.accountPool.find((item) => item.id === candidate.id) || candidate;
+        const detail = normalizeFullDetail(await apiRequest("/movie/detail", { id: movieId }, verified.session));
+        if (isLockedCoinVideo(detail)) {
+          lockedCandidates.push({ account, session: verified.session, detail });
+          continue;
+        }
+        if (!playableDetailReady(detail)) throw new Error("播放详情未返回可播放链接");
+        return finishPlaybackSession({
+          movieId,
+          movieTitle,
           detail,
           account,
-          session: item.session,
-          action: "buy_then_full_detail",
-          cacheKey,
-          errors,
-          checkedAccountIds,
-          purchaseMeta: {
-            purchasePolicy: "all_accounts_checked_then_lowest_coin",
-            purchasedByCoin: accountCoinValue(account, null),
-            lockedAccounts: lockedCandidates.length
-          }
+          acquisition: { mode: "direct", attempts: errors.length + 1, failed: errors }
         });
-      } catch (err) {
-        errors.push({ accountId: item.account.id, label: item.account.label, error: err?.message || String(err), stage: "buy" });
+      } catch (error) {
+        errors.push({ accountId: candidate.id, label: candidate.label, stage: "detail", message: error?.message || String(error) });
       }
     }
+    if (!lockedCandidates.length) throw playbackBusinessError("所有本地账号均未取得可播放线路", "PLAYBACK_UNAVAILABLE", 502);
+
+    state = await getStateInternal();
+    const blocking = localLedgerBlockingEntry(state, movieId);
+    if (blocking) return reconcileLocalPurchase({ ...message, movieId, movieTitle }, blocking, errors);
+    if (localPurchaseLocks.has(movieId)) throw playbackBusinessError("该视频正在解锁，请稍后重试", "PURCHASE_IN_PROGRESS", 409);
+
+    localPurchaseLocks.add(movieId);
+    try {
+      const afterLockState = await getStateInternal();
+      const racedBlocking = localLedgerBlockingEntry(afterLockState, movieId);
+      if (racedBlocking) return reconcileLocalPurchase({ ...message, movieId, movieTitle }, racedBlocking, errors);
+      const ordered = lowestCoinRandomOrder(lockedCandidates.map((entry) => entry.account))
+        .map((account) => lockedCandidates.find((entry) => entry.account.id === account.id))
+        .filter(Boolean);
+      for (const item of ordered) {
+        const price = Number(item.detail?.money || 0);
+        await writeLocalLedger(movieId, item.account.id, { requestId, status: "pending", price, error: "" });
+        try {
+          await apiRequest("/movie/doBuy", { id: movieId }, item.session);
+        } catch (error) {
+          if (confirmedBeforeChargeFailure(error)) {
+            errors.push({ accountId: item.account.id, label: item.account.label, stage: "buy_before_charge", message: error?.message || String(error) });
+            await writeLocalLedger(movieId, item.account.id, { status: "failed_before_charge", error: error?.message || String(error) });
+            continue;
+          }
+          await writeLocalLedger(movieId, item.account.id, { status: "uncertain", error: error?.message || String(error) });
+          throw playbackBusinessError("购买请求结果不确定，已阻止再次扣费", "PURCHASE_RECONCILIATION_REQUIRED", 409);
+        }
+        await writeLocalLedger(movieId, item.account.id, { status: "charged", error: "" });
+        try {
+          const detail = normalizeFullDetail(await apiRequest("/movie/detail", { id: movieId }, item.session));
+          if (isLockedCoinVideo(detail) || !playableDetailReady(detail)) throw new Error("扣费后尚未取得可播放线路");
+          await writeLocalLedger(movieId, item.account.id, { status: "resolved", detail, error: "" });
+          return finishPlaybackSession({
+            movieId,
+            movieTitle,
+            detail,
+            account: item.account,
+            acquisition: {
+              mode: "purchased",
+              attempts: candidates.length,
+              failed: errors,
+              purchase: { status: "resolved", accountId: item.account.id, price }
+            }
+          });
+        } catch (error) {
+          await writeLocalLedger(movieId, item.account.id, { status: "uncertain", error: error?.message || String(error) });
+          throw playbackBusinessError("已完成扣费但详情需要核对，已阻止二次购买", "PURCHASE_RECONCILIATION_REQUIRED", 409);
+        }
+      }
+      throw playbackBusinessError("没有本地账号能够完成视频解锁", "PLAYBACK_UNAVAILABLE", 502);
+    } finally {
+      localPurchaseLocks.delete(movieId);
+    }
+  } catch (error) {
+    const fresh = await getStateInternal();
+    fresh.screening = {
+      ...normalizeScreeningState(fresh.screening, fresh.fullDetails),
+      request: { phase: "error", requestId, movieId, error: error?.message || String(error), startedAt: fresh.screening?.request?.startedAt || nowIso() }
+    };
+    await saveState(fresh);
+    throw error;
   }
-  const messageText = `本地账号池全部失败：${JSON.stringify(errors.slice(-8))}`;
-  if (remoteError) throw new Error(`远程账号池失败：${remoteError?.message || remoteError}；${messageText}`);
-  throw new Error(messageText);
+}
+
+// v1 兼容入口与下载流程都复用同一 v2 会话服务，不保留第二套购买逻辑。
+async function getFullDetail(message = {}) {
+  const result = await createPlaybackSession(message);
+  return {
+    ...result,
+    summary: result.summary || playbackSessionSummary(result.session, result.detail),
+    data: result.detail
+  };
 }
 
 /** 同一 movieId 合并为一条最新记录，避免刷新/下载重复堆叠。 */
@@ -1290,92 +1674,6 @@ function upsertFullDetailList(list = [], summary = {}) {
     return prev.slice(-80);
   }
   return [...prev, summary].slice(-80);
-}
-
-async function finishLocalFullDetail(options = {}) {
-  const { state, movieId, detail, account, session, action, cacheKey, errors = [], checkedAccountIds = new Set(), purchaseMeta = {} } = options;
-  const [fullStat, backupStat] = [
-    detail?.play_link ? { url: absoluteUrl(detail.play_link), pending: true } : null,
-    detail?.backup_link ? { url: absoluteUrl(detail.backup_link), pending: true } : null
-  ];
-  const summary = {
-    movieId,
-    action,
-    accountId: account.id,
-    accountLabel: account.label,
-    accountUser: account.username || accountName(session?.userInfo),
-    hasBuy: detail?.has_buy,
-    layerType: detail?.layer_type,
-    money: detail?.money,
-    oldMoney: detail?.old_money,
-    balance: detail?.balance,
-    playLink: detail?.play_link,
-    backupLink: detail?.backup_link,
-    fullStat,
-    backupStat,
-    fetchedAt: nowIso(),
-    rotation: {
-      accountId: account.id,
-      tried: checkedAccountIds.size || errors.length + 1,
-      failed: errors,
-      coinSort: true,
-      ...purchaseMeta
-    }
-  };
-  const fresh = await getStateInternal();
-  fresh.selectedFullAccountId = account.id || fresh.selectedFullAccountId;
-  fresh.fullDetails = upsertFullDetailList(fresh.fullDetails, summary);
-  fresh.fullDetailCache = {
-    ...(fresh.fullDetailCache || {}),
-    [cacheKey || `${account.id || "default"}:${movieId}`]: {
-      cachedAt: Date.now(),
-      detail,
-      summary,
-      account: publicAccount(account)
-    }
-  };
-  const cacheEntries = Object.entries(fresh.fullDetailCache);
-  if (cacheEntries.length > 120) fresh.fullDetailCache = Object.fromEntries(cacheEntries.slice(-120));
-  await saveState(fresh);
-  // 线路探测：后台静默、延迟串行执行，避免与起播/HLS 抢带宽，也不阻塞返回结果。
-  if (detail?.play_link || detail?.backup_link) {
-    const probeMovieId = String(movieId || "");
-    const playLink = detail?.play_link || "";
-    const backupLink = detail?.backup_link || "";
-    setTimeout(() => {
-      (async () => {
-        try {
-          // 串行探测 + 间隔，降低对正在播放分片的干扰。
-          const resolvedFullStat = playLink ? await statM3u8Quick(playLink, 4000) : null;
-          await new Promise((resolve) => setTimeout(resolve, 400));
-          const resolvedBackupStat = backupLink ? await statM3u8Quick(backupLink, 4000) : null;
-          const latest = await getStateInternal();
-          latest.fullDetails = (latest.fullDetails || []).map((item) => {
-            if (String(item.movieId) !== probeMovieId) return item;
-            return {
-              ...item,
-              fullStat: pickBetterStat(resolvedFullStat, item.fullStat) || resolvedFullStat || item.fullStat,
-              backupStat: pickBetterStat(resolvedBackupStat, item.backupStat) || resolvedBackupStat || item.backupStat
-            };
-          });
-          // 同步更新缓存摘要，下载选线可用最新分数，但不触发播放器重载（前端会锁定已播 URL）。
-          const cacheKeyHit = Object.keys(latest.fullDetailCache || {}).find((key) => key.endsWith(`:${probeMovieId}`) || key.includes(`:${probeMovieId}`));
-          if (cacheKeyHit && latest.fullDetailCache?.[cacheKeyHit]?.summary) {
-            latest.fullDetailCache[cacheKeyHit] = {
-              ...latest.fullDetailCache[cacheKeyHit],
-              summary: {
-                ...latest.fullDetailCache[cacheKeyHit].summary,
-                fullStat: pickBetterStat(resolvedFullStat, latest.fullDetailCache[cacheKeyHit].summary.fullStat) || resolvedFullStat || latest.fullDetailCache[cacheKeyHit].summary.fullStat,
-                backupStat: pickBetterStat(resolvedBackupStat, latest.fullDetailCache[cacheKeyHit].summary.backupStat) || resolvedBackupStat || latest.fullDetailCache[cacheKeyHit].summary.backupStat
-              }
-            };
-          }
-          await saveState(latest);
-        } catch (_) {}
-      })();
-    }, 2500);
-  }
-  return { ok: true, detail, data: detail, summary, account: publicAccount(account), state: sanitizeState(fresh) };
 }
 
 async function downloadFullVideo(message = {}) {
@@ -3098,6 +3396,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "getFullDetail") {
       sendResponse(await getFullDetail(message));
+      return;
+    }
+    if (message?.type === "createPlaybackSession") {
+      sendResponse(await createPlaybackSession(message));
       return;
     }
     if (message?.type === "downloadFullVideo") {

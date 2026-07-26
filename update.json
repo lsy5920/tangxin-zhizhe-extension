@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "4.0.0",
-  "build": "2026-07-26-2254",
-  "releasedAt": "2026-07-26 23:04",
+  "version": "5.0.0",
+  "build": "2026-07-27-0100",
+  "releasedAt": "2026-07-27 01:00",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,12 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-27-0100",
+      "type": "重构",
+      "title": "沉浸糖果影院播放系统 5.0",
+      "detail": "播放器改为单 reducer 会话状态机、单 ArtPlayer/Hls 媒体内核、带代次隔离的异步编排与健康度/实播反馈线路策略；新增 8 秒起播保护、HLS 单次恢复、单次自动切线、30 天断点续播、键盘/手势/右键/锁屏/画中画/全屏兜底。放映页重组为主舞台、影片侧栏和片源/下载/足迹抽屉，并迁移旧 fullDetails 历史。扩展只调用 Worker v2 播放会话接口，本地账号模式同步启用五态购买幂等账本；沿用正式私钥与扩展 ID ddefadnhgebdclpkabeobjidjllkdkhm。"
+    },
     {
       "id": "2026-07-26-2254",
       "type": "重构",

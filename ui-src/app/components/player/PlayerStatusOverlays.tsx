@@ -170,6 +170,12 @@ export function PlayerContextMenu({
     onClose();
   };
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
     if (event.key !== "Tab") return;
     const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || []);
     if (!items.length) return;

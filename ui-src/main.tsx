@@ -3,10 +3,12 @@ import { createRoot } from "react-dom/client";
 import Artplayer from "artplayer";
 import App from "./app/App";
 import "./styles/index.css";
+import candyUiStyles from "./styles/index.css?inline";
 
 const HOST_ID = "txzz-candy-ui-root";
 const ROOT_ID = "txzz-candy-ui";
 const ARTPLAYER_STYLE_ID = "txzz-artplayer-style";
+const APP_STYLE_ID = "txzz-app-style";
 
 function syncHostVisualViewport(host: HTMLElement) {
   const visual = window.visualViewport;
@@ -70,6 +72,15 @@ function createHost() {
     link.rel = "stylesheet";
     link.href = styleHref;
     shadow.appendChild(link);
+  }
+
+  // 正式扩展页面可能在首帧尚未完成 chrome-extension:// 样式加载；内联同源构建样式
+  // 作为确定性副本，确保 CRX、解压加载和本地预览使用完全相同的 UI 元素与断点。
+  if (!shadow.getElementById(APP_STYLE_ID)) {
+    const style = document.createElement("style");
+    style.id = APP_STYLE_ID;
+    style.textContent = candyUiStyles;
+    shadow.appendChild(style);
   }
 
   if (!shadow.getElementById(ARTPLAYER_STYLE_ID)) {

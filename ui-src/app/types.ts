@@ -1,3 +1,5 @@
+import type { ScreeningState } from "./playback/types";
+
 export type Page = "overview" | "accounts" | "playback" | "downloads" | "settings";
 
 /** 远程版本清单中的单条更新记录 */
@@ -290,6 +292,7 @@ export type BridgeState = {
   accountPool?: AccountItem[];
   selectedFullAccountId?: string;
   fullDetails?: FullDetail[];
+  screening?: ScreeningState;
   downloadTasks?: Record<string, DownloadTask>;
   downloadSnapshots?: unknown[];
   remote?: {

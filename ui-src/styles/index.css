@@ -606,6 +606,7 @@
  * 3. video 全屏时提到 z-index:1 的独立层；手势/亮度/控制栏在其上且背景透明。
  */
 :host(.txzz-player-fullscreen-mode) .txzz-playback-root,
+:host(.txzz-player-fullscreen-mode) .txzz-playback-workspace,
 :host(.txzz-player-fullscreen-mode) .txzz-player-card {
   position: absolute !important;
   inset: 0 !important;
@@ -1550,4 +1551,66 @@
   width: 100% !important;
   height: 100% !important;
   object-fit: contain;
+}
+
+/* 糖果影院 5.0：奶油粉紫外壳只包围高对比黑色舞台，不污染视频画面。 */
+.txzz-playback-root {
+  isolation: isolate;
+  border-radius: 2rem;
+  background:
+    radial-gradient(circle at 8% 4%, rgba(251, 207, 232, 0.28), transparent 24rem),
+    radial-gradient(circle at 94% 12%, rgba(221, 214, 254, 0.32), transparent 23rem);
+}
+
+.txzz-ticket-mascot {
+  animation: txzz-ticket-float 3.8s ease-in-out infinite;
+}
+
+@keyframes txzz-ticket-float {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-4px) rotate(2deg); }
+}
+
+.txzz-screening-drawer > div:last-child,
+.txzz-screening-sidebar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(167, 139, 250, 0.35) transparent;
+}
+
+.txzz-player-shell[data-playback-phase="playing"] .art-poster,
+.txzz-player-shell[data-playback-phase="playing"] .art-loading,
+.txzz-player-shell[data-playback-phase="playing"] .art-state {
+  display: none !important;
+}
+
+@media (max-width: 639px) {
+  .txzz-playback-root {
+    border-radius: 1.25rem;
+  }
+
+  .txzz-screening-sidebar {
+    padding: 0.75rem;
+  }
+
+  .txzz-screening-drawer > div:last-child {
+    max-height: 18rem;
+  }
+}
+
+@media (max-width: 359px) {
+  .txzz-playback-root {
+    padding-inline: 0.45rem !important;
+  }
+
+  .txzz-screening-sidebar,
+  .txzz-screening-drawer,
+  .txzz-player-card {
+    border-radius: 1.1rem !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .txzz-ticket-mascot {
+    animation: none !important;
+  }
 }

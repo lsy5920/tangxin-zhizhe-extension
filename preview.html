@@ -74,6 +74,55 @@
         }
       };
 
+      const previewScenario = new URLSearchParams(location.search).get("scenario") || "normal";
+      const previewVideo = "https://media.w3.org/2010/05/sintel/trailer.mp4";
+      const failedVideo = `${location.origin}/preview-missing-${previewScenario}.mp4`;
+      const makeSession = (overrides = {}) => ({
+        id: `preview-${previewScenario}`,
+        movieId: "9527",
+        title: "星糖列车与月亮放映厅",
+        phase: "ready",
+        sources: [
+          { id: "primary", label: "主线路", url: previewVideo, protocol: "progressive", health: { state: "healthy", status: 200, latencyMs: 86, score: 220 } },
+          { id: "backup", label: "备用线路", url: previewVideo, protocol: "progressive", health: { state: "unknown", score: 20 } }
+        ],
+        decision: { recommendedSourceId: "primary", reasonCodes: ["healthy-source"], failoverAllowed: true },
+        account: { id: "cloud-1", label: "云端 VIP 一号" },
+        acquisition: { mode: "direct", attempts: 2, failed: [] },
+        fetchedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 600000).toISOString(),
+        ...overrides
+      });
+      const normalSession = makeSession();
+      const historySession = makeSession({ id: "preview-history", movieId: "2048", title: "棉花糖云海巡游", fetchedAt: new Date(Date.now() - 86400000).toISOString() });
+      const fixtureSession = previewScenario === "primary-failure"
+        ? makeSession({
+            sources: [
+              { id: "primary", label: "主线路", url: failedVideo, protocol: "progressive", health: { state: "degraded", status: 503, score: 90 } },
+              { id: "backup", label: "备用线路", url: previewVideo, protocol: "progressive", health: { state: "healthy", status: 200, score: 180 } }
+            ],
+            decision: { recommendedSourceId: "primary", reasonCodes: ["preview-primary-failure"], failoverAllowed: true }
+          })
+        : previewScenario === "double-failure"
+          ? makeSession({
+              sources: [
+                { id: "primary", label: "主线路", url: `${failedVideo}?line=1`, protocol: "progressive", health: { state: "failed", error: "preview" } },
+                { id: "backup", label: "备用线路", url: `${failedVideo}?line=2`, protocol: "progressive", health: { state: "failed", error: "preview" } }
+              ],
+              decision: { recommendedSourceId: "primary", reasonCodes: ["preview-double-failure"], failoverAllowed: true }
+            })
+          : previewScenario === "coin-unlock"
+            ? makeSession({ acquisition: { mode: "purchased", attempts: 3, failed: [{ accountId: "cloud-2", stage: "detail", message: "仅返回锁定详情" }], purchase: { status: "resolved", accountId: "cloud-1", price: 18 } } })
+            : previewScenario === "buffering"
+              ? makeSession({ sources: [{ id: "primary", label: "缓冲演练线", url: failedVideo, protocol: "progressive", health: { state: "probing" } }], decision: { recommendedSourceId: "primary", reasonCodes: ["preview-buffering"], failoverAllowed: false } })
+              : normalSession;
+      const previewRequest = previewScenario === "buffering"
+        ? { phase: "resolving", requestId: "preview-buffering", movieId: "9527", startedAt: new Date().toISOString() }
+        : { phase: "idle" };
+      if (previewScenario === "fullscreen-failure") {
+        Element.prototype.requestFullscreen = () => Promise.reject(new Error("预览场景：系统全屏被拒绝"));
+      }
+
       window.__txzzBridgeState = {
         expanded: true,
         role: "full",
@@ -90,13 +139,19 @@
           { id: "local-1", label: "本地测试账号", username: "local001", source: "manual", status: "ok", hasPassword: true, notes: "用于本机兜底" }
         ],
         selectedFullAccountId: "local-1",
-        fullDetails: [{ movieId: "9527", movieTitle: "预览视频", accountLabel: "云端 VIP 一号", action: "direct_full_detail", playLink: "https://media.example.com/video.m3u8", fetchedAt: new Date().toISOString() }],
+        fullDetails: [{ movieId: "9527", movieTitle: fixtureSession.title, accountLabel: "云端 VIP 一号", action: fixtureSession.acquisition.mode === "purchased" ? "buy_then_full_detail" : "direct_full_detail", playLink: fixtureSession.sources[0]?.url || "", backupLink: fixtureSession.sources[1]?.url || "", fetchedAt: fixtureSession.fetchedAt }],
+        screening: {
+          schemaVersion: 2,
+          activeSession: fixtureSession,
+          history: previewScenario === "history" ? [historySession, fixtureSession] : [fixtureSession],
+          request: previewRequest
+        },
         downloadTasks: {
           task_preview: { taskId: "task_preview", movieId: "9527", movieTitle: "预览视频", stage: "segments", current: 18, total: 40, percent: 45, speedBps: 2457600, updatedAt: new Date().toISOString() }
         },
-      repositoryUpdate: { ok: true, checkPhase: "success", downloadPhase: "idle", checkedAt: new Date().toISOString(), updateAvailable: false, local: { version: "4.0.0", build: "2026-07-26-2254" }, remote: { version: "4.0.0", build: "2026-07-26-2254" } },
+      repositoryUpdate: { ok: true, checkPhase: "success", downloadPhase: "idle", checkedAt: new Date().toISOString(), updateAvailable: false, local: { version: "5.0.0", build: "2026-07-27-0100" }, remote: { version: "5.0.0", build: "2026-07-27-0100" } },
         adCleaner: { enabled: true, version: "v3", total: 12, removed: 8, blockedClicks: 3, splashHits: 1, countdownHits: 1, selectors: 1, lastRunAt: new Date().toISOString() },
-        flow: [{ title: "本地预览", detail: "界面与数据桥接已就绪", level: "ok", ts: new Date().toISOString() }]
+        flow: [{ title: "本地预览", detail: `糖果影院确定性场景：${previewScenario}`, level: "ok", ts: new Date().toISOString() }]
       };
 
       window.addEventListener("txzz:ui-ready", () => {

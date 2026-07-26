@@ -148,6 +148,7 @@
     selectedFullAccountId: "",
     remote: null,
     fullDetails: [],
+    screening: { schemaVersion: 2, activeSession: null, history: [], request: { phase: "idle" } },
     downloadTasks: {},
     downloadSnapshots: []
   };
@@ -1341,6 +1342,7 @@
         accountPool: state.accountPool,
         selectedFullAccountId: state.selectedFullAccountId,
         fullDetails: state.fullDetails.slice(-40),
+        screening: state.screening,
         downloadTasks: state.downloadTasks || {},
         downloadSnapshots: state.downloadSnapshots || [],
         adCleaner: adCleanerStats(),
@@ -1955,6 +1957,9 @@
     state.selectedFullAccountId = saved.selectedFullAccountId || state.accountPool[0]?.id || "";
     state.remote = saved.remote || state.remote || null;
     state.fullDetails = Array.isArray(saved.fullDetails) ? saved.fullDetails : [];
+    state.screening = saved.screening && typeof saved.screening === "object"
+      ? saved.screening
+      : { schemaVersion: 2, activeSession: null, history: [], request: { phase: "idle" } };
     state.downloadTasks = saved.downloadTasks && typeof saved.downloadTasks === "object" ? saved.downloadTasks : {};
     state.downloadSnapshots = Array.isArray(saved.downloadSnapshots) ? saved.downloadSnapshots : [];
     if (autoCleaned) {
@@ -2001,6 +2006,9 @@
     state.observations = [];
     state.flow = [];
     state.fullDetails = Array.isArray(saved.fullDetails) ? saved.fullDetails : [];
+    state.screening = saved.screening && typeof saved.screening === "object"
+      ? saved.screening
+      : { schemaVersion: 2, activeSession: null, history: [], request: { phase: "idle" } };
     state.downloadTasks = saved.downloadTasks && typeof saved.downloadTasks === "object" ? saved.downloadTasks : {};
     state.downloadSnapshots = Array.isArray(saved.downloadSnapshots) ? saved.downloadSnapshots : [];
     state.accountPool = Array.isArray(saved.accountPool) ? saved.accountPool : [];
@@ -2420,15 +2428,34 @@
   async function refreshFullDetail(movieId = currentMovieId()) {
     const id = String(movieId || currentMovieId()).trim();
     if (!id) throw new Error("当前页面不是视频详情页，无法识别视频编号");
+    const requestId = crypto.randomUUID();
+    state.screening = {
+      ...(state.screening || { schemaVersion: 2, activeSession: null, history: [] }),
+      schemaVersion: 2,
+      request: { phase: "resolving", requestId, movieId: id, startedAt: new Date().toISOString(), error: "" }
+    };
+    publishState();
     emitFlow("播放资源", `正在刷新视频 ${id} 的播放线路`);
     showToast("正在刷新播放资源");
     const bootstrapSession = await collectSession();
-    const response = await sendRuntime("getFullDetail", {
-      movieId: id,
-      movieTitle: currentMovieTitle(),
-      accountId: state.selectedFullAccountId,
-      bootstrapSession
-    });
+    let response;
+    try {
+      response = await sendRuntime("createPlaybackSession", {
+        movieId: id,
+        movieTitle: currentMovieTitle(),
+        requestId,
+        forceRefresh: true,
+        accountId: state.selectedFullAccountId,
+        bootstrapSession
+      });
+    } catch (error) {
+      state.screening = {
+        ...(state.screening || { schemaVersion: 2, activeSession: null, history: [] }),
+        request: { phase: "error", requestId, movieId: id, error: error?.message || String(error) }
+      };
+      publishState();
+      throw error;
+    }
     if (response.state) syncSavedState(response.state);
     if (response.summary) {
       emitCloudAccountFlow(response.summary, id);
@@ -2563,6 +2590,7 @@
       if (action === "upload-account-remote") await uploadAccountRemote(payload);
       if (action === "upload-local-account-remote") await uploadLocalAccountRemote(accountId);
       if (action === "refresh-full-detail") await refreshFullDetail(payload.movieId || currentMovieId());
+      if (action === "refresh-playback-session") await refreshFullDetail(payload.movieId || currentMovieId());
       if (action === "download-full-video") {
         await downloadFullVideo(payload.movieId || currentMovieId(), {
           lineKey: payload.lineKey || payload.line || "auto",
@@ -2823,12 +2851,21 @@
   }
 
   async function handleFullDetailRequest(payload) {
+    const requestId = String(payload.requestId || crypto.randomUUID());
+    state.screening = {
+      ...(state.screening || { schemaVersion: 2, activeSession: null, history: [] }),
+      schemaVersion: 2,
+      request: { phase: "resolving", requestId, movieId: String(payload.movieId || ""), startedAt: new Date().toISOString(), error: "" }
+    };
+    publishState();
     emitFlow("播放资源", `记录视频详情接口，视频 ${payload.movieId}`);
     emitFlow("云端账号", `正在为视频 ${payload.movieId} 轮换可用账号`);
     try {
       const bootstrapSession = await collectSession();
-      const response = await sendRuntime("getFullDetail", {
+      const response = await sendRuntime("createPlaybackSession", {
         movieId: payload.movieId,
+        movieTitle: currentMovieTitle(),
+        requestId,
         visitorDetail: payload.visitorDetail,
         accountId: state.selectedFullAccountId,
         bootstrapSession
@@ -2870,6 +2907,11 @@
       }
       if (response.state) syncSavedState(response.state);
     } catch (err) {
+      state.screening = {
+        ...(state.screening || { schemaVersion: 2, activeSession: null, history: [] }),
+        request: { phase: "error", requestId, movieId: String(payload.movieId || ""), error: err?.message || String(err) }
+      };
+      publishState();
       window.postMessage({
         source: "txzz-content",
         kind: "full-detail-response",
