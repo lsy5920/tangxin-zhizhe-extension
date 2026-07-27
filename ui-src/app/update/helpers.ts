@@ -137,7 +137,7 @@ function statusSummary(status: UpdateUiStatus, update: RepositoryUpdateState | n
   if (status === "validating") return "正在下载并验证完整 CRX3 包：核对完整包大小、SHA-256、正式扩展 ID 与 CRX3 包签名。";
   if (status === "submitted") {
     const suffix = update?.downloadId ? `（浏览器下载编号 ${update.downloadId}）` : "";
-    return `CRX3 完整包验证通过，已提交浏览器下载${suffix}。`;
+    return `CRX3 完整包验证通过，已拉起浏览器下载${suffix}。`;
   }
   if (status === "download-error") return "未能从候选镜像取得可用安装包，请查看错误后重试。";
   if (status === "error") return "本次更新检测没有完成，请查看错误后重新检测。";
@@ -155,7 +155,7 @@ function statusHint(status: UpdateUiStatus) {
   if (status === "available") return "可下载 CRX，浏览器不会静默安装";
   if (status === "latest") return "本地版本与远程版本一致";
   if (status === "checking") return "手动检查始终绕过成功缓存";
-  if (status === "validating") return "完整包验证全部通过后才会提交浏览器下载";
+  if (status === "validating") return "完整包验证全部通过后才会拉起浏览器下载";
   if (status === "submitted") return "浏览器已接收下载任务，完成后需手动安装";
   if (status === "download-error") return "可重试下载，系统会重新验证全部镜像";
   if (status === "error") return "可重新检测，或前往项目主页核对发布状态";
@@ -276,7 +276,7 @@ export function updateCheckPhaseLabel(phase: UpdateCheckPhase) {
 }
 
 export function updateDownloadPhaseLabel(phase: UpdateDownloadPhase) {
-  return ({ idle: "未开始", validating: "验证完整包", submitted: "已提交浏览器下载", failed: "完整包获取失败" } as const)[phase] || phase;
+  return ({ idle: "未开始", validating: "验证完整包", submitted: "已拉起浏览器下载", failed: "完整包获取失败" } as const)[phase] || phase;
 }
 
 export function updateAttemptPhaseLabel(phase?: string) {

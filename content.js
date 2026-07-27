@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 (() => {
   if (window.__txzzContentInstalled) return;
@@ -385,6 +385,46 @@
       .filter(Boolean);
   }
 
+  function movieIdFromValue(value) {
+    const candidate = String(value ?? "").trim();
+    return /^\d+$/.test(candidate) ? candidate : "";
+  }
+
+  function movieIdFromVueValue(value) {
+    if (!value || typeof value !== "object") return movieIdFromValue(value);
+    for (const key of ["id", "movieId", "movie_id", "videoId", "vid"]) {
+      const id = movieIdFromValue(value[key]);
+      if (id) return id;
+    }
+    return "";
+  }
+
+  // /vlog/ 是固定路由，当前视频编号只存在活动 Swiper/Vue 实例里。
+  // 只读取 playerInfo、活动 slide 和 isActive 详情，避免把预加载 slide 当成当前项。
+  function activeVlogMovieId() {
+    if (!/^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))) return "";
+    try {
+      const listVm = document.querySelector(".vlog-list")?.__vue__;
+      const listId = movieIdFromVueValue(listVm?.playerInfo || listVm?.activeItem || listVm?.currentItem);
+      if (listId) return listId;
+      const activeSlide = document.querySelector(".swiper-slide-active")
+        || document.querySelector(".swiper-slide[aria-hidden='false']");
+      const detailVm = activeSlide?.querySelector(".short-video-detail")?.__vue__;
+      const detailId = movieIdFromVueValue(detailVm?.r || detailVm?.$options?.propsData?.r);
+      if (detailId && detailVm?.$options?.propsData?.isActive !== false) return detailId;
+      const playerId = movieIdFromValue(activeSlide?.querySelector(".player")?.__vue__?.currentMovieId);
+      if (playerId) return playerId;
+      for (const element of document.querySelectorAll(".short-video-detail")) {
+        const vm = element.__vue__;
+        if (vm?.$options?.propsData?.isActive === true) {
+          const id = movieIdFromVueValue(vm.r || vm.$options?.propsData?.r);
+          if (id) return id;
+        }
+      }
+    } catch (_) {}
+    return "";
+  }
+
   function currentMovieId() {
     const match = String(location.pathname || "").match(/\/movie\/detail\/(\d+)/);
     if (match) return match[1];
@@ -395,7 +435,7 @@
         if (/^\d+$/.test(value)) return value;
       }
     } catch (_) {}
-    return "";
+    return activeVlogMovieId();
   }
 
   function currentPageKey() {
@@ -409,7 +449,17 @@
 
   function refreshPageContext(reason = "poll") {
     const nextKey = currentPageKey();
-    if (pageContextKey && nextKey !== pageContextKey) {
+    const nextMovieId = currentMovieId();
+    const routeChanged = Boolean(pageContextKey && nextKey !== pageContextKey);
+    const vlogMovieChanged = Boolean(
+      pageContextKey
+      && nextKey === pageContextKey
+      && pageContextMovieId
+      && nextMovieId
+      && pageContextMovieId !== nextMovieId
+      && /^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))
+    );
+    if (routeChanged || vlogMovieChanged) {
       pageContextEpoch += 1;
       latestFullDetailToken = null;
       // 保留 history，但当前页面不能继续显示上一页的 active session。
@@ -421,7 +471,7 @@
       publishState();
     }
     pageContextKey = nextKey;
-    pageContextMovieId = currentMovieId();
+    pageContextMovieId = nextMovieId;
     return { pageKey: pageContextKey, pageEpoch: pageContextEpoch, movieId: pageContextMovieId };
   }
 
@@ -2255,7 +2305,7 @@
 
   async function downloadFullVideo(movieId = currentMovieId(), options = {}) {
     const id = String(movieId || currentMovieId()).trim();
-    if (!id) throw new Error("当前页面不是视频详情页，无法识别视频编号");
+    if (!id) throw new Error("当前页面未识别到正在播放的视频（请先让 Vlog 当前卡片完成加载）");
     if (downloadLocks.has(id)) {
       emitFlow("视频下载", `视频 ${id} 下载任务已经在创建中，请稍候`, "ok");
       showToast("下载任务已经在创建中", "ok");
@@ -2525,7 +2575,7 @@
 
   async function refreshFullDetail(movieId = currentMovieId()) {
     const id = String(movieId || currentMovieId()).trim();
-    if (!id) throw new Error("当前页面不是视频详情页，无法识别视频编号");
+    if (!id) throw new Error("当前页面未识别到正在播放的视频（详情页或 Vlog 当前卡片）");
     const page = refreshPageContext("manual-refresh");
     const requestId = crypto.randomUUID();
     const token = {
@@ -2779,7 +2829,7 @@
         emitFlow("版本更新", "正在验证签名清单并完整下载 CRX3，随后核对大小、哈希、扩展 ID 与包签名", "running");
         let response = null;
         try {
-          response = await sendRuntime("downloadRepositoryArchive", {}, 120000);
+          response = await sendRuntime("downloadRepositoryArchive", { saveAs: true }, 120000);
         } catch (err) {
           const failed = err?.response || {};
           rememberRepositoryUpdate({
@@ -2804,7 +2854,7 @@
           downloadUrl: response.displayUrl || response.url || current.downloadUrl || "",
           downloadCandidates: response.candidates || current.downloadCandidates || [],
           downloadAttemptUrls: response.attempts || [],
-          downloadStatus: response.downloadId ? "CRX 已提交浏览器下载" : "已发送下载请求",
+          downloadStatus: response.downloadId ? "已拉起浏览器 CRX 下载" : "已发送下载请求",
           downloadError: "",
           downloadId: Number(response.downloadId || 0),
           packageProbe: response.packageProbe || null,
@@ -2816,7 +2866,7 @@
         emitFlow(
           "版本更新",
           response.downloadId
-            ? `同一份 CRX3 字节已完整校验并提交下载（编号 ${response.downloadId}）：${response.filename}；下载后请手动安装或覆盖更新`
+            ? `同一份 CRX3 字节已完整校验并拉起浏览器下载（编号 ${response.downloadId}）：${response.filename}；下载后请手动安装或覆盖更新`
             : "已验证 CRX3 已提交浏览器下载；下载后请手动安装或覆盖更新",
           "ok"
         );

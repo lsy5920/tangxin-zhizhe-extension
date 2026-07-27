@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.0.2",
-  "build": "2026-07-27-1015",
-  "releasedAt": "2026-07-27 10:15",
+  "version": "5.0.3",
+  "build": "2026-07-27-1230",
+  "releasedAt": "2026-07-27 12:30",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-27-1230",
+      "type": "修复",
+      "title": "Vlog 刷视频页当前卡片恢复",
+      "detail": "支持固定 /vlog/ Swiper 页面：从 vlog-list.playerInfo、活动详情和播放器实例识别当前视频编号，首屏接口早于插件注入时会主动补发完整详情检票；每次上下滑动都创建新页面代次并只提交活动卡片会话。更新下载改由离屏页把已验证字节转换为 Blob，用户点击后拉起浏览器保存对话框并确认下载任务真实创建。",
+      "releasedAt": "2026-07-27 12:30"
+    },
     {
       "id": "2026-07-27-1015",
       "type": "修复",
@@ -144,11 +151,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 599012,
-  "packageSha256": "bde356dbf9eb94d852d598c8d31095f34793176ee4bdd066751a3ad765ca1a7d",
+  "packageSize": 604228,
+  "packageSha256": "83dcfa082da2decac407d25682670b3d5056fa2c033e22f035b9009b281b2695",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "IF+QrtJbZg0zUqiY4ttgJynzTPCEL8CN3sobKQO3yDCogE8qkzBEyq41zkMtVKKLPutGu8ZZ/4gq7tkg9wSiCIg4R24d6Le0lucSrconcnGxtlwAACXFoIAofrXFu977oaul8YDlwRjNSRAGZ2JnBx8NphUsF9eQrkQVNr5ZFzyqw3apb8vcANZmf22p3duIKMEdGz7JWeMjKY8IxkiWbukszvc4bKD1bYRz/5rliUySdiKxcd2rnlRUb8oqPXL2j7xkhd/8F/puNmp1GlqfLepoRWuNZYPAooW4eH/sVh+nybfgLDdFEn+ozdrLPIev6qEr1oRcFh3oIvKuD4IlYQ=="
+    "value": "HEsKKtkF7E4JsI7ZWaaoUMwY2vo1YgoVtMds5o8NR0oqMwEyOrcfBA6a92SQ+StP4fUU/e+xn2jalLYZqkEIHwo6Ms/Dy9LjdYPuT4nMQEjLgsnlwqwTiH87HlKlY7l+KZeujwfN2lavF5TOuhXTKZgGAy2eyRW7fKofIqDd/4y53V5mXfWTwixCx6SjxX5YtLD5mgBff8m3A85dZwNFVn3sK7+SJzaLDnd/5kKL+2AEVhAkOjodCQrr8vTZVr3SqhJrTNNDS9v+2HRjuTG85ilqkgyfS+LgG4q3PPOZv7XOAvrAU2xNeB0IfVArI+SdA5Zh5DgHmnn3Qwj0y1dW8Q=="
   }
 }

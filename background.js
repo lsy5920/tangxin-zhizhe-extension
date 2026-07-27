@@ -80,7 +80,7 @@ let updateVerificationKeyPromise = null;
 const localPurchaseLocks = new Set();
 let latestPlaybackRequest = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-27-1015";
+const LOCAL_UPDATE_BUILD = "2026-07-27-1230";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1179,7 +1179,7 @@ async function ensureOffscreenDocument() {
   await chrome.offscreen.createDocument({
     url: chrome.runtime.getURL("offscreen.html"),
     reasons: ["BLOBS"],
-    justification: "用于在扩展后台把完整 m3u8 分片合并成可下载文件"
+    justification: "用于把完整 m3u8 分片或已验证 CRX 字节转换为浏览器可下载的 Blob"
   });
 }
 
@@ -3369,18 +3369,26 @@ async function performRepositoryArchiveDownload(meta = {}) {
       const verifiedPackage = await fetchAndVerifyRepositoryPackage(url, manifest);
       const { bytes, packageProbe } = verifiedPackage;
       Object.assign(attemptRecord, { ok: true, phase: "validated", packageProbe });
-      // chrome.downloads 只接收 URL。data URL 由刚刚通过全部校验的同一份内存字节生成，
-      // 不会再次访问镜像，因此不存在“先探测 A、实际下载 B”的竞态窗口。
-      const verifiedDataUrl = `data:application/x-chrome-extension;base64,${toBase64(bytes)}`;
-      const downloadId = await chrome.downloads.download({
-        url: verifiedDataUrl,
+      // MV3 Service Worker 不能创建 Blob URL；交给离屏文档从同一份已验证字节创建 Blob，
+      // 并等待 downloads API 真正出现任务。用户主动更新默认拉起保存对话框。
+      await ensureOffscreenDocument();
+      const submitted = await chrome.runtime.sendMessage({
+        type: "offscreenSaveVerifiedPackage",
+        base64: toBase64(bytes),
+        expectedSize: bytes.length,
         filename,
-        saveAs: Boolean(meta.saveAs),
-        conflictAction: "uniquify"
+        saveAs: meta.saveAs !== false
       });
+      if (!submitted?.ok || !Number.isInteger(submitted.downloadId) || submitted.downloadId <= 0) {
+        throw new Error(submitted?.error || "浏览器没有创建 CRX 下载任务");
+      }
+      const downloadId = submitted.downloadId;
       const result = {
         ok: true,
         downloadId,
+        downloadState: submitted.state || "in_progress",
+        downloadDanger: submitted.danger || "safe",
+        saveVia: submitted.saveVia || "offscreen-blob",
         filename,
         url,
         displayUrl,
@@ -3391,7 +3399,7 @@ async function performRepositoryArchiveDownload(meta = {}) {
         packageProbe,
         packageProbeAttempts: [...packageProbeAttempts, { ...attemptRecord, phase: "submitted", downloadId }],
         downloadPhase: "submitted",
-        downloadStatus: "已提交完整校验后的 CRX3",
+        downloadStatus: "已拉起浏览器并提交完整校验后的 CRX3",
         downloadStartedAt,
         downloadSubmittedAt: nowIso()
       };

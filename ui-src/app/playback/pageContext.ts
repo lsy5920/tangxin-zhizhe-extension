@@ -19,11 +19,42 @@ export type PlaybackRequestContext = {
   active?: boolean;
 };
 
+export type VlogContextSnapshot = {
+  listPlayerInfo?: unknown;
+  activeDetail?: unknown;
+  activeDetailEnabled?: boolean;
+  activePlayerMovieId?: unknown;
+};
+
 const MOVIE_ID_KEYS = ["id", "movie_id", "movieId", "vid", "videoId"] as const;
 
 function cleanMovieId(value: unknown): string {
   const text = String(value ?? "").trim();
   return /^\d+$/.test(text) ? text : "";
+}
+
+function movieIdFromRecord(value: unknown): string {
+  if (!value || typeof value !== "object") return cleanMovieId(value);
+  const record = value as Record<string, unknown>;
+  for (const key of MOVIE_ID_KEYS) {
+    const id = cleanMovieId(record[key]);
+    if (id) return id;
+  }
+  return "";
+}
+
+/**
+ * Vlog 的 URL 固定为 /vlog/，只能从活动 Swiper 的 Vue 状态读取当前 ID。
+ * playerInfo 是页面自己的权威当前项；活动详情和播放器 ID 仅作加载阶段兜底。
+ */
+export function getActiveVlogMovieId(snapshot: VlogContextSnapshot): string {
+  const fromList = movieIdFromRecord(snapshot.listPlayerInfo);
+  if (fromList) return fromList;
+  if (snapshot.activeDetailEnabled !== false) {
+    const fromDetail = movieIdFromRecord(snapshot.activeDetail);
+    if (fromDetail) return fromDetail;
+  }
+  return cleanMovieId(snapshot.activePlayerMovieId);
 }
 
 export function getDetailMovieId(value: unknown): string {
@@ -84,6 +115,21 @@ export function sameDetailPage(left: PageContext | null | undefined, right: Page
   return left.pageKey === right.pageKey
     && left.pageEpoch === right.pageEpoch
     && (!left.movieId || !right.movieId || left.movieId === right.movieId);
+}
+
+export function requiresNewPageGeneration(previous: PageContext | null | undefined, current: PageContext): boolean {
+  if (!previous) return false;
+  if (previous.pageKey !== current.pageKey) return true;
+  let isVlog = false;
+  try {
+    isVlog = /^\/vlog\/?$/i.test(new URL(current.href).pathname);
+  } catch {
+    isVlog = /\/vlog\/?(?:[?#]|$)/i.test(current.pageKey);
+  }
+  return isVlog
+    && Boolean(previous.movieId)
+    && Boolean(current.movieId)
+    && previous.movieId !== current.movieId;
 }
 
 export function isCurrentRequest(current: PageContext, request: PlaybackRequestContext): boolean {

@@ -57,6 +57,7 @@
     installedTargets: [],
     patchRuns: [],
     pending: new Map(),
+    pendingByContext: new Map(),
     cache: new Map(),
     latestByContext: new Map(),
     pageEpoch: 0,
@@ -65,6 +66,8 @@
     activeMovieId: "",
     activeHintAt: 0,
     activePointerAt: 0,
+    activeVlogRequestKey: "",
+    activeVlogRetryAt: 0,
     contextTrackerInstalled: false,
     lastMessage: "糖心志者播放资源监听已安装"
   };
@@ -135,9 +138,59 @@
     return "";
   }
 
+  function movieIdFromValue(value) {
+    const candidate = String(value ?? "").trim();
+    return /^\d+$/.test(candidate) ? candidate : "";
+  }
+
+  function movieIdFromVueValue(value) {
+    if (!value || typeof value !== "object") return movieIdFromValue(value);
+    for (const key of ["id", "movieId", "movie_id", "videoId", "vid"]) {
+      const id = movieIdFromValue(value[key]);
+      if (id) return id;
+    }
+    return "";
+  }
+
+  /**
+   * Vlog 是一个固定 /vlog/ 路由下的 Swiper，不会把当前影片编号写进 URL。
+   * 生产站点的 Vue 组件仍会把当前项放在 vlog-list.playerInfo、活动 slide 的
+   * short-video-detail.r 和 player.currentMovieId 中；只读这些“活动”节点，
+   * 不把旁边预加载 slide 的数据当成当前视频。
+   */
+  function activeVlogMovieId() {
+    if (!/^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))) return "";
+    try {
+      const listVm = document.querySelector(".vlog-list")?.__vue__;
+      const listId = movieIdFromVueValue(listVm?.playerInfo || listVm?.activeItem || listVm?.currentItem);
+      if (listId) return listId;
+
+      const activeSlide = document.querySelector(".swiper-slide-active")
+        || document.querySelector(".swiper-slide[aria-hidden='false']");
+      const activeDetailVm = activeSlide?.querySelector(".short-video-detail")?.__vue__;
+      const activeDetailId = movieIdFromVueValue(activeDetailVm?.r || activeDetailVm?.$options?.propsData?.r);
+      if (activeDetailId && activeDetailVm?.$options?.propsData?.isActive !== false) return activeDetailId;
+      const activePlayerId = movieIdFromValue(activeSlide?.querySelector(".player")?.__vue__?.currentMovieId);
+      if (activePlayerId) return activePlayerId;
+
+      for (const element of document.querySelectorAll(".short-video-detail")) {
+        const vm = element.__vue__;
+        if (vm?.$options?.propsData?.isActive === true) {
+          const id = movieIdFromVueValue(vm.r || vm.$options?.propsData?.r);
+          if (id) return id;
+        }
+      }
+      return "";
+    } catch (_) {
+      return "";
+    }
+  }
+
   function routeMovieId() {
     const fromLocation = movieIdFromUrl(location.href);
     if (fromLocation) return fromLocation;
+    const fromVlog = activeVlogMovieId();
+    if (fromVlog) return fromVlog;
     try {
       const route = window.$nuxt?.$route || window.$nuxt?.$router?.currentRoute;
       const candidate = getMovieId(route?.params || route?.query || route, route?.fullPath || "");
@@ -150,6 +203,9 @@
     fullplay.pending.forEach((item, id) => {
       if (item.pageKey === fullplay.pageKey && item.pageEpoch === fullplay.pageEpoch) return;
       fullplay.pending.delete(id);
+      if (item.contextKey && fullplay.pendingByContext.get(item.contextKey) === item.promise) {
+        fullplay.pendingByContext.delete(item.contextKey);
+      }
       try {
         window.clearTimeout(item.timer);
         const error = new Error(reason);
@@ -161,15 +217,29 @@
 
   function updatePageContext(reason = "route-check") {
     const nextKey = currentPageKey(location.href);
-    const changed = Boolean(fullplay.pageKey && fullplay.pageKey !== nextKey);
+    const nextMovieId = routeMovieId();
+    const routeChanged = Boolean(fullplay.pageKey && fullplay.pageKey !== nextKey);
+    // Vlog 刷视频不会改变 URL；active movie ID 的变化必须同样开启新代次，
+    // 否则旧 slide 的异步详情仍可能在 700ms 轮询窗口内回写。
+    const vlogMovieChanged = Boolean(
+      fullplay.pageKey
+      && fullplay.pageKey === nextKey
+      && fullplay.pageMovieId
+      && nextMovieId
+      && fullplay.pageMovieId !== nextMovieId
+      && /^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))
+    );
+    const changed = routeChanged || vlogMovieChanged;
     if (changed) {
       fullplay.pageEpoch += 1;
       fullplay.activeMovieId = "";
       fullplay.activeHintAt = 0;
       fullplay.activePointerAt = 0;
+      fullplay.activeVlogRequestKey = "";
+      fullplay.activeVlogRetryAt = 0;
     }
     fullplay.pageKey = nextKey;
-    fullplay.pageMovieId = routeMovieId();
+    fullplay.pageMovieId = nextMovieId;
     if (changed) {
       rejectStalePending(`page context changed: ${reason}`);
       emit("fullplay-context", {
@@ -309,7 +379,14 @@
       const target = event.target instanceof Element ? event.target : null;
       if (target) markActiveElement(target, "pointerdown");
     }, true);
-    window.setInterval(() => updatePageContext("poll"), 700);
+    const pollContext = () => {
+      updatePageContext("poll");
+      // Vlog 首屏详情通常早于 page_hook 注入完成，主动为当前活动 slide
+      // 补发一次完整详情请求；同一 context 的请求由 pendingByContext 去重。
+      ensureActiveVlogDetail("poll")?.catch(() => {});
+    };
+    window.setTimeout(pollContext, 450);
+    window.setInterval(pollContext, 700);
   }
 
   function installSameDetailNavigationGuard() {
@@ -589,14 +666,18 @@
       && cached.__txzzContext?.movieId === String(movieId)
       && cached.__txzzContext?.pageKey === context.pageKey
       && cached.__txzzContext?.pageEpoch === context.pageEpoch) return Promise.resolve(cached);
+    const pendingForContext = fullplay.pendingByContext.get(context.contextKey);
+    if (pendingForContext) return pendingForContext;
     const requestId = `txzz_full_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     fullplay.latestByContext.set(context.contextKey, requestId);
-    return new Promise((resolve, reject) => {
+    let promise;
+    promise = new Promise((resolve, reject) => {
       const timer = window.setTimeout(() => {
         fullplay.pending.delete(requestId);
+        if (fullplay.pendingByContext.get(context.contextKey) === promise) fullplay.pendingByContext.delete(context.contextKey);
         reject(new Error(`播放详情请求超时：${movieId}`));
       }, 15000);
-      fullplay.pending.set(requestId, { resolve, reject, timer, ...context });
+      fullplay.pending.set(requestId, { resolve, reject, timer, promise, ...context });
       emit("full-detail-request", {
         id: requestId,
         movieId,
@@ -608,6 +689,89 @@
         active: context.active
       });
     });
+    // Promise executor 会同步执行，创建 pending 记录时 promise 尚未完成赋值；
+    // 在此回填引用，页面换代时才能准确清理 pendingByContext。
+    const pending = fullplay.pending.get(requestId);
+    if (pending) pending.promise = promise;
+    fullplay.pendingByContext.set(context.contextKey, promise);
+    promise.then(
+      () => { if (fullplay.pendingByContext.get(context.contextKey) === promise) fullplay.pendingByContext.delete(context.contextKey); },
+      () => { if (fullplay.pendingByContext.get(context.contextKey) === promise) fullplay.pendingByContext.delete(context.contextKey); }
+    );
+    return promise;
+  }
+
+  function activeVlogDetailSnapshot(movieId) {
+    if (!/^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))) return null;
+    try {
+      const listVm = document.querySelector(".vlog-list")?.__vue__;
+      const activeSlide = document.querySelector(".swiper-slide-active")
+        || document.querySelector(".swiper-slide[aria-hidden='false']");
+      const detailVm = activeSlide?.querySelector(".short-video-detail")?.__vue__;
+      const candidates = [
+        listVm?.playerInfo,
+        listVm?.activeItem,
+        listVm?.currentItem,
+        detailVm?.r,
+        detailVm?.$options?.propsData?.r
+      ].filter((item) => item && typeof item === "object");
+      // Swiper 切换期间活动 class 与 Vue playerInfo 的更新时间可能相差一帧。
+      // 必须优先选出与已确认 movieId 一致的快照，避免把相邻预加载项交给取源服务。
+      const raw = candidates.find((item) => movieIdFromVueValue(item) === String(movieId))
+        || candidates.find((item) => !movieIdFromVueValue(item));
+      if (!raw || typeof raw !== "object") return null;
+      const snapshot = {};
+      for (const key of [
+        "id", "movieId", "movie_id", "videoId", "vid", "title", "name", "duration",
+        "duration_time", "play_link", "backup_link", "has_buy", "layer_type", "money", "is_buy"
+      ]) {
+        if (raw[key] != null) snapshot[key] = raw[key];
+      }
+      if (Array.isArray(raw.lines)) {
+        snapshot.lines = raw.lines.slice(0, 12).map((line) => {
+          if (!line || typeof line !== "object") return line;
+          return Object.fromEntries(["id", "name", "label", "link", "url", "play_link", "backup_link"].filter((key) => line[key] != null).map((key) => [key, line[key]]));
+        });
+      }
+      return snapshot;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function ensureActiveVlogDetail(reason = "active-vlog") {
+    if (!/^\/vlog\/?$/i.test(String(location.pathname || ""))) return null;
+    const movieId = activeVlogMovieId();
+    if (!movieId) return null;
+    const context = buildRequestContext(movieId);
+    if (!context.active) return null;
+    const key = context.contextKey;
+    if (fullplay.activeVlogRequestKey === key && fullplay.pendingByContext.has(key)) return fullplay.pendingByContext.get(key);
+    const cached = fullplay.cache.get(movieId);
+    if (cached?.__txzzContext?.contextKey === key) {
+      fullplay.activeVlogRequestKey = key;
+      return Promise.resolve(cached);
+    }
+    if (fullplay.activeVlogRequestKey === key && Date.now() < fullplay.activeVlogRetryAt) return null;
+    fullplay.activeVlogRequestKey = key;
+    const promise = requestFullDetail(movieId, activeVlogDetailSnapshot(movieId), context);
+    promise.then(
+      () => {
+        if (fullplay.pageKey === context.pageKey && fullplay.pageEpoch === context.pageEpoch && fullplay.pageMovieId === movieId) {
+          setMessage(`Vlog 当前视频已完成完整线路检票：${movieId}`, "ok");
+          emit("fullplay-status", { message: `Vlog 当前视频 ${movieId} 已完成完整线路检票`, movieId, reason, background: true });
+        }
+      },
+      (error) => {
+        if (fullplay.pageKey === context.pageKey && fullplay.pageEpoch === context.pageEpoch && fullplay.pageMovieId === movieId) {
+          fullplay.activeVlogRetryAt = Date.now() + 5_000;
+          // 保留失败 context 键，确保 700ms 轮询尊重 5 秒退避；到期后同一键可再次发起。
+          fullplay.activeVlogRequestKey = key;
+          emit("fullplay-status", { message: `Vlog 当前视频 ${movieId} 完整线路获取失败：${error?.message || String(error)}`, movieId, level: "error", background: true });
+        }
+      }
+    );
+    return promise;
   }
 
   window.addEventListener("message", (event) => {
@@ -620,6 +784,7 @@
         } catch (_) {}
       });
       fullplay.pending.clear();
+      fullplay.pendingByContext.clear();
       fullplay.cache.clear();
       fullplay.hits = [];
       fullplay.errors = [];

@@ -107,7 +107,7 @@ export function UpdateCenter({ state, onAction }: Props) {
 
         {vm.status === "submitted" && (
           <div className="rounded-xl border border-warning-100 bg-warning-50 px-3 py-2.5 text-[11px] leading-relaxed text-warning-700">
-            <p className="font-semibold">CRX 已提交浏览器下载{vm.downloadId ? ` · 编号 ${vm.downloadId}` : ""}</p>
+            <p className="font-semibold">已拉起浏览器 CRX 下载{vm.downloadId ? ` · 编号 ${vm.downloadId}` : ""}</p>
             <p className="mt-1">下载完成不代表安装完成。请打开浏览器扩展管理页，手动安装或覆盖更新。</p>
           </div>
         )}
