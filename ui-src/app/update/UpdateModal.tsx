@@ -105,7 +105,10 @@ export function UpdateModal({ state, open, onClose, onDismiss, onOpenSettings, o
 
         {vm.status === "submitted" && (
           <div className="rounded-xl border border-warning-100 bg-warning-50 px-3 py-2.5 text-[11px] leading-relaxed text-warning-700">
-            <p className="font-semibold">下载任务已提交{vm.downloadId ? ` · 下载编号 ${vm.downloadId}` : ""}</p>
+            <p className="font-semibold">
+              {vm.downloadSaveVia === "content-blob" ? "已通过当前页面提交下载" : "下载任务已提交"}
+              {vm.downloadId ? ` · 下载编号 ${vm.downloadId}` : ""}
+            </p>
             <p className="mt-1">浏览器下载完成后，请打开扩展管理页手动安装或覆盖更新；提交下载不等于完成安装。</p>
           </div>
         )}

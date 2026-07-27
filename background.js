@@ -80,7 +80,7 @@ let updateVerificationKeyPromise = null;
 const localPurchaseLocks = new Set();
 let latestPlaybackRequest = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-27-1251";
+const LOCAL_UPDATE_BUILD = "2026-07-27-1315";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -3061,6 +3061,7 @@ const UPDATE_DOWNLOAD_RESULT_FIELDS = [
   "downloadStatus",
   "downloadError",
   "downloadId",
+  "downloadSaveVia",
   "downloadStartedAt",
   "downloadSubmittedAt",
   "downloadUrl",
@@ -3282,6 +3283,7 @@ async function recordRepositoryArchiveDownload(result = {}) {
     lastDownloadAt: Date.now(),
     lastDownloadUrl: result.displayUrl || result.url || "",
     lastDownloadFilename: result.filename || "",
+    lastDownloadSaveVia: result.saveVia || "",
     lastDownloadErrors: result.errors || [],
     lastDownloadId: Number(result.downloadId || 0),
     lastPackageProbe: result.packageProbe || null,
@@ -3296,6 +3298,7 @@ async function recordRepositoryArchiveDownload(result = {}) {
           downloadStatus: result.downloadStatus || (result.ok ? "已提交已验证安装包" : "下载失败"),
           downloadError: result.ok ? "" : (result.errors || []).join("；"),
           downloadId: Number(result.downloadId || 0),
+          downloadSaveVia: String(result.saveVia || ""),
           downloadStartedAt: result.downloadStartedAt || updateState.lastUpdateResult.downloadStartedAt || "",
           downloadSubmittedAt: result.downloadSubmittedAt || "",
           packageProbe: result.packageProbe || null,
@@ -3369,23 +3372,62 @@ async function performRepositoryArchiveDownload(meta = {}) {
       const verifiedPackage = await fetchAndVerifyRepositoryPackage(url, manifest);
       const { bytes, packageProbe } = verifiedPackage;
       Object.assign(attemptRecord, { ok: true, phase: "validated", packageProbe });
-      // downloads API 可以直接接收 data URL；字节来自刚刚完成全部校验的内存，
-      // 不会再次访问远程镜像，因此既不依赖离屏页，也没有 TOCTOU 替换窗口。
-      if (!chrome.downloads?.download) throw new Error("当前浏览器不支持扩展下载 API");
-      const verifiedDataUrl = `data:application/x-chrome-extension;base64,${toBase64(bytes)}`;
-      const downloadId = await chrome.downloads.download({
-        url: verifiedDataUrl,
-        filename,
-        // 用户主动点击更新时必须拉起保存对话框，不能只在后台静默创建编号。
-        saveAs: meta.saveAs !== false,
-        conflictAction: "uniquify"
-      });
-      if (!Number.isInteger(downloadId) || downloadId <= 0) throw new Error("浏览器未返回有效下载编号");
-      const result = {
+      const verifiedBase64 = toBase64(bytes);
+      let downloadApiError = "";
+
+      if (chrome.downloads?.download) {
+        try {
+          // downloads API 可以直接接收 data URL；字节来自刚刚完成全部校验的内存，
+          // 不会再次访问远程镜像，因此没有二次请求造成的 TOCTOU 替换窗口。
+          const verifiedDataUrl = `data:application/x-chrome-extension;base64,${verifiedBase64}`;
+          const downloadId = await chrome.downloads.download({
+            url: verifiedDataUrl,
+            filename,
+            // 用户主动点击更新时必须拉起保存对话框，不能只在后台静默创建编号。
+            saveAs: meta.saveAs !== false,
+            conflictAction: "uniquify"
+          });
+          if (!Number.isInteger(downloadId) || downloadId <= 0) throw new Error("浏览器未返回有效下载编号");
+          const result = {
+            ok: true,
+            downloadId,
+            downloadState: "submitted",
+            saveVia: "background-data-url",
+            filename,
+            url,
+            displayUrl,
+            candidates,
+            attempts,
+            manifestError,
+            update,
+            packageProbe,
+            packageProbeAttempts: [...packageProbeAttempts, { ...attemptRecord, phase: "submitted", downloadId }],
+            downloadPhase: "submitted",
+            downloadStatus: "已拉起浏览器并提交完整校验后的 CRX3",
+            downloadStartedAt,
+            downloadSubmittedAt: nowIso()
+          };
+          // 下载 ID 已取得后，即使本地状态持久化失败也绝不能换镜像重复提交。
+          try {
+            await recordRepositoryArchiveDownload(result);
+          } catch (stateError) {
+            result.statePersistenceError = stateError?.message || String(stateError);
+          }
+          return result;
+        } catch (error) {
+          downloadApiError = error?.message || String(error);
+        }
+      } else {
+        downloadApiError = "当前浏览器的扩展后台没有 downloads API";
+      }
+
+      // Kiwi、部分 Android Chromium 和某些离屏实现不会向扩展后台暴露 downloads API。
+      // 把同一份已验签字节交给当前 HTTPS 页面复核哈希后以 Blob 保存，避免退回未校验的远程直链。
+      return {
         ok: true,
-        downloadId,
-        downloadState: "submitted",
-        saveVia: "background-data-url",
+        downloadId: 0,
+        downloadState: "client-save-required",
+        saveVia: "content-blob-pending",
         filename,
         url,
         displayUrl,
@@ -3394,19 +3436,19 @@ async function performRepositoryArchiveDownload(meta = {}) {
         manifestError,
         update,
         packageProbe,
-        packageProbeAttempts: [...packageProbeAttempts, { ...attemptRecord, phase: "submitted", downloadId }],
-        downloadPhase: "submitted",
-        downloadStatus: "已拉起浏览器并提交完整校验后的 CRX3",
+        packageProbeAttempts: [...packageProbeAttempts, { ...attemptRecord, phase: "client-save-required" }],
+        downloadPhase: "validating",
+        downloadStatus: "安装包已验证，正在通过当前页面拉起下载",
         downloadStartedAt,
-        downloadSubmittedAt: nowIso()
+        downloadApiError,
+        clientSave: {
+          base64: verifiedBase64,
+          expectedSize: bytes.length,
+          expectedSha256: packageProbe.sha256,
+          // HTML download 属性只接受文件名，不使用 downloads API 支持的子目录语义。
+          filename: String(filename).split("/").filter(Boolean).pop() || "糖心志者最新版.crx"
+        }
       };
-      // 下载 ID 已取得后，即使本地状态持久化失败也绝不能换镜像重复提交。
-      try {
-        await recordRepositoryArchiveDownload(result);
-      } catch (stateError) {
-        result.statePersistenceError = stateError?.message || String(stateError);
-      }
-      return result;
     } catch (err) {
       const error = err?.message || String(err);
       errors.push(`${displayUrl}：${error}`);
@@ -3447,6 +3489,32 @@ async function performRepositoryArchiveDownload(meta = {}) {
     manifestError,
     update
   };
+}
+
+async function recordRepositoryArchiveClientSave(message = {}) {
+  const raw = message.result && typeof message.result === "object" ? message.result : {};
+  if (raw.ok !== true || raw.saveVia !== "content-blob" || raw.clientSave) {
+    throw new Error("页面下载确认数据无效");
+  }
+  const result = {
+    ok: true,
+    downloadId: 0,
+    downloadState: "submitted",
+    saveVia: "content-blob",
+    filename: String(raw.filename || ""),
+    url: String(raw.url || ""),
+    displayUrl: String(raw.displayUrl || ""),
+    candidates: Array.isArray(raw.candidates) ? raw.candidates : [],
+    attempts: Array.isArray(raw.attempts) ? raw.attempts : [],
+    packageProbe: raw.packageProbe && typeof raw.packageProbe === "object" ? raw.packageProbe : null,
+    packageProbeAttempts: Array.isArray(raw.packageProbeAttempts) ? raw.packageProbeAttempts : [],
+    downloadPhase: "submitted",
+    downloadStatus: "已通过当前页面提交完整校验后的 CRX3",
+    downloadStartedAt: String(raw.downloadStartedAt || ""),
+    downloadSubmittedAt: String(raw.downloadSubmittedAt || nowIso())
+  };
+  await recordRepositoryArchiveDownload(result);
+  return { ok: true, recorded: true };
 }
 
 async function downloadRepositoryArchive(meta = {}) {
@@ -3619,6 +3687,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "downloadRepositoryArchive") {
       sendResponse(await downloadRepositoryArchive(message));
+      return;
+    }
+    if (message?.type === "recordRepositoryArchiveClientSave") {
+      sendResponse(await recordRepositoryArchiveClientSave(message));
       return;
     }
     if (message?.type === "uploadAccountToRemote") {

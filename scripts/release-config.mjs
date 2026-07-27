@@ -6,6 +6,7 @@
 export const RELEASE_INCLUDE_PATHS = [
   "manifest.json",
   "background.js",
+  "update_downloader.js",
   "content.js",
   "display_patch.js",
   "nav_guard.js",

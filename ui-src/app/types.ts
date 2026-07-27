@@ -71,6 +71,7 @@ export type RepositoryUpdateState = {
   downloadStartedAt?: string;
   downloadSubmittedAt?: string;
   downloadId?: number;
+  downloadSaveVia?: string;
   packageProbe?: UpdatePackageProbe | null;
   packageProbeAttempts?: UpdatePackageProbeAttempt[];
   updateAvailable?: boolean;

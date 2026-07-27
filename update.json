@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.0.4",
-  "build": "2026-07-27-1251",
-  "releasedAt": "2026-07-27 12:51",
+  "version": "5.0.5",
+  "build": "2026-07-27-1315",
+  "releasedAt": "2026-07-27 13:15",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-27-1315",
+      "type": "修复",
+      "title": "跨浏览器 CRX 下载与 Vlog 推荐线路校正",
+      "detail": "升级下载在扩展后台 downloads API 缺失或被浏览器拒绝时，会把同一份已完成大小、SHA-256、扩展 ID 与 CRX3 签名校验的字节交给当前页面再次复核哈希并通过 Blob 保存；不再读取 undefined.download。Vlog 原生播放器优先使用插件实际探测后推荐的完整线路，并把所有线路规范为网站 changeSources 所需的 line.link。",
+      "releasedAt": "2026-07-27 13:15"
+    },
     {
       "id": "2026-07-27-1251",
       "type": "修复",
@@ -158,11 +165,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 605465,
-  "packageSha256": "046cd61f6c147bed28c789c7b55f714e66bdee284980845eac54b2a720547fd7",
+  "packageSize": 610361,
+  "packageSha256": "bb31b842de813529f548bb4da451a9b983a820feb5950e5e42d4904fbccd6b9b",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "PD3iVPszM6gqIblxYpiMpz6l2IMK7JVXqeaWFsMaRRnXnn8PjblOGuWv+V0g62Skj6AjFU9BhqtFY2p532CxIDT1vLcn1GKygOxre+AictinItJfpiuGh2WSUtuSGFLLETvW5AsXSTA/bDFbl/Rx5neOEF4tc7mjXvWrBtrhD9m2Bd+GVqdbj1PsQjjzJ1LvLPoxHrJM/5mBXCZx3zj7tsW8KWCs340cm5IRBj9LHFmkmCaRN6oaCGyqietLLefQxyyQhA5oQjf2PY3MQajYJRt2DtQ9jn+gZkNwsecNHi8ExmiWzWbjkbYTNlydAF6jEGfa6kx0a/WvWa3o99CGbg=="
+    "value": "g0NFrpENpwUSmjo6Y9aSZXfHFYYRgm1jjkvPBEKHeTV9b3fuFfcqPS6llvQIJ5pOkfuRXr0oV/lCmFu2jiXhEOZeolh3ctntsc4AVgc0kyFnNGDH0moS+UdAVo7jtmWp8gT9A4lvYBVt69MxqdHsDt/OY1Nit7H/Ltu8K1AHGYHhxgvBN71+mj1762AczMxp/AQhAaV7rucj2rfoLEtxqJVTH2v5TpCFkC8cwGZ6wxwLvtDEhQw8/HrF71YhM5yoOuK8vBL2HdrQeL7BCxZCv39i+7L6cG6qy5s5mHcwV2Bbh1fTgAVK/rVNLL/teDEkhWnKC0Bp8RdyDBcTngrYYg=="
   }
 }

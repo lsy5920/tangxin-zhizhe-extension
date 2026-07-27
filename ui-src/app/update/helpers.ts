@@ -47,6 +47,7 @@ export type UpdateViewModel = {
   downloadStatus: string;
   downloadError: string;
   downloadId: number;
+  downloadSaveVia: string;
   manifestUrl: string;
   repositoryUrl: string;
   changelog: UpdateChangelogItem[];
@@ -136,6 +137,9 @@ function statusSummary(status: UpdateUiStatus, update: RepositoryUpdateState | n
   if (status === "checking") return "正在并发获取更新清单，并验证清单签名、版本、构建号与发布来源。";
   if (status === "validating") return "正在下载并验证完整 CRX3 包：核对完整包大小、SHA-256、正式扩展 ID 与 CRX3 包签名。";
   if (status === "submitted") {
+    if (update?.downloadSaveVia === "content-blob") {
+      return "CRX3 完整包验证通过；扩展后台下载 API 不可用，已由当前页面复核并提交 Blob 下载。";
+    }
     const suffix = update?.downloadId ? `（浏览器下载编号 ${update.downloadId}）` : "";
     return `CRX3 完整包验证通过，已拉起浏览器下载${suffix}。`;
   }
@@ -156,7 +160,7 @@ function statusHint(status: UpdateUiStatus) {
   if (status === "latest") return "本地版本与远程版本一致";
   if (status === "checking") return "手动检查始终绕过成功缓存";
   if (status === "validating") return "完整包验证全部通过后才会拉起浏览器下载";
-  if (status === "submitted") return "浏览器已接收下载任务，完成后需手动安装";
+  if (status === "submitted") return "已把验签文件交给浏览器，完成后需手动安装";
   if (status === "download-error") return "可重试下载，系统会重新验证全部镜像";
   if (status === "error") return "可重新检测，或前往项目主页核对发布状态";
   return "自动检查复用 15 分钟成功缓存";
@@ -240,6 +244,7 @@ export function buildUpdateViewModel(state: BridgeState): UpdateViewModel {
     downloadStatus: update?.downloadStatus || "",
     downloadError: update?.downloadError || (status === "error" ? update?.error || "" : ""),
     downloadId: Number(update?.downloadId || 0),
+    downloadSaveVia: String(update?.downloadSaveVia || ""),
     manifestUrl: update?.manifestUrl || "",
     repositoryUrl: update?.repositoryUrl || "https://github.com/lsy5920/tangxin-zhizhe-extension",
     changelog,
@@ -283,6 +288,7 @@ export function updateAttemptPhaseLabel(phase?: string) {
   const labels: Record<string, string> = {
     validating: "校验中",
     validated: "校验通过",
+    "client-save-required": "切换页面保存",
     submitted: "已提交",
     rejected: "已拒绝",
     "validation-failed": "校验失败",
@@ -312,7 +318,8 @@ export function buildUpdateCopyText(vm: UpdateViewModel) {
     `候选地址：${vm.candidates.length ? vm.candidates.join(" | ") : "无"}`,
     `实际尝试：${vm.attemptUrls.length ? vm.attemptUrls.join(" | ") : "未开始"}`,
     `完整包验证：${vm.packageProbeLabel}`,
-    `浏览器下载编号：${vm.downloadId || "未提交"}`,
+    `浏览器下载编号：${vm.downloadId || (vm.downloadSaveVia === "content-blob" ? "页面交付无 API 编号" : "未提交")}`,
+    `下载交付方式：${vm.downloadSaveVia || "未提交"}`,
     `下载状态：${vm.downloadStatus || "未开始"}`,
     `错误信息：${vm.downloadError || "无"}`,
     `更新说明：${vm.summary}`,

@@ -1842,6 +1842,57 @@
     });
   }
 
+  async function completeRepositoryClientSave(response = {}) {
+    const clientSave = response?.clientSave;
+    if (!clientSave) return response;
+
+    const { clientSave: _privateBytes, ...publicResponse } = response;
+    const downloader = globalThis.TxzzUpdateDownloader;
+    if (!downloader?.saveVerifiedPackage) {
+      const error = new Error("页面下载兜底未加载，请重新加载网站后再试");
+      error.response = { ...publicResponse, ok: false, error: error.message };
+      throw error;
+    }
+
+    let clientResult;
+    try {
+      clientResult = await downloader.saveVerifiedPackage(clientSave);
+    } catch (cause) {
+      const message = cause?.message || String(cause);
+      const error = new Error(`已验证安装包无法交给当前页面保存：${message}`);
+      error.response = { ...publicResponse, ok: false, error: error.message };
+      throw error;
+    }
+
+    const submittedAt = new Date().toISOString();
+    const packageProbeAttempts = (Array.isArray(publicResponse.packageProbeAttempts)
+      ? publicResponse.packageProbeAttempts
+      : []).map((attempt, index, rows) => (
+      index === rows.length - 1
+        ? { ...attempt, ok: true, phase: "submitted", saveVia: "content-blob" }
+        : attempt
+    ));
+    const completed = {
+      ...publicResponse,
+      ok: true,
+      downloadId: 0,
+      downloadState: clientResult.state || "submitted",
+      saveVia: "content-blob",
+      packageProbeAttempts,
+      downloadPhase: "submitted",
+      downloadStatus: "已通过当前页面提交完整校验后的 CRX3",
+      downloadSubmittedAt: submittedAt
+    };
+
+    // Blob 点击已经发生，后续状态持久化失败不能把成功下载误报为失败或再次提交。
+    try {
+      await sendRuntime("recordRepositoryArchiveClientSave", { result: completed }, 10000);
+    } catch (stateError) {
+      completed.statePersistenceError = stateError?.message || String(stateError);
+    }
+    return completed;
+  }
+
   function openRepositoryHome() {
     window.open("https://github.com/lsy5920/tangxin-zhizhe-extension", "_blank", "noopener,noreferrer");
   }
@@ -2822,6 +2873,7 @@
           downloadStatus: "正在校验 CRX 安装包",
           downloadError: "",
           downloadId: 0,
+          downloadSaveVia: "",
           packageProbe: null,
           packageProbeAttempts: [],
           downloadStartedAt: new Date().toISOString()
@@ -2830,6 +2882,7 @@
         let response = null;
         try {
           response = await sendRuntime("downloadRepositoryArchive", { saveAs: true }, 120000);
+          response = await completeRepositoryClientSave(response);
         } catch (err) {
           const failed = err?.response || {};
           rememberRepositoryUpdate({
@@ -2842,6 +2895,7 @@
             downloadStatus: "下载失败",
             downloadError: failed.error || err?.message || String(err),
             downloadId: 0,
+            downloadSaveVia: "",
             packageProbe: failed.packageProbe || null,
             packageProbeAttempts: failed.packageProbeAttempts || [],
             downloadStartedAt: failed.downloadStartedAt || current.downloadStartedAt || ""
@@ -2854,9 +2908,14 @@
           downloadUrl: response.displayUrl || response.url || current.downloadUrl || "",
           downloadCandidates: response.candidates || current.downloadCandidates || [],
           downloadAttemptUrls: response.attempts || [],
-          downloadStatus: response.downloadId ? "已拉起浏览器 CRX 下载" : "已发送下载请求",
+          downloadStatus: response.downloadId
+            ? "已拉起浏览器 CRX 下载"
+            : response.saveVia === "content-blob"
+              ? "已通过当前页面提交完整校验后的 CRX3"
+              : "已发送下载请求",
           downloadError: "",
           downloadId: Number(response.downloadId || 0),
+          downloadSaveVia: String(response.saveVia || ""),
           packageProbe: response.packageProbe || null,
           packageProbeAttempts: response.packageProbeAttempts || [],
           downloadStartedAt: response.downloadStartedAt || current.downloadStartedAt || "",
@@ -2867,7 +2926,9 @@
           "版本更新",
           response.downloadId
             ? `同一份 CRX3 字节已完整校验并拉起浏览器下载（编号 ${response.downloadId}）：${response.filename}；下载后请手动安装或覆盖更新`
-            : "已验证 CRX3 已提交浏览器下载；下载后请手动安装或覆盖更新",
+            : response.saveVia === "content-blob"
+              ? `扩展后台下载 API 不可用，已通过当前页面保存同一份完整验签的 CRX3：${response.filename}；下载后请手动安装或覆盖更新`
+              : "已验证 CRX3 已提交浏览器下载；下载后请手动安装或覆盖更新",
           "ok"
         );
         if (response.statePersistenceError) {

@@ -310,6 +310,8 @@ const updateManifest = readJson("update.json");
 const publicKeyMeta = readJson("releases/signing-public-key.json");
 const constantsText = readText("ui-src/app/constants.ts");
 const backgroundText = readText("background.js");
+const contentText = readText("content.js");
+const updateDownloaderText = readText("update_downloader.js");
 const previewText = readText("preview.html");
 const readmeText = readText("README.md");
 const packScriptText = readText("scripts/pack-crx.mjs");
@@ -359,6 +361,15 @@ expect(backgroundText.includes(`EXPECTED_EXTENSION_ID = "${EXPECTED_EXTENSION_ID
 expect(backgroundText.includes(UPDATE_PUBLIC_KEY_SPKI_BASE64), "background.js 未内置固定更新公钥");
 expect(backgroundText.includes(UPDATE_PUBLIC_KEY_SHA256), "background.js 未内置固定公钥指纹");
 for (const url of OFFICIAL_PACKAGE_URLS) expect(backgroundText.includes(url), `background.js 缺少正式安装包路径：${url}`);
+expect(RELEASE_INCLUDE_PATHS.includes("update_downloader.js"), "发布文件列表缺少页面 CRX 下载兜底");
+expect(
+  sameStringArray(manifest.content_scripts?.[0]?.js, ["update_downloader.js", "content.js", "dist-ui/txzz-ui.js"]),
+  "manifest 内容脚本顺序必须先加载页面 CRX 下载兜底"
+);
+expect(updateDownloaderText.includes("verifyClientSavePayload"), "update_downloader.js 缺少客户端大小与哈希复核");
+expect(updateDownloaderText.includes('saveVia: "content-blob"'), "update_downloader.js 缺少 Blob 下载交付标记");
+expect(backgroundText.includes('saveVia: "content-blob-pending"'), "background.js 缺少 downloads API 失败后的页面兜底");
+expect(contentText.includes("completeRepositoryClientSave"), "content.js 未消费页面 CRX 下载兜底");
 expect(!RELEASE_INCLUDE_PATHS.includes("update.json"), "发布文件列表不得包含 update.json");
 const accessibleResources = (manifest.web_accessible_resources || []).flatMap((item) => item.resources || []);
 expect(!accessibleResources.includes("update.json"), "manifest web_accessible_resources 不得暴露 update.json");

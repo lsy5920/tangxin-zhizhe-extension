@@ -800,20 +800,18 @@
     const current = nodes.currentData || {};
     if (String(current.id || id) !== id) return false;
     const playLink = firstPlayableValue(
+      summary.playLink,
       fullDetail.play_link,
       fullDetail.playLink,
-      summary.playLink,
       fullDetail.play_url,
-      fullDetail.playUrl,
-      current.play_link
+      fullDetail.playUrl
     );
     const backupLink = firstPlayableValue(
+      summary.backupLink,
       fullDetail.backup_link,
       fullDetail.backupLink,
-      summary.backupLink,
       fullDetail.backup_url,
-      fullDetail.backupUrl,
-      current.backup_link
+      fullDetail.backupUrl
     );
     if (!playLink && !backupLink) return false;
     const effectivePlayLink = playLink || backupLink;
@@ -826,12 +824,17 @@
       play_link: effectivePlayLink,
       backup_link: backupLink || current.backup_link || ""
     };
-    if (Array.isArray(fullDetail.lines) && fullDetail.lines.length) merged.lines = fullDetail.lines;
-    else if (!Array.isArray(merged.lines) || !merged.lines.length) {
-      merged.lines = [
-        { id: "1", name: "完整主线", link: effectivePlayLink },
-        ...(backupLink ? [{ id: "2", name: "完整备用线", link: backupLink }] : [])
-      ];
+    const sourceLines = Array.isArray(fullDetail.lines) && fullDetail.lines.length
+      ? fullDetail.lines
+        .filter((line) => line && typeof line === "object" && firstPlayableValue(line.link || line.url || line.play_link))
+        .map((line) => ({ ...line, link: firstPlayableValue(line.link || line.url || line.play_link) }))
+      : [];
+    const hasRecommendedLine = sourceLines.some((line) => normalizeUrl(firstPlayableValue(line.link || line.url || line.play_link)) === normalizeUrl(effectivePlayLink));
+    merged.lines = hasRecommendedLine
+      ? sourceLines
+      : [{ id: "recommended", name: "完整推荐线路", link: effectivePlayLink }, ...sourceLines];
+    if (backupLink && !merged.lines.some((line) => normalizeUrl(firstPlayableValue(line.link || line.url || line.play_link)) === normalizeUrl(backupLink))) {
+      merged.lines.push({ id: "backup", name: "完整备用线", link: backupLink });
     }
     // 完整线路已经由账号/Worker 验证通过；同步放行站点自己的 VIP/试看遮罩。
     merged.has_buy = merged.has_buy || "y";

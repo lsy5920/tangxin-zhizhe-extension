@@ -8,7 +8,7 @@
 
 插件默认只显示左上角短时流程气泡和右下角「糖糖」伙伴入口，不遮挡网站主体。点击伙伴后展开糖果手帐工作台：桌面端使用浅色手帐侧栏与独立工作区，移动端使用全屏面板和安全区底栏；今日总览、账号小屋、放映室、下载收纳篮和照料中心保持统一信息层级与操作反馈。
 
-当前源码与正式 CRX 均为 `5.0.4`（构建 `2026-07-27-1251`），继续使用 4.0.0 已启用并妥善保留的正式私钥，扩展 ID 保持为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 及 5.0.x 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
+当前源码与正式 CRX 均为 `5.0.5`（构建 `2026-07-27-1315`），继续使用 4.0.0 已启用并妥善保留的正式私钥，扩展 ID 保持为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 及 5.0.x 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
 
 ## 环境要求
 
@@ -102,6 +102,7 @@ tangxin-zhizhe-extension/
 │   ├── txzz-ui.js             # 糖果风 React 控制台脚本
 │   └── txzz-ui.css            # 糖果风 React 控制台样式
 ├── background.js              # 后台服务，负责账号池、远程请求、播放详情和下载任务
+├── update_downloader.js       # 后台下载 API 不可用时复核并保存已验签 CRX3
 ├── content.js                 # 页面脚本，负责业务能力、页面监听和 React 状态事件桥
 ├── display_patch.js           # 页面展示覆盖逻辑
 ├── nav_guard.js               # 页面导航守卫和刷新控制逻辑
@@ -363,6 +364,7 @@ npm run dev
 
 ```powershell
 node --check .\background.js
+node --check .\update_downloader.js
 node --check .\content.js
 node --check .\page_hook.js
 node --check .\page_probe.js
@@ -376,6 +378,7 @@ node -e "JSON.parse(require('fs').readFileSync('.\\manifest.json','utf8')); cons
 
 ```powershell
 node --check .\tangxin-zhizhe-extension\background.js
+node --check .\tangxin-zhizhe-extension\update_downloader.js
 node --check .\tangxin-zhizhe-extension\content.js
 node --check .\tangxin-zhizhe-extension\offscreen_downloader.js
 node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\manifest.json','utf8')); console.log('manifest 正常')"
@@ -484,10 +487,11 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 1. 进入「设置」页，点击「检查更新」后再点「下载」。
 2. 插件会实时验证 schema 3 签名清单，再按其中被签名的大小和 SHA-256 获取 **CRX3 安装包**（`releases/tangxin-zhizhe-latest.crx`）。
 3. 每个候选地址都必须完全匹配固定 owner/repo/branch/path；完整文件还要通过 SHA-256、CRX3 内嵌公钥、正式扩展 ID、ZIP 起点和包自身 RSA 签名校验，任何一项不符都会切换镜像。
-4. 高级信息会列出每个镜像的 `validated`、`submitted`、`validation-failed` 或 `submit-failed` 状态和具体错误。
-5. 保存文件名形如：`糖心志者_版本号_构建号_最新版.crx`，界面同时显示浏览器下载编号。
-6. 如果浏览器拦截下载，请打开浏览器下载记录允许保留文件；CRX 提交下载不等于完成安装，下载后仍需在扩展管理页手动安装或覆盖更新。
-7. 如果仍然失败，在升级中心点「复制报告」保存完整镜像与校验结果；主界面不会把未经验证的候选 URL 标成可信安装入口。
+4. 后台 `chrome.downloads` 可用时直接提交同一份已校验字节；API 缺失或拒绝时，由 `update_downloader.js` 在当前 HTTPS 页面重新核对字节数、CRX3 文件头和 SHA-256，再点击临时 Blob 链接保存。两条路径都不会重新请求未经校验的远程文件。
+5. 高级信息会列出每个镜像的 `validated`、`client-save-required`、`submitted`、`validation-failed` 或 `submit-failed` 状态和具体错误。后台路径会显示浏览器下载编号，页面 Blob 路径没有 API 编号，但会明确显示 `content-blob` 交付状态。
+6. **5.0.3 自举例外**：该旧版已把更新交给缺少 `chrome.downloads` 的离屏页，因而可能报 `Cannot read properties of undefined (reading 'download')`；已安装代码无法被远程清单反向修补。遇到此错误需直接打开 [最新版 CRX](https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx) 并手动覆盖安装一次，升级到 5.0.5 后插件内下载会自动使用双通道。
+7. 如果浏览器拦截下载，请打开浏览器下载记录允许保留文件；CRX 提交下载不等于完成安装，下载后仍需在扩展管理页手动安装或覆盖更新。
+8. 如果仍然失败，在升级中心点「复制报告」保存完整镜像与校验结果；主界面不会把未经验证的候选 URL 标成可信安装入口。
 
 ### 开发者如何打 CRX 包（发版）
 
@@ -522,8 +526,8 @@ npm run release
 
 | 组件 | 版本 |
 | --- | --- |
-| 糖心志者源码 | `5.0.4`，构建 `2026-07-27-1251` |
-| 当前已签名 CRX | `5.0.4`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
+| 糖心志者源码 | `5.0.5`，构建 `2026-07-27-1315` |
+| 当前已签名 CRX | `5.0.5`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
 | Manifest | `3` |
 | ArtPlayer 播放器内核 | `5.4.0` |
 | hls.js HLS 播放内核 | `1.6.16` |
@@ -532,6 +536,8 @@ npm run release
 | Wrangler 推荐版本 | `4.110.0` |
 
 ## 更新日志
+
+[2026-07-27 13:15] 【修复】升级到 `5.0.5`：确认 5.0.3 在离屏页读取缺失的 `chrome.downloads` 导致最新版下载失败；新版在后台下载 API 缺失或拒绝时，把同一份已完成大小、SHA-256、扩展 ID 与 CRX3 签名验证的字节交给当前页面复核后以 Blob 保存。Vlog 回填同时改为优先使用实际探测后的推荐完整线路，并把候选线路统一规范为网站原生 `changeSources` 所需的 `line.link`。
 
 [2026-07-27 12:51] 【修复】升级到 `5.0.4`：完整检票结果现在会回填网站 `/vlog/` 当前 Vue 卡片，并调用活动 ArtPlayer/Hls 的 `changeSources` 将网站原生试看 Blob 切换为完整线路，同时保留当前播放/暂停状态和进度；修复离屏页缺少 `chrome.downloads` 导致更新失败，升级下载改为后台直接以 `saveAs:true` 提交已校验 CRX 字节。
 
