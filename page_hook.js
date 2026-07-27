@@ -64,6 +64,8 @@
     pageKey: "",
     pageMovieId: "",
     pageTransitioning: false,
+    contextRevision: 0,
+    lastContextSignature: "",
     activeMovieId: "",
     activeHintAt: 0,
     activePointerAt: 0,
@@ -232,14 +234,18 @@
         }
       }
       const listId = movieIdFromVueValue(listVm?.playerInfo || listVm?.activeItem || listVm?.currentItem);
-      return globalThis.TxzzPageContextCore?.resolveVlogMovieId({
+      const resolved = globalThis.TxzzPageContextCore?.resolveVlogMovieId({
         listId,
         activeSlideId: activeDetailId,
         activeDetailId,
         activeDetailEnabled: activeDetailVm?.$options?.propsData?.isActive !== false,
         activePlayerId,
         markedActiveId
-      })?.movieId || activeDetailId || activePlayerId || markedActiveId || listId || "";
+      });
+      // 共享核心明确返回 transitioning 时 movieId 为空，不能再用某个冲突证据兜底，
+      // 否则会绕过「换片中拒绝旧响应」这道代次安全闸。
+      if (resolved && typeof resolved.movieId === "string") return resolved.movieId;
+      return activeDetailId || activePlayerId || markedActiveId || listId || "";
     } catch (_) {
       return "";
     }
@@ -271,6 +277,26 @@
         error.code = "STALE_PLAYBACK_REQUEST";
         item.reject(error);
       } catch (_) {}
+    });
+  }
+
+  function emitPageContextIfChanged(reason) {
+    const signature = [
+      fullplay.pageKey,
+      fullplay.pageEpoch,
+      fullplay.pageMovieId,
+      fullplay.pageTransitioning ? "1" : "0"
+    ].join("|");
+    if (signature === fullplay.lastContextSignature) return;
+    fullplay.lastContextSignature = signature;
+    fullplay.contextRevision += 1;
+    emit("fullplay-context", {
+      pageKey: fullplay.pageKey,
+      pageEpoch: fullplay.pageEpoch,
+      movieId: fullplay.pageMovieId,
+      transitioning: fullplay.pageTransitioning,
+      contextRevision: fullplay.contextRevision,
+      reason
     });
   }
 
@@ -307,14 +333,11 @@
     fullplay.pageEpoch = reconciled.pageEpoch;
     fullplay.pageMovieId = reconciled.movieId;
     fullplay.pageTransitioning = Boolean(reconciled.transitioning);
+    // 初始页面、空值过渡与恢复稳定都必须通知隔离世界。
+    // 只在 route/movie changed 时发送会漏掉首屏 epoch=0，这正是 Vlog 误判的根因。
+    emitPageContextIfChanged(reason);
     if (changed) {
       rejectStalePending(`page context changed: ${reason}`);
-      emit("fullplay-context", {
-        pageKey: fullplay.pageKey,
-        pageEpoch: fullplay.pageEpoch,
-        movieId: fullplay.pageMovieId,
-        reason
-      });
     }
     if (isVlog) renderVlogTicket({
       movieId: fullplay.pageMovieId,
@@ -422,6 +445,8 @@
       pageMovieId: routeId,
       movieId: id,
       contextKey: `${current.pageKey}#${current.pageEpoch}:${id || "feed"}`,
+      transitioning: current.transitioning,
+      contextRevision: fullplay.contextRevision,
       active
     };
   }
@@ -767,7 +792,10 @@
         href: location.href,
         pageKey: context.pageKey,
         pageEpoch: context.pageEpoch,
+        pageMovieId: context.pageMovieId,
         contextKey: context.contextKey,
+        transitioning: context.transitioning,
+        contextRevision: context.contextRevision,
         active: context.active
       });
     });
@@ -1048,6 +1076,7 @@
     const cached = fullplay.cache.get(movieId);
     if (cached?.__txzzContext?.contextKey === key) {
       fullplay.activeVlogRequestKey = key;
+      try { applyNativeVlogDetail(movieId, cached, context, `${reason}-cached`); } catch (error) { recordError(error, { movieId, nativeVlog: true }); }
       return Promise.resolve(cached);
     }
     if (fullplay.activeVlogRequestKey === key && Date.now() < fullplay.activeVlogRetryAt) return null;
@@ -1056,12 +1085,18 @@
     promise.then(
       (payload) => {
         if (!fullplay.pageTransitioning && fullplay.pageKey === context.pageKey && fullplay.pageEpoch === context.pageEpoch && fullplay.pageMovieId === movieId) {
-          try { applyNativeVlogDetail(movieId, payload, context, reason); } catch (error) { recordError(error, { movieId, nativeVlog: true }); }
-          setMessage(`Vlog 当前视频已完成完整线路检票：${movieId}`, "ok");
-          emit("fullplay-status", { message: `Vlog 当前视频 ${movieId} 已完成完整线路检票`, movieId, reason, background: true });
+          let applied = false;
+          try { applied = applyNativeVlogDetail(movieId, payload, context, reason); } catch (error) { recordError(error, { movieId, nativeVlog: true }); }
+          if (applied) {
+            setMessage(`Vlog 当前视频已完成完整线路检票：${movieId}`, "ok");
+            emit("fullplay-status", { message: `Vlog 当前视频 ${movieId} 已完成完整线路检票`, movieId, reason, background: true });
+          } else {
+            renderVlogTicket({ movieId, status: "线路已获取", detail: "等待网站当前播放器稳定后回填" });
+          }
         }
       },
       (error) => {
+        if (["STALE_PLAYBACK_REQUEST", "INACTIVE_PREFETCH"].includes(String(error?.code || ""))) return;
         if (!fullplay.pageTransitioning && fullplay.pageKey === context.pageKey && fullplay.pageEpoch === context.pageEpoch && fullplay.pageMovieId === movieId) {
           fullplay.activeVlogRetryAt = Date.now() + 5_000;
           // 保留失败 context 键，确保 700ms 轮询尊重 5 秒退避；到期后同一键可再次发起。
@@ -1116,7 +1151,11 @@
       if (cachedMovieId) fullplay.cache.set(String(cachedMovieId), { ...payload, __txzzContext: pending });
       pending.resolve(payload);
     }
-    else pending.reject(new Error(payload.error || "播放详情请求失败"));
+    else {
+      const error = new Error(payload.error || "播放详情请求失败");
+      if (payload.stale) error.code = "STALE_PLAYBACK_REQUEST";
+      pending.reject(error);
+    }
   });
 
   async function maybeReplaceMovieDetail(api, params, visitorDetail, capturedContext = null) {

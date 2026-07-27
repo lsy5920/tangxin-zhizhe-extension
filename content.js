@@ -181,6 +181,7 @@
   let pageContextKey = "";
   let pageContextMovieId = "";
   let pageContextTransitioning = false;
+  let authoritativePageContext = null;
   let latestFullDetailToken = null;
   const FLOW_BADGE_TITLES = [
     "展示覆盖",
@@ -209,13 +210,15 @@
   // 广告清理：严格模式。
   // 1) 实测开屏根：.my-swipe.ad-splash.van-swipe（fixed z-index:1001）
   // 2) 倒计时结束后常残留右上角「进入/跳过/数字」徽标（可能挂到 body，不在 .ad-splash 内）
-  const AD_CLEANER_VERSION = "2026-07-10-ad-clean-residual-v1";
+  const AD_CLEANER_VERSION = "2026-07-28-ad-clean-app-entry-v2";
+  const AD_APP_ENTRY_OVERLAY_SELECTOR = "#__layout > .app-container > .control";
   const AD_CONTAINER_SELECTORS = [
     ".ad-splash",
     ".my-swipe.ad-splash",
     ".ad-splash.van-swipe",
     ".my-swipe.ad-splash.van-swipe",
-    "[class~='ad-splash']"
+    "[class~='ad-splash']",
+    AD_APP_ENTRY_OVERLAY_SELECTOR
   ];
   const AD_SPLASH_ROOT_SELECTOR = ".ad-splash, .my-swipe.ad-splash, .ad-splash.van-swipe, .my-swipe.ad-splash.van-swipe, [class~='ad-splash']";
   // 倒计时/进入按钮常见 class 线索（仍需几何与文案二次校验）
@@ -394,53 +397,11 @@
       .filter(Boolean);
   }
 
-  function movieIdFromValue(value) {
-    const candidate = String(value ?? "").trim();
-    return /^\d+$/.test(candidate) ? candidate : "";
+  function isVlogRoute() {
+    return /^\/vlog(?:\/|$)/i.test(String(location.pathname || ""));
   }
 
-  function movieIdFromVueValue(value) {
-    if (!value || typeof value !== "object") return movieIdFromValue(value);
-    for (const key of ["id", "movieId", "movie_id", "videoId", "vid"]) {
-      const id = movieIdFromValue(value[key]);
-      if (id) return id;
-    }
-    return "";
-  }
-
-  // /vlog/ 是固定路由，当前视频编号只存在活动 Swiper/Vue 实例里。
-  // 只读取 playerInfo、活动 slide 和 isActive 详情，避免把预加载 slide 当成当前项。
-  function activeVlogMovieId() {
-    if (!/^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))) return "";
-    try {
-      const listVm = document.querySelector(".vlog-list")?.__vue__;
-      const activeSlide = document.querySelector(".swiper-slide-active")
-        || document.querySelector(".swiper-slide[aria-hidden='false']");
-      const detailVm = activeSlide?.querySelector(".short-video-detail")?.__vue__;
-      const detailId = movieIdFromVueValue(detailVm?.r || detailVm?.$options?.propsData?.r);
-      const playerId = movieIdFromValue(activeSlide?.querySelector(".player")?.__vue__?.currentMovieId);
-      let markedActiveId = "";
-      for (const element of document.querySelectorAll(".short-video-detail")) {
-        const vm = element.__vue__;
-        if (vm?.$options?.propsData?.isActive === true) {
-          const id = movieIdFromVueValue(vm.r || vm.$options?.propsData?.r);
-          if (id) { markedActiveId = id; break; }
-        }
-      }
-      const listId = movieIdFromVueValue(listVm?.playerInfo || listVm?.activeItem || listVm?.currentItem);
-      return globalThis.TxzzPageContextCore?.resolveVlogMovieId({
-        listId,
-        activeSlideId: detailId,
-        activeDetailId: detailId,
-        activeDetailEnabled: detailVm?.$options?.propsData?.isActive !== false,
-        activePlayerId: playerId,
-        markedActiveId
-      })?.movieId || detailId || playerId || markedActiveId || listId || "";
-    } catch (_) {}
-    return "";
-  }
-
-  function currentMovieId() {
+  function movieIdFromLocation() {
     const match = String(location.pathname || "").match(/\/movie\/detail\/(\d+)/);
     if (match) return match[1];
     try {
@@ -450,7 +411,7 @@
         if (/^\d+$/.test(value)) return value;
       }
     } catch (_) {}
-    return activeVlogMovieId();
+    return "";
   }
 
   function currentPageKey() {
@@ -462,10 +423,75 @@
     }
   }
 
+  function currentAuthoritativeVlogContext() {
+    if (!isVlogRoute() || !authoritativePageContext) return null;
+    return authoritativePageContext.pageKey === currentPageKey() ? authoritativePageContext : null;
+  }
+
+  function currentMovieId() {
+    if (!isVlogRoute()) return movieIdFromLocation();
+    const context = currentAuthoritativeVlogContext();
+    return context && !context.transitioning ? context.movieId : "";
+  }
+
+  function commitPageContext(next, reason = "context") {
+    const normalized = {
+      pageKey: String(next?.pageKey || currentPageKey()),
+      pageEpoch: Number(next?.pageEpoch || 0),
+      movieId: String(next?.movieId || ""),
+      transitioning: Boolean(next?.transitioning),
+      contextRevision: Number(next?.contextRevision || 0)
+    };
+    const routeChanged = Boolean(pageContextKey && normalized.pageKey !== pageContextKey);
+    const movieChanged = Boolean(pageContextMovieId && normalized.movieId && normalized.movieId !== pageContextMovieId);
+    const epochChanged = normalized.pageEpoch !== pageContextEpoch;
+    const transitionStarted = !pageContextTransitioning && normalized.transitioning;
+    if (routeChanged || movieChanged || epochChanged) {
+      latestFullDetailToken = null;
+      // 保留 history，但新代次不能继续展示上一卡片的 active session。
+      state.screening = {
+        ...(state.screening || { schemaVersion: 2, history: [] }),
+        activeSession: null,
+        request: {
+          phase: "idle",
+          pageKey: normalized.pageKey,
+          pageEpoch: normalized.pageEpoch,
+          reason
+        }
+      };
+      publishState();
+    } else if (transitionStarted) {
+      // 空 ID 窗口不丢掉最后稳定 ID，但必须立即使正在返回的旧请求失效。
+      latestFullDetailToken = null;
+    }
+    pageContextKey = normalized.pageKey;
+    pageContextEpoch = normalized.pageEpoch;
+    pageContextMovieId = normalized.movieId;
+    pageContextTransitioning = normalized.transitioning;
+    return normalized;
+  }
+
+  function acceptAuthoritativeVlogContext(payload, reason = "page-hook") {
+    if (!isVlogRoute()) return false;
+    const normalized = globalThis.TxzzPageContextCore?.normalizeAuthoritativeContext(payload, currentPageKey());
+    if (!normalized) return false;
+    const canAccept = globalThis.TxzzPageContextCore?.shouldAcceptAuthoritativeContext(
+      authoritativePageContext,
+      normalized
+    ) ?? true;
+    if (!canAccept) return false;
+    authoritativePageContext = normalized;
+    commitPageContext(normalized, reason);
+    return true;
+  }
+
   function refreshPageContext(reason = "poll") {
     const nextKey = currentPageKey();
-    const detectedMovieId = currentMovieId();
-    const isVlog = /^\/vlog(?:\/|$)/i.test(String(location.pathname || ""));
+    const isVlog = isVlogRoute();
+    if (!isVlog) authoritativePageContext = null;
+    const authoritative = isVlog ? currentAuthoritativeVlogContext() : null;
+    if (authoritative) return commitPageContext(authoritative, reason);
+    const detectedMovieId = isVlog ? "" : movieIdFromLocation();
     const reconciled = globalThis.TxzzPageContextCore?.reconcileContext(
       { pageKey: pageContextKey, pageEpoch: pageContextEpoch, movieId: pageContextMovieId },
       { pageKey: nextKey, movieId: detectedMovieId, isVlog }
@@ -476,38 +502,38 @@
       transitioning: false,
       changed: Boolean(pageContextKey && nextKey !== pageContextKey)
     };
-    const routeChanged = Boolean(reconciled.routeChanged);
-    const vlogMovieChanged = Boolean(reconciled.movieChanged);
-    if (routeChanged || vlogMovieChanged) {
-      latestFullDetailToken = null;
-      // 保留 history，但当前页面不能继续显示上一页的 active session。
-      state.screening = {
-        ...(state.screening || { schemaVersion: 2, history: [] }),
-        activeSession: null,
-        request: { phase: "idle", pageKey: nextKey, pageEpoch: reconciled.pageEpoch, reason }
-      };
-      publishState();
-    }
-    pageContextKey = reconciled.pageKey;
-    pageContextEpoch = reconciled.pageEpoch;
-    pageContextMovieId = reconciled.movieId;
-    pageContextTransitioning = Boolean(reconciled.transitioning);
-    return {
-      pageKey: pageContextKey,
-      pageEpoch: pageContextEpoch,
-      movieId: pageContextMovieId,
-      transitioning: pageContextTransitioning
-    };
+    return commitPageContext(reconciled, reason);
   }
 
   function createFullDetailToken(payload = {}) {
+    if (isVlogRoute() && payload.active !== false) {
+      // fullplay-context 与请求在同一 postMessage 队列中有序；请求自身仍携带同一快照，
+      // 作为主世界初始消息被宿主页调度延迟时的无竞态兜底。
+      acceptAuthoritativeVlogContext(payload, "full-detail-request");
+    }
     const context = refreshPageContext("request");
     const movieId = String(payload.movieId || "").trim();
     const payloadPageKey = String(payload.pageKey || payload.href || context.pageKey);
-    const active = payload.active !== false
-      && payloadPageKey === context.pageKey
-      && !context.transitioning
-      && (!context.movieId || context.movieId === movieId);
+    const payloadEpoch = Number(payload.pageEpoch);
+    const payloadRevision = Number(payload.contextRevision);
+    const active = isVlogRoute()
+      ? Boolean(
+        currentAuthoritativeVlogContext()
+        && payload.active !== false
+        && payloadPageKey === context.pageKey
+        && Number.isInteger(payloadEpoch)
+        && payloadEpoch === context.pageEpoch
+        && Number.isInteger(payloadRevision)
+        && payloadRevision === context.contextRevision
+        && !context.transitioning
+        && context.movieId === movieId
+      )
+      : Boolean(
+        payload.active !== false
+        && payloadPageKey === context.pageKey
+        && !context.transitioning
+        && (!context.movieId || context.movieId === movieId)
+      );
     return {
       requestId: String(payload.requestId || payload.id || crypto.randomUUID()),
       pageHookId: String(payload.id || ""),
@@ -516,6 +542,7 @@
       pageEpoch: Number.isFinite(Number(payload.pageEpoch)) ? Number(payload.pageEpoch) : context.pageEpoch,
       localEpoch: context.pageEpoch,
       contextKey: String(payload.contextKey || `${payloadPageKey}#${payload.pageEpoch || context.pageEpoch}:${movieId}`),
+      contextRevision: Number(context.contextRevision || 0),
       active
     };
   }
@@ -523,6 +550,7 @@
   function isFullDetailTokenCurrent(token) {
     if (!token || latestFullDetailToken?.requestId !== token.requestId) return false;
     const context = refreshPageContext("guard");
+    if (isVlogRoute() && Number(token.contextRevision || 0) !== Number(context.contextRevision || 0)) return false;
     return globalThis.TxzzPageContextCore?.isCurrentRequest(
       { ...context, pageEpoch: context.pageEpoch },
       { ...token, pageEpoch: token.localEpoch },
@@ -1139,6 +1167,7 @@
       hidden: 0,
       blockedClicks: 0,
       splashHits: 0,
+      entryOverlayHits: 0,
       countdownHits: 0,
       lastRunAt: "",
       lastReason: "",
@@ -1196,6 +1225,15 @@
   pointer-events: none !important;
   z-index: -1 !important;
 }
+/* 站点在页面顶部注入的全宽「糖心Vlog / 倒计时 / 进入」广告蒙层。
+   结构选择器限定为 __layout 的直系子节点，不影响播放器内同名 .control。 */
+#__layout > .app-container > .control {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+}
 `;
   }
 
@@ -1226,6 +1264,37 @@
     if (rect.right < vw * 0.62) return false;
     if (rect.left < vw * 0.45) return false;
     return true;
+  }
+
+  /** 精确识别顶部全宽入口广告，避免将普通播放控件的 .control 误删。 */
+  function isAppEntryOverlay(el) {
+    if (!(el instanceof Element) || isPluginUi(el)) return false;
+    const root = el.matches?.(AD_APP_ENTRY_OVERLAY_SELECTOR)
+      ? el
+      : el.closest?.(AD_APP_ENTRY_OVERLAY_SELECTOR);
+    if (!root || isPluginUi(root)) return false;
+    let style;
+    let rect;
+    try {
+      style = window.getComputedStyle(root);
+      rect = root.getBoundingClientRect();
+    } catch (_) {
+      return false;
+    }
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 390;
+    const zIndex = Number.parseInt(style.zIndex, 10);
+    const text = adElementPlainText(root);
+    const locationMatch = rect.top <= 4
+      && rect.left <= 4
+      && rect.width >= viewportWidth * 0.8
+      && rect.height >= 24
+      && rect.height <= 96;
+    const layerMatch = style.position === "fixed" && (!Number.isFinite(zIndex) || zIndex >= 500);
+    const contentMatch = /糖心\s*vlog/i.test(text) && /(进入|打开|下载|[x×✕]|\d{1,3})/i.test(text);
+    // 注入的拦截 CSS 可能已经将蒙层设为 display:none，此时 rect 为 0。
+    // 结构与文案都精确命中时仍允许删除，便于状态统计与防止站点反复改写 style。
+    const hiddenByCleaner = style.display === "none" && contentMatch;
+    return contentMatch && (hiddenByCleaner || (locationMatch && layerMatch));
   }
 
   /** 判断是否为开屏倒计时结束后残留的右上角进入/跳过按钮 */
@@ -1358,12 +1427,18 @@
     // 安全闸：开屏根节点
     const isSplashRoot = el.classList?.contains?.("ad-splash")
       || /(?:^|\s)ad-splash(?:\s|$)/.test(String(el.className || ""));
-    const root = isSplashRoot ? el : el.closest?.(AD_SPLASH_ROOT_SELECTOR);
+    const appEntryRoot = isAppEntryOverlay(el)
+      ? (el.matches?.(AD_APP_ENTRY_OVERLAY_SELECTOR) ? el : el.closest?.(AD_APP_ENTRY_OVERLAY_SELECTOR))
+      : null;
+    const root = appEntryRoot || (isSplashRoot ? el : el.closest?.(AD_SPLASH_ROOT_SELECTOR));
     if (!root || isPluginUi(root)) return false;
     const matched = String(root.className || root.tagName).slice(0, 80);
     root.dataset.txzzAdCleaned = "1";
-    state.adCleaner.splashHits += 1;
-    adSplashSeenUntil = Math.max(adSplashSeenUntil, Date.now() + 20000);
+    if (appEntryRoot) state.adCleaner.entryOverlayHits += 1;
+    else {
+      state.adCleaner.splashHits += 1;
+      adSplashSeenUntil = Math.max(adSplashSeenUntil, Date.now() + 20000);
+    }
     try {
       root.remove();
       state.adCleaner.removed += 1;
@@ -1391,7 +1466,11 @@
       document.querySelectorAll(AD_SPLASH_ROOT_SELECTOR).forEach((el) => {
         if (removeAdElement(el, reason)) changed += 1;
       });
-      // 2) 倒计时结束后残留的右上角进入/跳过/数字按钮
+      // 2) 全站顶部全宽入口广告（当前站点实测 .app-container > .control）
+      document.querySelectorAll(AD_APP_ENTRY_OVERLAY_SELECTOR).forEach((el) => {
+        if (removeAdElement(el, `${reason}|顶部入口`)) changed += 1;
+      });
+      // 3) 倒计时结束后残留的右上角进入/跳过/数字按钮
       findSplashResidualCandidates().forEach((el) => {
         if (removeResidualAdBadge(el, `${reason}|残留进入`)) changed += 1;
       });
@@ -1409,13 +1488,14 @@
     const target = event.target instanceof Element ? event.target : null;
     if (!target || isPluginUi(target)) return;
     const splash = target.closest?.(AD_SPLASH_ROOT_SELECTOR);
-    if (splash) {
+    const appEntry = target.closest?.(AD_APP_ENTRY_OVERLAY_SELECTOR);
+    if (splash || (appEntry && isAppEntryOverlay(appEntry))) {
       event.preventDefault();
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      removeAdElement(splash, "点击拦截开屏.ad-splash");
+      removeAdElement(splash || appEntry, splash ? "点击拦截开屏.ad-splash" : "点击拦截顶部入口");
       state.adCleaner.blockedClicks += 1;
-      markAdCleanerChanged("拦截开屏点击", String(splash.className || "").slice(0, 60));
+      markAdCleanerChanged("拦截广告点击", String((splash || appEntry).className || "").slice(0, 60));
       // 点击时顺带清残留
       cleanAdElements("点击后清残留");
       publishState();
@@ -1452,7 +1532,7 @@
         for (const m of mutations) {
           if (m.type === "attributes" && m.target instanceof Element) {
             const cls = String(m.target.className || "");
-            if (/ad-splash/.test(cls) || AD_RESIDUAL_CLASS_RE.test(cls)) {
+            if (/ad-splash/.test(cls) || AD_RESIDUAL_CLASS_RE.test(cls) || m.target.matches?.(AD_APP_ENTRY_OVERLAY_SELECTOR)) {
               needClean = true;
               break;
             }
@@ -1464,6 +1544,8 @@
             if (
               /ad-splash/.test(cls)
               || node.querySelector?.(AD_SPLASH_ROOT_SELECTOR)
+              || node.matches?.(AD_APP_ENTRY_OVERLAY_SELECTOR)
+              || node.querySelector?.(AD_APP_ENTRY_OVERLAY_SELECTOR)
               || AD_RESIDUAL_CLASS_RE.test(cls)
               || AD_RESIDUAL_TEXT_RE.test(text)
               || (/进入|跳过/.test(text) && text.length <= 8)
@@ -3269,6 +3351,10 @@
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.data?.source !== "txzz-page-hook") return;
     const { kind, payload = {} } = event.data;
+    if (kind === "fullplay-context") {
+      acceptAuthoritativeVlogContext(payload, `page-hook:${payload.reason || "context"}`);
+      return;
+    }
     if (kind === "full-detail-request") {
       handleFullDetailRequest(payload);
       return;

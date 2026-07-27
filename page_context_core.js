@@ -64,7 +64,8 @@
     const previousEpoch = Number(previous && previous.pageEpoch || 0);
     const routeChanged = Boolean(previousKey && previousKey !== pageKey);
     const transitioning = isVlog && !candidateMovieId;
-    const stableMovieId = transitioning ? previousMovieId : candidateMovieId;
+    // 同一 Vlog 页的短暂空值保留旧 ID；真正跨路由时不能把上一页影片带入新页。
+    const stableMovieId = transitioning ? (routeChanged ? "" : previousMovieId) : candidateMovieId;
     const movieChanged = Boolean(
       isVlog
       && !routeChanged
@@ -94,11 +95,53 @@
     return !requestMovieId || !currentMovieId || requestMovieId === currentMovieId;
   }
 
+  /**
+   * page_hook 运行在页面主世界，它才能读到 Vue 2 的 __vue__ 实例。
+   * content script 位于隔离世界，只接受与当前 URL 一致、代次合法的主世界快照，
+   * 避免它再次读不可见的 Vue 字段后把正常请求误判为预加载。
+   */
+  function normalizeAuthoritativeContext(payload, expectedPageKey = "") {
+    if (!payload || typeof payload !== "object") return null;
+    const pageKey = String(payload.pageKey || "");
+    const expected = String(expectedPageKey || "");
+    const pageEpoch = Number(payload.pageEpoch);
+    const revision = Number(payload.contextRevision ?? payload.revision ?? 0);
+    const movieId = cleanMovieId(payload.pageMovieId || payload.movieId);
+    const transitioning = Boolean(payload.transitioning);
+    if (!pageKey || (expected && pageKey !== expected)) return null;
+    if (!Number.isInteger(pageEpoch) || pageEpoch < 0) return null;
+    if (!Number.isInteger(revision) || revision < 0) return null;
+    if (!movieId && !transitioning) return null;
+    return { pageKey, pageEpoch, movieId, transitioning, contextRevision: revision };
+  }
+
+  /** 同一页面只接受单调递增的 epoch/revision，防止延迟消息把新卡片退回旧状态。 */
+  function shouldAcceptAuthoritativeContext(previous, next) {
+    if (!next) return false;
+    if (!previous || String(previous.pageKey || "") !== String(next.pageKey || "")) return true;
+    const previousEpoch = Number(previous.pageEpoch || 0);
+    const nextEpoch = Number(next.pageEpoch || 0);
+    if (nextEpoch < previousEpoch) return false;
+    if (nextEpoch > previousEpoch) return true;
+    const previousRevision = Number(previous.contextRevision || 0);
+    const nextRevision = Number(next.contextRevision || 0);
+    const previousMovieId = cleanMovieId(previous.movieId);
+    const nextMovieId = cleanMovieId(next.movieId);
+    // 稳定 ID 改变必须同时提升 epoch；仅初始空 ID → 首个稳定 ID 可保持 epoch。
+    if (previousMovieId && nextMovieId && previousMovieId !== nextMovieId) return false;
+    if (nextRevision < previousRevision) return false;
+    if (nextRevision > previousRevision) return true;
+    return previousMovieId === nextMovieId
+      && Boolean(previous.transitioning) === Boolean(next.transitioning);
+  }
+
   global.TxzzPageContextCore = Object.freeze({
     cleanMovieId,
     movieIdFromRecord,
     resolveVlogMovieId,
     reconcileContext,
-    isCurrentRequest
+    isCurrentRequest,
+    normalizeAuthoritativeContext,
+    shouldAcceptAuthoritativeContext
   });
 })(globalThis);

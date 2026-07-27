@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "糖心志者",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAscmukzGVUcjGOVpaoAKPaNtwf6mRUhZmrcsSQuewQgs2Qi9UmEE8jQMkbL56u+zxvWpDUWroUjzVhZ0WV6tcoH+Z85VbnNx6ErN6vpG/Hklda4k7odfLum+iQcPoS0t39t7XSuV3nqohhnAN8jmeh12crWyq0IM6pkc/2dKEkmKYX81lqtU+ZxvQQWkywAbV6ceBg0sw4PwZEsIbH3jMhtgBRYEpuaTrfMP63Uyfv8oTISCzpTHYY1wNwu3fJMf52VB95Ocqy2pKxEwlBDEtjG6aO5/olU7k20Mkbd0u8l+FjQgvYp8PTeagxtH1G5tO38MxK9qegttaI8Xgo/IjqwIDAQAB",
   "description": "可爱风账号小屋、智能放映、下载收纳、服务体检与安全升级工作台。",
   "permissions": ["storage", "downloads", "offscreen"],
