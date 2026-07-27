@@ -58,6 +58,14 @@
     patchRuns: [],
     pending: new Map(),
     cache: new Map(),
+    latestByContext: new Map(),
+    pageEpoch: 0,
+    pageKey: "",
+    pageMovieId: "",
+    activeMovieId: "",
+    activeHintAt: 0,
+    activePointerAt: 0,
+    contextTrackerInstalled: false,
     lastMessage: "糖心志者播放资源监听已安装"
   };
 
@@ -101,6 +109,207 @@
     } catch (_) {
       return false;
     }
+  }
+
+  // Bind every async detail request to the current SPA page generation. The feed
+  // can prefetch several cards at once, so movieId alone is not an active-item key.
+  function currentPageKey(value = location.href) {
+    try {
+      const url = new URL(String(value || location.href), location.href);
+      return `${url.origin}${url.pathname}${url.search}${url.hash}`;
+    } catch (_) {
+      return String(value || location.href);
+    }
+  }
+
+  function movieIdFromUrl(value = location.href) {
+    try {
+      const url = new URL(String(value || location.href), location.href);
+      const pathMatch = url.pathname.match(/^\/movie\/detail\/(\d+)\/?$/);
+      if (pathMatch) return pathMatch[1];
+      for (const key of ["id", "movie_id", "movieId", "vid", "videoId"]) {
+        const candidate = String(url.searchParams.get(key) || "").trim();
+        if (/^\d+$/.test(candidate)) return candidate;
+      }
+    } catch (_) {}
+    return "";
+  }
+
+  function routeMovieId() {
+    const fromLocation = movieIdFromUrl(location.href);
+    if (fromLocation) return fromLocation;
+    try {
+      const route = window.$nuxt?.$route || window.$nuxt?.$router?.currentRoute;
+      const candidate = getMovieId(route?.params || route?.query || route, route?.fullPath || "");
+      if (candidate) return candidate;
+    } catch (_) {}
+    return "";
+  }
+
+  function rejectStalePending(reason = "page context changed") {
+    fullplay.pending.forEach((item, id) => {
+      if (item.pageKey === fullplay.pageKey && item.pageEpoch === fullplay.pageEpoch) return;
+      fullplay.pending.delete(id);
+      try {
+        window.clearTimeout(item.timer);
+        const error = new Error(reason);
+        error.code = "STALE_PLAYBACK_REQUEST";
+        item.reject(error);
+      } catch (_) {}
+    });
+  }
+
+  function updatePageContext(reason = "route-check") {
+    const nextKey = currentPageKey(location.href);
+    const changed = Boolean(fullplay.pageKey && fullplay.pageKey !== nextKey);
+    if (changed) {
+      fullplay.pageEpoch += 1;
+      fullplay.activeMovieId = "";
+      fullplay.activeHintAt = 0;
+      fullplay.activePointerAt = 0;
+    }
+    fullplay.pageKey = nextKey;
+    fullplay.pageMovieId = routeMovieId();
+    if (changed) {
+      rejectStalePending(`page context changed: ${reason}`);
+      emit("fullplay-context", {
+        pageKey: fullplay.pageKey,
+        pageEpoch: fullplay.pageEpoch,
+        movieId: fullplay.pageMovieId,
+        reason
+      });
+    }
+    return { pageKey: fullplay.pageKey, pageEpoch: fullplay.pageEpoch, movieId: fullplay.pageMovieId };
+  }
+
+  function extractElementMovieId(element) {
+    let current = element;
+    for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+      try {
+        const href = current.getAttribute?.("href") || current.closest?.("a[href]")?.getAttribute?.("href") || "";
+        if (href) {
+          const fromHref = movieIdFromUrl(href);
+          if (fromHref) return fromHref;
+        }
+      } catch (_) {}
+      for (const key of ["movieId", "movie_id", "videoId", "vid", "id"]) {
+        const candidate = String(current.dataset?.[key] || current.getAttribute?.(`data-${key}`) || "").trim();
+        if (/^\d+$/.test(candidate)) return candidate;
+      }
+      // The target is Vue 2; card data is exposed as propsData.data.id.
+      try {
+        const vm = current.__vue__;
+        const candidates = [
+          vm?.data?.id,
+          vm?.$options?.propsData?.data?.id,
+          vm?.$vnode?.componentOptions?.propsData?.data?.id,
+          vm?.$vnode?.componentOptions?.propsData?.id
+        ];
+        const found = candidates.map((item) => String(item || "").trim()).find((item) => /^\d+$/.test(item));
+        if (found) return found;
+      } catch (_) {}
+    }
+    return "";
+  }
+
+  function markActiveMovie(movieId, via = "interaction") {
+    const id = String(movieId || "").trim();
+    if (!/^\d+$/.test(id)) return;
+    fullplay.activeMovieId = id;
+    fullplay.activeHintAt = Date.now();
+    emit("fullplay-active", {
+      movieId: id,
+      pageKey: fullplay.pageKey,
+      pageEpoch: fullplay.pageEpoch,
+      via
+    });
+  }
+
+  function markActiveElement(element, via = "interaction") {
+    const movieId = extractElementMovieId(element);
+    if (movieId) {
+      markActiveMovie(movieId, via);
+      return;
+    }
+    // 生产站点的 Vue 卡片没有 href/data-id，构建产物也未必暴露 __vue__。
+    // 仍记录一次“用户明确点了视频卡片”的短时提示；同页面中下一次新发起的
+    // detail 请求可认领它，已在提示前发起的预加载请求不会被追认。
+    if (element?.closest?.(".video-item, [class*='video-item'], [data-video-card]")) {
+      const interactionAt = Date.now();
+      if (via === "click" && fullplay.activeMovieId && interactionAt - fullplay.activePointerAt <= 1_500) {
+        // pointerdown 后站点可能立刻发起当前详情请求并完成认领；随后同一手势的
+        // click 捕获不能把已认领 ID 清空，否则 click 阶段的预加载会冒充当前项。
+        return;
+      }
+      fullplay.activeMovieId = "";
+      fullplay.activeHintAt = interactionAt;
+      if (via === "pointerdown") fullplay.activePointerAt = interactionAt;
+      emit("fullplay-active-hint", {
+        movieId: "",
+        pageKey: fullplay.pageKey,
+        pageEpoch: fullplay.pageEpoch,
+        via
+      });
+    }
+  }
+
+  function buildRequestContext(movieId) {
+    const current = updatePageContext("request");
+    const id = String(movieId || "").trim();
+    const routeId = current.movieId;
+    const hintAge = Date.now() - fullplay.activeHintAt;
+    if (!routeId && !fullplay.activeMovieId && id && hintAge >= 0 && hintAge <= 2_500) {
+      fullplay.activeMovieId = id;
+      emit("fullplay-active", {
+        movieId: id,
+        pageKey: fullplay.pageKey,
+        pageEpoch: fullplay.pageEpoch,
+        via: "interaction-request-claim"
+      });
+    }
+    const hintFresh = fullplay.activeMovieId && Date.now() - fullplay.activeHintAt <= 15_000;
+    const active = routeId ? routeId === id : Boolean(hintFresh && fullplay.activeMovieId === id);
+    return {
+      pageKey: current.pageKey,
+      pageEpoch: current.pageEpoch,
+      pageMovieId: routeId,
+      movieId: id,
+      contextKey: `${current.pageKey}#${current.pageEpoch}:${id || "feed"}`,
+      active
+    };
+  }
+
+  function installPageContextTracker() {
+    if (fullplay.contextTrackerInstalled) return;
+    fullplay.contextTrackerInstalled = true;
+    updatePageContext("install");
+    const routeChanged = () => window.setTimeout(() => updatePageContext("history"), 0);
+    ["popstate", "hashchange"].forEach((name) => window.addEventListener(name, routeChanged, true));
+    for (const name of ["pushState", "replaceState"]) {
+      const original = history[name];
+      if (typeof original !== "function" || original.__txzzContextPatched) continue;
+      const wrapped = function txzzContextHistory() {
+        const result = original.apply(this, arguments);
+        routeChanged();
+        return result;
+      };
+      wrapped.__txzzContextPatched = true;
+      wrapped.__txzzContextOriginal = original;
+      try {
+        Object.defineProperty(history, name, { configurable: true, writable: true, value: wrapped });
+      } catch (_) {
+        history[name] = wrapped;
+      }
+    }
+    document.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target) markActiveElement(target, "click");
+    }, true);
+    document.addEventListener("pointerdown", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target) markActiveElement(target, "pointerdown");
+    }, true);
+    window.setInterval(() => updatePageContext("poll"), 700);
   }
 
   function installSameDetailNavigationGuard() {
@@ -297,6 +506,8 @@
       if (params.id) return String(params.id);
       if (params.movie_id) return String(params.movie_id);
       if (params.movieId) return String(params.movieId);
+      if (params.vid) return String(params.vid);
+      if (params.videoId) return String(params.videoId);
     }
     if (typeof params === "string") {
       try {
@@ -304,7 +515,7 @@
         return getMovieId(parsed, api);
       } catch (_) {
         const query = new URLSearchParams(params.includes("=") ? params : "");
-        const id = query.get("id") || query.get("movie_id") || query.get("movieId");
+        const id = query.get("id") || query.get("movie_id") || query.get("movieId") || query.get("vid") || query.get("videoId");
         if (id) return id;
       }
     }
@@ -367,21 +578,34 @@
     return data;
   }
 
-  function requestFullDetail(movieId, visitorDetail) {
+  function requestFullDetail(movieId, visitorDetail, context = buildRequestContext(movieId)) {
+    if (!context.active) {
+      const error = new Error("inactive prefetch request");
+      error.code = "INACTIVE_PREFETCH";
+      return Promise.reject(error);
+    }
     const cached = fullplay.cache.get(String(movieId));
-    if (cached) return Promise.resolve(cached);
+    if (cached
+      && cached.__txzzContext?.movieId === String(movieId)
+      && cached.__txzzContext?.pageKey === context.pageKey
+      && cached.__txzzContext?.pageEpoch === context.pageEpoch) return Promise.resolve(cached);
     const requestId = `txzz_full_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    fullplay.latestByContext.set(context.contextKey, requestId);
     return new Promise((resolve, reject) => {
       const timer = window.setTimeout(() => {
         fullplay.pending.delete(requestId);
         reject(new Error(`播放详情请求超时：${movieId}`));
       }, 15000);
-      fullplay.pending.set(requestId, { resolve, reject, timer });
+      fullplay.pending.set(requestId, { resolve, reject, timer, ...context });
       emit("full-detail-request", {
         id: requestId,
         movieId,
         visitorDetail,
-        href: location.href
+        href: location.href,
+        pageKey: context.pageKey,
+        pageEpoch: context.pageEpoch,
+        contextKey: context.contextKey,
+        active: context.active
       });
     });
   }
@@ -413,16 +637,44 @@
     const payload = event.data.payload || {};
     if (payload.ok) {
       const cachedMovieId = payload.summary?.movieId || payload.data?.id || payload.detail?.id || payload.movieId || "";
-      if (cachedMovieId) fullplay.cache.set(String(cachedMovieId), payload);
+      const latest = fullplay.latestByContext.get(pending.contextKey);
+      const contextStillCurrent = pending.pageKey === fullplay.pageKey
+        && pending.pageEpoch === fullplay.pageEpoch
+        && (!fullplay.pageMovieId || String(pending.movieId) === String(fullplay.pageMovieId))
+        && latest === id;
+      if (!contextStillCurrent || String(cachedMovieId || pending.movieId) !== String(pending.movieId)) {
+        const stale = new Error("stale playback response");
+        stale.code = "STALE_PLAYBACK_REQUEST";
+        pending.reject(stale);
+        return;
+      }
+      if (cachedMovieId) fullplay.cache.set(String(cachedMovieId), { ...payload, __txzzContext: pending });
       pending.resolve(payload);
     }
     else pending.reject(new Error(payload.error || "播放详情请求失败"));
   });
 
-  async function maybeReplaceMovieDetail(api, params, visitorDetail) {
+  async function maybeReplaceMovieDetail(api, params, visitorDetail, capturedContext = null) {
     if (!fullplay.enabled || api !== "/movie/detail") return visitorDetail;
     const movieId = getMovieId(params, api);
     if (!movieId) return visitorDetail;
+    const currentContext = buildRequestContext(movieId);
+    const sameCapturedGeneration = capturedContext
+      && capturedContext.pageKey === currentContext.pageKey
+      && capturedContext.pageEpoch === currentContext.pageEpoch
+      && String(capturedContext.movieId || "") === String(movieId);
+    // 同一页面内必须沿用请求发起时的判断，防止较早的预加载响应在用户点击后
+    // 被“追认”为当前项；真正发生路由切换时则以新页面上下文重新判定。
+    const context = sameCapturedGeneration ? capturedContext : currentContext;
+    if (!context.active) {
+      emit("fullplay-prefetch", {
+        movieId,
+        pageKey: context.pageKey,
+        pageEpoch: context.pageEpoch,
+        active: false
+      });
+      return visitorDetail;
+    }
     setMessage(`记录详情接口，正在获取播放资源：${movieId}`);
     emit("fullplay-hit", {
       movieId,
@@ -432,10 +684,13 @@
     });
     let payload = null;
     try {
-      payload = await requestFullDetail(movieId, visitorDetail);
+      payload = await requestFullDetail(movieId, visitorDetail, context);
     } catch (error) {
       recordError(error, { api, movieId, background: true });
       emit("fullplay-status", { api, movieId, error: error.message, background: true });
+      return visitorDetail;
+    }
+    if (context.pageKey !== fullplay.pageKey || context.pageEpoch !== fullplay.pageEpoch || (routeMovieId() && routeMovieId() !== movieId)) {
       return visitorDetail;
     }
     const fullDetail = payload.data || payload.detail;
@@ -447,6 +702,9 @@
       __txzz_fullplay: {
         enabled: true,
         movieId,
+        pageKey: context.pageKey,
+        pageEpoch: context.pageEpoch,
+        contextKey: context.contextKey,
         visitor: {
           has_buy: visitorDetail?.has_buy,
           layer_type: visitorDetail?.layer_type,
@@ -460,6 +718,9 @@
     recordHit({
       api,
       movieId,
+      pageKey: context.pageKey,
+      pageEpoch: context.pageEpoch,
+      contextKey: context.contextKey,
       visitorHasBuy: visitorDetail?.has_buy,
       visitorLayerType: visitorDetail?.layer_type,
       visitorPlayLink: visitorDetail?.play_link,
@@ -473,6 +734,9 @@
     setMessage(`播放资源已更新：${movieId}，分片 ${summary?.fullStat?.segments ?? "?"}`, "ok");
     emit("fullplay-success", {
       movieId,
+      pageKey: context.pageKey,
+      pageEpoch: context.pageEpoch,
+      contextKey: context.contextKey,
       summary,
       fullDetail: {
         has_buy: fullDetail?.has_buy,
@@ -516,9 +780,11 @@
       if (normalizedApi !== "/movie/detail") {
         return original.apply(this, arguments);
       }
+      const movieId = getMovieId(params, normalizedApi);
+      const capturedContext = buildRequestContext(movieId);
       const visitorDetail = await original.apply(this, arguments);
       try {
-        return await maybeReplaceMovieDetail(normalizedApi, params, visitorDetail);
+        return await maybeReplaceMovieDetail(normalizedApi, params, visitorDetail, capturedContext);
       } catch (error) {
         recordError(error, { api: normalizedApi, params: safeString(params, 300) });
         setMessage(`播放资源获取失败：${error.message}`, "error");
@@ -933,6 +1199,7 @@
     emit("hook", { target: "detail-autoplay-block", status: "installed" });
   }
 
+  installPageContextTracker();
   installSameDetailNavigationGuard();
   installDetailPageAutoplayBlocker();
   repatchNuxtRequests("install");

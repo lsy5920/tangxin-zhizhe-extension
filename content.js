@@ -169,6 +169,10 @@
   let repositoryUpdateCheckTask = null;
   const downloadLocks = new Set();
   const announcedDownloadStages = new Set();
+  let pageContextEpoch = 0;
+  let pageContextKey = "";
+  let pageContextMovieId = "";
+  let latestFullDetailToken = null;
   const FLOW_BADGE_TITLES = [
     "展示覆盖",
     "远程账号池",
@@ -383,7 +387,101 @@
 
   function currentMovieId() {
     const match = String(location.pathname || "").match(/\/movie\/detail\/(\d+)/);
-    return match ? match[1] : "";
+    if (match) return match[1];
+    try {
+      const query = new URL(location.href).searchParams;
+      for (const key of ["id", "movie_id", "movieId", "vid", "videoId"]) {
+        const value = String(query.get(key) || "").trim();
+        if (/^\d+$/.test(value)) return value;
+      }
+    } catch (_) {}
+    return "";
+  }
+
+  function currentPageKey() {
+    try {
+      const url = new URL(location.href);
+      return `${url.origin}${url.pathname}${url.search}${url.hash}`;
+    } catch (_) {
+      return String(location.href || "");
+    }
+  }
+
+  function refreshPageContext(reason = "poll") {
+    const nextKey = currentPageKey();
+    if (pageContextKey && nextKey !== pageContextKey) {
+      pageContextEpoch += 1;
+      latestFullDetailToken = null;
+      // 保留 history，但当前页面不能继续显示上一页的 active session。
+      state.screening = {
+        ...(state.screening || { schemaVersion: 2, history: [] }),
+        activeSession: null,
+        request: { phase: "idle", pageKey: nextKey, pageEpoch: pageContextEpoch, reason }
+      };
+      publishState();
+    }
+    pageContextKey = nextKey;
+    pageContextMovieId = currentMovieId();
+    return { pageKey: pageContextKey, pageEpoch: pageContextEpoch, movieId: pageContextMovieId };
+  }
+
+  function createFullDetailToken(payload = {}) {
+    const context = refreshPageContext("request");
+    const movieId = String(payload.movieId || "").trim();
+    const payloadPageKey = String(payload.pageKey || payload.href || context.pageKey);
+    const active = payload.active !== false
+      && payloadPageKey === context.pageKey
+      && (!context.movieId || context.movieId === movieId);
+    return {
+      requestId: String(payload.requestId || payload.id || crypto.randomUUID()),
+      pageHookId: String(payload.id || ""),
+      movieId,
+      pageKey: payloadPageKey,
+      pageEpoch: Number.isFinite(Number(payload.pageEpoch)) ? Number(payload.pageEpoch) : context.pageEpoch,
+      localEpoch: context.pageEpoch,
+      contextKey: String(payload.contextKey || `${payloadPageKey}#${payload.pageEpoch || context.pageEpoch}:${movieId}`),
+      active
+    };
+  }
+
+  function isFullDetailTokenCurrent(token) {
+    if (!token || latestFullDetailToken?.requestId !== token.requestId) return false;
+    const context = refreshPageContext("guard");
+    return token.active
+      && token.pageKey === context.pageKey
+      && token.localEpoch === context.pageEpoch
+      && (!context.movieId || context.movieId === token.movieId);
+  }
+
+  function postStaleFullDetailResponse(payload, token, reason = "stale playback request") {
+    window.postMessage({
+      source: "txzz-content",
+      kind: "full-detail-response",
+      id: payload?.id || token?.pageHookId,
+      payload: { ok: false, stale: true, error: reason, requestId: token?.requestId || "" }
+    }, "*");
+  }
+
+  function installPageContextObserver() {
+    refreshPageContext("install");
+    const routeChanged = () => window.setTimeout(() => refreshPageContext("history"), 0);
+    ["popstate", "hashchange"].forEach((name) => window.addEventListener(name, routeChanged, true));
+    for (const name of ["pushState", "replaceState"]) {
+      const original = history[name];
+      if (typeof original !== "function" || original.__txzzContentContextPatched) continue;
+      const wrapped = function txzzContentHistory() {
+        const result = original.apply(this, arguments);
+        routeChanged();
+        return result;
+      };
+      wrapped.__txzzContentContextPatched = true;
+      try {
+        Object.defineProperty(history, name, { configurable: true, writable: true, value: wrapped });
+      } catch (_) {
+        history[name] = wrapped;
+      }
+    }
+    window.setInterval(() => refreshPageContext("poll"), 700);
   }
 
   function currentMovieTitle() {
@@ -2428,34 +2526,51 @@
   async function refreshFullDetail(movieId = currentMovieId()) {
     const id = String(movieId || currentMovieId()).trim();
     if (!id) throw new Error("当前页面不是视频详情页，无法识别视频编号");
+    const page = refreshPageContext("manual-refresh");
     const requestId = crypto.randomUUID();
+    const token = {
+      requestId,
+      movieId: id,
+      pageKey: page.pageKey,
+      pageEpoch: page.pageEpoch,
+      localEpoch: page.pageEpoch,
+      contextKey: `${page.pageKey}#${page.pageEpoch}:${id}`,
+      active: true
+    };
+    latestFullDetailToken = token;
     state.screening = {
       ...(state.screening || { schemaVersion: 2, activeSession: null, history: [] }),
       schemaVersion: 2,
-      request: { phase: "resolving", requestId, movieId: id, startedAt: new Date().toISOString(), error: "" }
+      request: { phase: "resolving", requestId, movieId: id, pageKey: page.pageKey, pageEpoch: page.pageEpoch, contextKey: token.contextKey, startedAt: new Date().toISOString(), error: "" }
     };
     publishState();
     emitFlow("播放资源", `正在刷新视频 ${id} 的播放线路`);
     showToast("正在刷新播放资源");
     const bootstrapSession = await collectSession();
+    if (!isFullDetailTokenCurrent(token)) throw new Error("播放请求已过期，请重新点击当前视频");
     let response;
     try {
       response = await sendRuntime("createPlaybackSession", {
         movieId: id,
         movieTitle: currentMovieTitle(),
         requestId,
+        pageKey: token.pageKey,
+        pageEpoch: token.pageEpoch,
+        contextKey: token.contextKey,
         forceRefresh: true,
         accountId: state.selectedFullAccountId,
         bootstrapSession
       });
     } catch (error) {
+      if (!isFullDetailTokenCurrent(token)) throw error;
       state.screening = {
         ...(state.screening || { schemaVersion: 2, activeSession: null, history: [] }),
-        request: { phase: "error", requestId, movieId: id, error: error?.message || String(error) }
+        request: { phase: "error", requestId, movieId: id, pageKey: token.pageKey, pageEpoch: token.pageEpoch, contextKey: token.contextKey, error: error?.message || String(error) }
       };
       publishState();
       throw error;
     }
+    if (!isFullDetailTokenCurrent(token)) throw new Error("播放响应已过期，请重新点击当前视频");
     if (response.state) syncSavedState(response.state);
     if (response.summary) {
       emitCloudAccountFlow(response.summary, id);
@@ -2851,25 +2966,50 @@
   }
 
   async function handleFullDetailRequest(payload) {
-    const requestId = String(payload.requestId || crypto.randomUUID());
+    const token = createFullDetailToken(payload);
+    latestFullDetailToken = token;
+    const requestId = token.requestId;
+    if (!token.active) {
+      postStaleFullDetailResponse(payload, token, "非当前播放项的预加载请求");
+      return;
+    }
     state.screening = {
       ...(state.screening || { schemaVersion: 2, activeSession: null, history: [] }),
       schemaVersion: 2,
-      request: { phase: "resolving", requestId, movieId: String(payload.movieId || ""), startedAt: new Date().toISOString(), error: "" }
+      request: { phase: "resolving", requestId, movieId: String(payload.movieId || ""), pageKey: token.pageKey, pageEpoch: token.pageEpoch, contextKey: token.contextKey, startedAt: new Date().toISOString(), error: "" }
     };
     publishState();
     emitFlow("播放资源", `记录视频详情接口，视频 ${payload.movieId}`);
     emitFlow("云端账号", `正在为视频 ${payload.movieId} 轮换可用账号`);
     try {
       const bootstrapSession = await collectSession();
+      if (!isFullDetailTokenCurrent(token)) {
+        postStaleFullDetailResponse(payload, token, "收集页面会话后请求已过期");
+        return;
+      }
       const response = await sendRuntime("createPlaybackSession", {
         movieId: payload.movieId,
         movieTitle: currentMovieTitle(),
         requestId,
+        pageKey: token.pageKey,
+        pageEpoch: token.pageEpoch,
+        contextKey: token.contextKey,
         visitorDetail: payload.visitorDetail,
         accountId: state.selectedFullAccountId,
         bootstrapSession
       });
+      if (!isFullDetailTokenCurrent(token)) {
+        postStaleFullDetailResponse(payload, token, "播放服务返回时页面已切换");
+        return;
+      }
+      if (response.stale) {
+        postStaleFullDetailResponse(payload, token, "播放响应已被更新的请求取代");
+        return;
+      }
+      if (response.session?.movieId && String(response.session.movieId) !== token.movieId) {
+        postStaleFullDetailResponse(payload, token, "播放服务返回了不同视频");
+        return;
+      }
       window.postMessage({
         source: "txzz-content",
         kind: "full-detail-response",
@@ -2905,11 +3045,15 @@
           summary.playLink || summary.backupLink ? "ok" : "error"
         );
       }
-      if (response.state) syncSavedState(response.state);
+      if (response.state && isFullDetailTokenCurrent(token)) syncSavedState(response.state);
     } catch (err) {
+      if (!isFullDetailTokenCurrent(token)) {
+        postStaleFullDetailResponse(payload, token, "播放请求已过期");
+        return;
+      }
       state.screening = {
         ...(state.screening || { schemaVersion: 2, activeSession: null, history: [] }),
-        request: { phase: "error", requestId, movieId: String(payload.movieId || ""), error: err?.message || String(err) }
+        request: { phase: "error", requestId, movieId: String(payload.movieId || ""), pageKey: token.pageKey, pageEpoch: token.pageEpoch, contextKey: token.contextKey, error: err?.message || String(err) }
       };
       publishState();
       window.postMessage({
@@ -2953,6 +3097,7 @@
     if (kind === "fullplay-status") emitFlow("播放资源", payload.message || "状态更新", payload.level === "error" ? "error" : "ok");
   });
 
+  installPageContextObserver();
   installHook();
   installDetailPageDefaultPause();
   installAdCleaner();

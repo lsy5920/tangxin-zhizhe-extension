@@ -78,8 +78,9 @@ let repositoryArchiveDownloadInFlight = null;
 let repositoryUpdateStateWriteQueue = Promise.resolve();
 let updateVerificationKeyPromise = null;
 const localPurchaseLocks = new Set();
+let latestPlaybackRequest = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-27-0851";
+const LOCAL_UPDATE_BUILD = "2026-07-27-1015";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1198,7 +1199,9 @@ function hasReturnedPlayLink(value) {
 }
 
 function collectPlayableLinks(value, bucket = [], trail = []) {
-  if (!value || bucket.length >= 16) return bucket;
+  // 详情对象里可能先出现封面、作者视频等媒体字段，16 条上限会让靠后的
+  // lines/sourceList 完整线路永远进不了探测队列；64 条仍足够小，同时能覆盖真实响应。
+  if (!value || bucket.length >= 64) return bucket;
   if (typeof value === "string") {
     const keyHint = trail.join(".").toLowerCase();
     const explicitPlaybackField = /play|backup|m3u8|mp4|video|media|source|src|link|file/.test(keyHint);
@@ -1210,16 +1213,40 @@ function collectPlayableLinks(value, bucket = [], trail = []) {
     return bucket;
   }
   if (Array.isArray(value)) {
-    value.slice(0, 20).forEach((item, index) => collectPlayableLinks(item, bucket, [...trail, String(index)]));
+    value.slice(0, 48).forEach((item, index) => collectPlayableLinks(item, bucket, [...trail, String(index)]));
     return bucket;
   }
   if (typeof value === "object") {
     for (const [key, item] of Object.entries(value)) {
-      if (bucket.length >= 16) break;
+      if (bucket.length >= 64) break;
       collectPlayableLinks(item, bucket, [...trail, key]);
     }
   }
   return bucket;
+}
+
+function playbackCandidatePriority(key = "") {
+  const hint = String(key || "").toLowerCase();
+  let score = 0;
+  if (/play[_-]?link|playurl|main|primary/.test(hint)) score += 120;
+  if (/backup|second|spare|mirror|line/.test(hint)) score += 90;
+  if (/m3u8|mp4|video|media|source|src|link|file/.test(hint)) score += 40;
+  if (/preview|trailer|sample|clip|trial|试看|片段/.test(hint)) score -= 180;
+  return score;
+}
+
+function collectPlaybackCandidates(detail = {}, summary = {}) {
+  const rows = collectPlayableLinks({ ...detail, summary });
+  const seen = new Set();
+  return rows
+    .map((row) => ({ ...row, priority: playbackCandidatePriority(row.key) }))
+    .filter((row) => {
+      const url = String(row.url || "").trim();
+      if (!hasReturnedPlayLink(url) || seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    })
+    .sort((left, right) => right.priority - left.priority);
 }
 
 function normalizeFullDetail(detail = null) {
@@ -1358,34 +1385,63 @@ function buildM3u8Stat(url, response, text, latencyMs = 0) {
 }
 
 async function fetchPlaybackProbe(url, signal) {
+  const urlLooksHls = /m3u8|mpegurl/i.test(String(url || ""));
   const headers = {
     accept: "application/vnd.apple.mpegurl, application/x-mpegURL, text/plain, */*;q=0.1",
-    range: "bytes=0-524287"
+    // HLS 清单是文本，必须读取完整内容；Range 只用于未知格式/渐进式媒体，
+    // 否则长视频的后半段会被误判为不存在。
+    ...(urlLooksHls ? {} : { range: "bytes=0-524287" })
   };
   let response = await fetch(url, {
     ...(signal ? { signal } : {}),
     headers
   });
-  if (!response.ok && /m3u8|mpegurl/i.test(url)) {
+  if (!response.ok && urlLooksHls) {
     await response.body?.cancel().catch(() => {});
     response = await fetch(url, {
       ...(signal ? { signal } : {}),
       headers: { accept: headers.accept }
     });
   }
-  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
-  const contentLength = Number(response.headers.get("content-length") || 0);
-  const urlLooksHls = /m3u8|mpegurl/i.test(url);
+  if (urlLooksHls && (response.status === 206 || response.headers.get("content-range"))) {
+    await response.body?.cancel().catch(() => {});
+    response = await fetch(url, {
+      ...(signal ? { signal } : {}),
+      headers: { accept: headers.accept }
+    });
+  }
+  let contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  let contentLength = Number(response.headers.get("content-length") || 0);
   const definitelyLargeBinary = /video\/(?:mp4|webm|quicktime)|application\/mp4/.test(contentType)
-    || (response.status !== 206 && contentLength > 2 * 1024 * 1024 && !urlLooksHls);
+    || (response.status !== 206 && contentLength > 8 * 1024 * 1024 && !urlLooksHls && !/mpegurl/.test(contentType));
   if (definitelyLargeBinary) {
     await response.body?.cancel().catch(() => {});
     return { response, text: "" };
   }
-  return { response, text: await response.text() };
+  let text = await response.text();
+  const partialManifest = (response.status === 206 || response.headers.get("content-range"))
+    && (/mpegurl/.test(contentType) || String(text).includes("#EXTM3U"));
+  if (partialManifest) {
+    // 签名地址不一定带 .m3u8。只有读取响应头/正文后才能知道它是 HLS；
+    // 一旦确认是被 Range 截断的清单，必须无 Range 重取，否则长视频会稳定误报为前半段时长。
+    response = await fetch(url, {
+      ...(signal ? { signal } : {}),
+      headers: { accept: headers.accept }
+    });
+    contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    contentLength = Number(response.headers.get("content-length") || 0);
+    // 此分支只会在正文已经确认含 #EXTM3U 后进入；即使 CDN 错报
+    // application/octet-stream，也不能再按“大二进制”丢弃完整清单。
+    if (/video\/(?:mp4|webm|quicktime)|application\/mp4/.test(contentType)) {
+      await response.body?.cancel().catch(() => {});
+      return { response, text: "" };
+    }
+    text = await response.text();
+  }
+  return { response, text };
 }
 
-async function statM3u8Quick(link, timeoutMs = 3500) {
+async function statM3u8Quick(link, timeoutMs = 10000) {
   if (!link) return null;
   const url = absoluteUrl(link);
   const started = Date.now();
@@ -1421,6 +1477,56 @@ async function statM3u8Quick(link, timeoutMs = 3500) {
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+async function resolvePlaybackDetail(detail = {}, summary = {}, suppliedSession = null) {
+  const candidateRows = collectPlaybackCandidates(detail, summary);
+  for (const source of suppliedSession?.sources || []) {
+    if (!source?.url || candidateRows.some((row) => row.url === source.url)) continue;
+    candidateRows.push({
+      key: `session.${source.id || "source"}`,
+      url: source.url,
+      priority: source.id === "primary" ? 120 : 90
+    });
+  }
+  const candidates = candidateRows.slice(0, 12).map((candidate) => ({
+    ...candidate,
+    url: absoluteUrl(candidate.url)
+  })).filter((candidate) => candidate.url);
+  const probed = await Promise.all(candidates.map(async (candidate) => ({
+    ...candidate,
+    stat: await statM3u8Quick(candidate.url)
+  })));
+  const ranked = [...probed].sort((left, right) => {
+    const leftDuration = Number(left.stat?.duration || 0);
+    const rightDuration = Number(right.stat?.duration || 0);
+    if (leftDuration > 0 && rightDuration > 0 && leftDuration !== rightDuration) {
+      const difference = Math.abs(leftDuration - rightDuration);
+      if (difference >= Math.max(90, Math.min(leftDuration, rightDuration) * 0.08)) return rightDuration - leftDuration;
+    }
+    return (Number(right.stat?.score || 0) + Number(right.priority || 0))
+      - (Number(left.stat?.score || 0) + Number(left.priority || 0));
+  });
+  const explicitPrimaryUrl = absoluteUrl(detail?.play_link || summary?.playLink || "");
+  const primary = ranked.find((candidate) => candidate.url === explicitPrimaryUrl) || ranked[0] || null;
+  // backup 字段也可能只是第二条试看线。备用位应承载探测后最完整的不同线路，
+  // 而不是无条件服从字段名；显式 backup 已通过 priority 参与同分排序。
+  const backup = ranked.find((candidate) => candidate.url !== primary?.url) || null;
+  const resolvedDetail = normalizeFullDetail({
+    ...detail,
+    play_link: primary?.url || detail?.play_link || "",
+    backup_link: backup?.url || detail?.backup_link || ""
+  });
+  return {
+    detail: resolvedDetail,
+    summary: {
+      ...summary,
+      playLink: resolvedDetail.play_link,
+      backupLink: resolvedDetail.backup_link,
+      fullStat: primary?.stat || summary.fullStat || null,
+      backupStat: backup?.stat || summary.backupStat || null
+    }
+  };
 }
 
 function resolveDownloadLink(detail = {}, summary = {}, message = {}) {
@@ -1505,6 +1611,16 @@ async function ensurePlaybackSessionCompleteness(session = null) {
   return normalizeStoredPlaybackSession({ ...normalized, sources });
 }
 
+function playbackRequestMatches(state, requestId = "", contextKey = "") {
+  if (!requestId) return true;
+  if (latestPlaybackRequest?.requestId && String(latestPlaybackRequest.requestId) !== String(requestId)) return false;
+  if (latestPlaybackRequest?.contextKey && contextKey && String(latestPlaybackRequest.contextKey) !== String(contextKey)) return false;
+  const current = state?.screening?.request || {};
+  if (String(current.requestId || "") !== String(requestId)) return false;
+  if (contextKey && current.contextKey && String(current.contextKey) !== String(contextKey)) return false;
+  return true;
+}
+
 async function finishPlaybackSession(options = {}) {
   const {
     movieId,
@@ -1513,14 +1629,18 @@ async function finishPlaybackSession(options = {}) {
     account,
     acquisition,
     cacheKey = `${account?.id || "default"}:${movieId}`,
-    session: suppliedSession = null
+    session: suppliedSession = null,
+    requestId = "",
+    contextKey = ""
   } = options;
-  const normalizedDetail = normalizeFullDetail(detail) || {};
-  const constructed = legacyDetailToPlaybackSession(normalizedDetail, {}, account, { movieId, movieTitle, acquisition });
+  const resolved = await resolvePlaybackDetail(detail || {}, options.summary || {}, suppliedSession);
+  const normalizedDetail = normalizeFullDetail(resolved.detail) || {};
+  const constructed = legacyDetailToPlaybackSession(normalizedDetail, resolved.summary, account, { movieId, movieTitle, acquisition });
   const mergedSources = suppliedSession
-    ? [...(suppliedSession.sources || []), ...constructed.sources.filter((candidate) => (
-      !(suppliedSession.sources || []).some((source) => source.id === candidate.id)
-    ))]
+    ? [
+      ...constructed.sources,
+      ...(suppliedSession.sources || []).filter((source) => !["primary", "backup"].includes(String(source.id || "")))
+    ]
     : constructed.sources;
   const baseSession = suppliedSession
     ? normalizeStoredPlaybackSession({ ...suppliedSession, sources: mergedSources })
@@ -1529,6 +1649,21 @@ async function finishPlaybackSession(options = {}) {
   if (!session) throw new Error("播放会话缺少有效线路");
   const summary = playbackSessionSummary(session, normalizedDetail);
   const fresh = await getStateInternal();
+  const canCommit = playbackRequestMatches(fresh, requestId, contextKey);
+  if (!canCommit) {
+    // 旧请求仍可把结果返回给发起方，但绝不能覆盖当前页面的 active session、
+    // 详情缓存或 screening 请求状态。
+    return {
+      ok: true,
+      stale: true,
+      session,
+      detail: normalizedDetail,
+      data: normalizedDetail,
+      summary,
+      account: account ? publicAccount(account) : null,
+      state: sanitizeState(fresh)
+    };
+  }
   fresh.selectedFullAccountId = account?.id || fresh.selectedFullAccountId;
   fresh.screening = mergeScreeningSession(fresh.screening, session);
   fresh.fullDetails = upsertFullDetailList(fresh.fullDetails, summary);
@@ -1568,6 +1703,8 @@ async function reconcileLocalPurchase(message, blocking, errors) {
     return finishPlaybackSession({
       movieId: message.movieId,
       movieTitle: message.movieTitle,
+      requestId: message.requestId,
+      contextKey: message.contextKey,
       detail: normalizeFullDetail(blocking.detail),
       account,
       acquisition: {
@@ -1586,6 +1723,8 @@ async function reconcileLocalPurchase(message, blocking, errors) {
     return finishPlaybackSession({
       movieId: message.movieId,
       movieTitle: message.movieTitle,
+      requestId: message.requestId,
+      contextKey: message.contextKey,
       detail,
       account,
       acquisition: {
@@ -1605,11 +1744,16 @@ async function createPlaybackSession(message = {}) {
   const movieId = String(message.movieId || message.id || "").trim();
   if (!movieId) throw playbackBusinessError("缺少视频编号 movieId", "MOVIE_ID_REQUIRED", 400);
   const requestId = String(message.requestId || crypto.randomUUID());
+  const pageKey = String(message.pageKey || "");
+  const pageEpoch = Number.isFinite(Number(message.pageEpoch)) ? Number(message.pageEpoch) : 0;
+  const contextKey = String(message.contextKey || `${pageKey || "background"}#${pageEpoch}:${movieId}`);
+  const requestContext = { requestId, contextKey };
+  latestPlaybackRequest = { requestId, contextKey, movieId };
   const movieTitle = String(message.movieTitle || "");
   let state = await getStateInternal();
   state.screening = {
     ...normalizeScreeningState(state.screening, state.fullDetails),
-    request: { phase: "resolving", requestId, movieId, startedAt: nowIso(), error: "" }
+    request: { phase: "resolving", requestId, movieId, pageKey, pageEpoch, contextKey, startedAt: nowIso(), error: "" }
   };
   await saveState(state);
 
@@ -1641,6 +1785,7 @@ async function createPlaybackSession(message = {}) {
         return await finishPlaybackSession({
           movieId,
           movieTitle,
+          ...requestContext,
           detail: normalizeFullDetail(response.detail || {}),
           account,
           suppliedSession: response.session,
@@ -1669,7 +1814,7 @@ async function createPlaybackSession(message = {}) {
         acquisition: { mode: "cache", attempts: 1 }
       });
       session.acquisition = { ...session.acquisition, mode: "cache" };
-      return finishPlaybackSession({ movieId, movieTitle, detail: cached.detail, account: cached.account, session });
+      return finishPlaybackSession({ movieId, movieTitle, ...requestContext, detail: cached.detail, account: cached.account, session });
     }
 
     const localAccounts = sortAccountsByCoin((state.accountPool || []).filter((item) => !isCloudAccount(item) && isHealthyAccount(item)));
@@ -1696,6 +1841,7 @@ async function createPlaybackSession(message = {}) {
         return finishPlaybackSession({
           movieId,
           movieTitle,
+          ...requestContext,
           detail,
           account,
           acquisition: { mode: "direct", attempts: errors.length + 1, failed: errors }
@@ -1741,6 +1887,7 @@ async function createPlaybackSession(message = {}) {
           return finishPlaybackSession({
             movieId,
             movieTitle,
+            ...requestContext,
             detail,
             account: item.account,
             acquisition: {
@@ -1761,9 +1908,10 @@ async function createPlaybackSession(message = {}) {
     }
   } catch (error) {
     const fresh = await getStateInternal();
+    if (!playbackRequestMatches(fresh, requestId, contextKey)) throw error;
     fresh.screening = {
       ...normalizeScreeningState(fresh.screening, fresh.fullDetails),
-      request: { phase: "error", requestId, movieId, error: error?.message || String(error), startedAt: fresh.screening?.request?.startedAt || nowIso() }
+      request: { phase: "error", requestId, movieId, pageKey, pageEpoch, contextKey, error: error?.message || String(error), startedAt: fresh.screening?.request?.startedAt || nowIso() }
     };
     await saveState(fresh);
     throw error;
