@@ -1,5 +1,10 @@
 "use strict";
 
+importScripts("state_mutation_core.js");
+
+const stateMutationCore = globalThis.TxzzStateMutationCore;
+if (!stateMutationCore) throw new Error("状态变更核心未加载");
+
 const API_CONFIG = {
   baseUrl: "https://txh068.com",
   version: "4.76",
@@ -76,11 +81,19 @@ const repositoryUpdateCheckTasks = new Map();
 let repositoryArchiveDownloadInFlight = null;
 // 所有升级状态变更通过同一队列串行执行，防止检测结果覆盖并发写入的忽略 ID 或下载状态。
 let repositoryUpdateStateWriteQueue = Promise.resolve();
+// 所有 txzzState 写入共享同一条队列；配合三方合并，避免不同业务先读后写时整对象互相覆盖。
+let stateMutationQueue = Promise.resolve();
+const stateSnapshotByObject = new WeakMap();
+const downloadProgressBuffer = new Map();
+const downloadProgressTimers = new Map();
+const downloadObservedStage = new Map();
+const saveTokens = new Map();
+let saveTokenMutationQueue = Promise.resolve();
 let updateVerificationKeyPromise = null;
 const localPurchaseLocks = new Set();
 let latestPlaybackRequest = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-27-1315";
+const LOCAL_UPDATE_BUILD = "2026-07-27-1925";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -579,8 +592,11 @@ function normalizeStoredPlaybackSession(session = null) {
 }
 
 function playbackSessionSummary(session = {}, detail = {}) {
-  const primary = (session.sources || []).find((source) => source.id === "primary");
-  const backup = (session.sources || []).find((source) => source.id === "backup");
+  const recommended = (session.sources || []).find((source) => source.id === session.decision?.recommendedSourceId && source.url)
+    || recommendedPlaybackSource(session.sources || []);
+  const backup = [...(session.sources || [])]
+    .filter((source) => source.url && source.id !== recommended?.id)
+    .sort(comparePlaybackSources)[0];
   const toLegacyStat = (source) => source ? {
     url: source.url,
     status: source.health?.status,
@@ -600,9 +616,12 @@ function playbackSessionSummary(session = {}, detail = {}) {
     accountLabel: session.account?.label,
     action: session.acquisition?.mode === "purchased" ? "buy_then_full_detail" : "direct_full_detail",
     hasBuy: detail?.has_buy,
-    playLink: primary?.url || "",
+    playLink: recommended?.url || "",
     backupLink: backup?.url || "",
-    fullStat: toLegacyStat(primary),
+    recommendedPlayLink: recommended?.url || "",
+    recommendedSourceId: recommended?.id || "",
+    fullStat: toLegacyStat(recommended),
+    recommendedStat: toLegacyStat(recommended),
     backupStat: toLegacyStat(backup),
     fetchedAt: session.fetchedAt,
     rotation: {
@@ -771,6 +790,7 @@ async function syncRemoteAccounts(state) {
 }
 
 async function getStateInternal() {
+  await stateMutationQueue.catch(() => {});
   const stored = await chrome.storage.local.get("txzzState");
   const storedState = stored.txzzState || {};
   const removedRemoteAccessConfig = [
@@ -815,6 +835,7 @@ async function getStateInternal() {
     // 覆盖升级时主动删除旧密钥字段，避免已取消的配置继续残留在本地存储。
     await saveState(state);
   }
+  stateSnapshotByObject.set(state, structuredClone(state));
   return state;
 }
 
@@ -830,10 +851,26 @@ function sanitizeState(state) {
   };
 }
 
+function mergeConcurrentState(base, incoming, current) {
+  return stateMutationCore.mergeConcurrentState(base, incoming, current);
+}
+
 async function saveState(state) {
-  const nextState = { ...state, storageSchemaVersion: STORAGE_SCHEMA_VERSION };
-  await chrome.storage.local.set({ txzzState: nextState });
-  return nextState;
+  const incoming = { ...state, storageSchemaVersion: STORAGE_SCHEMA_VERSION };
+  const base = stateSnapshotByObject.get(state) || null;
+  const writeTask = stateMutationQueue.then(async () => {
+    const stored = await chrome.storage.local.get("txzzState");
+    const current = stored.txzzState || {};
+    const nextState = base
+      ? mergeConcurrentState(base, incoming, current)
+      : { ...current, ...incoming };
+    nextState.storageSchemaVersion = STORAGE_SCHEMA_VERSION;
+    await chrome.storage.local.set({ txzzState: nextState });
+    stateSnapshotByObject.set(nextState, structuredClone(nextState));
+    return nextState;
+  });
+  stateMutationQueue = writeTask.catch(() => {});
+  return writeTask;
 }
 
 async function resetAllLocalData() {
@@ -1138,8 +1175,16 @@ function downloadTaskId(movieId) {
   return `txzz_download_movie_${safeFileName(movieId || "unknown")}`;
 }
 
+function downloadAttemptId() {
+  return `attempt_${Date.now()}_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+}
+
+function normalizeDownloadStage(stage = "") {
+  return stateMutationCore.normalizeDownloadStage(stage);
+}
+
 function isDownloadRunning(task = {}) {
-  return ["queued", "playlist", "segments", "segment"].includes(String(task.stage || ""));
+  return ["queued", "probing", "downloading", "recovering", "assembling", "saving"].includes(normalizeDownloadStage(task.stage));
 }
 
 function isDownloadReady(task = {}) {
@@ -1148,8 +1193,9 @@ function isDownloadReady(task = {}) {
 
 function compactDownloadTasks(tasks = {}) {
   const grouped = new Map();
-  for (const [key, task] of Object.entries(tasks || {})) {
-    if (!task || typeof task !== "object") continue;
+  for (const [key, rawTask] of Object.entries(tasks || {})) {
+    if (!rawTask || typeof rawTask !== "object") continue;
+    const task = { ...rawTask, stage: normalizeDownloadStage(rawTask.stage) };
     const groupKey = String(task.movieId || key || "");
     const existing = grouped.get(groupKey);
     if (!existing) {
@@ -1179,7 +1225,7 @@ async function ensureOffscreenDocument() {
   await chrome.offscreen.createDocument({
     url: chrome.runtime.getURL("offscreen.html"),
     reasons: ["BLOBS"],
-    justification: "用于把完整 m3u8 分片或已验证 CRX 字节转换为浏览器可下载的 Blob"
+    justification: "用于把媒体分片和已验证 CRX 持久化到 OPFS，并安全组装成品"
   });
 }
 
@@ -1264,7 +1310,7 @@ function normalizeFullDetail(detail = null) {
     detail.videoUrl,
     detail.media_url,
     detail.mediaUrl,
-    detail.url,
+    looksPlayableLink(detail.url) ? detail.url : "",
     detail.src,
     detail.source,
     detail.file
@@ -1308,10 +1354,20 @@ function playableDetailReady(detail = null) {
   return Boolean(hasReturnedPlayLink(normalized?.play_link) || hasReturnedPlayLink(normalized?.backup_link));
 }
 
+function hasPotentialPlaybackEntitlement(detail = null) {
+  if (!detail || typeof detail !== "object") return false;
+  const keys = [
+    "play_link", "playLink", "play_url", "playUrl", "m3u8", "m3u8_url", "m3u8Url",
+    "video_url", "videoUrl", "media_url", "mediaUrl", "backup_link", "backupLink",
+    "backup_url", "backupUrl", "second_play_link", "secondPlayLink", "url", "src", "source", "file"
+  ];
+  return keys.some((key) => hasReturnedPlayLink(detail[key])) || collectPlayableLinks(detail).length > 0;
+}
+
 function isLockedCoinVideo(detail = null) {
   const normalized = normalizeFullDetail(detail);
   // VIP 等账号可能在未标记购买时已直接返回播放地址；有地址就直接播放，严禁误扣金币。
-  if (playableDetailReady(normalized)) return false;
+  if (playableDetailReady(normalized) || hasPotentialPlaybackEntitlement(detail)) return false;
   return normalized?.has_buy !== "y" && normalized?.layer_type === "money" && Number(normalized?.money || 0) > 0;
 }
 
@@ -1344,6 +1400,92 @@ function hlsDurations(text = "") {
   return [...String(text).matchAll(/#EXTINF:([0-9.]+)/g)]
     .map((match) => Number(match[1]))
     .filter(Number.isFinite);
+}
+
+function sanitizeLedgerError(value = "") {
+  return String(value || "")
+    .replace(/https?:\/\/\S+/gi, "[链接已脱敏]")
+    .replace(/(token|authorization|cookie)\s*[:=]\s*\S+/gi, "$1=[已脱敏]")
+    .slice(0, 180);
+}
+
+async function listPurchaseReconciliation() {
+  let state = await expireStaleLocalLedger(await getStateInternal());
+  const accountMap = new Map((state.accountPool || []).map((account) => [account.id, {
+    id: account.id,
+    label: account.label || account.username || "原购买账号",
+    coin: accountCoinValue(account, 0)
+  }]));
+  const local = Object.values(state.localPurchaseLedger || {})
+    .filter((attempt) => ["pending", "charged", "uncertain"].includes(String(attempt?.status || "")))
+    .sort((left, right) => Date.parse(right.updatedAt || "") - Date.parse(left.updatedAt || ""))
+    .slice(0, 100)
+    .map((attempt) => ({
+      origin: "local",
+      attemptId: String(attempt.attemptId || ""),
+      requestId: String(attempt.requestId || ""),
+      movieId: String(attempt.movieId || ""),
+      status: String(attempt.status || ""),
+      price: Number(attempt.price || 0),
+      account: accountMap.get(attempt.accountId) || { id: attempt.accountId, label: "原购买账号" },
+      error: sanitizeLedgerError(attempt.error),
+      createdAt: attempt.createdAt,
+      updatedAt: attempt.updatedAt,
+      canReconcile: ["charged", "uncertain"].includes(String(attempt.status || ""))
+    }));
+  let cloud = [];
+  let cloudError = "";
+  const remote = normalizeRemoteConfig(state.remote);
+  if (remote.enabled && remote.baseUrl) {
+    try {
+      const response = await remoteRequest(state, "/v2/purchases/reconciliation", { method: "GET" });
+      cloud = (response.items || []).map((attempt) => ({ ...attempt, origin: "cloud" }));
+    } catch (error) {
+      cloudError = error?.message || String(error);
+    }
+  }
+  return { ok: !cloudError, items: [...cloud, ...local], cloudError, state: sanitizeState(state) };
+}
+
+async function reconcilePurchaseRecord(message = {}) {
+  const attemptId = String(message.attemptId || "").trim();
+  const origin = String(message.origin || "cloud");
+  if (!attemptId) throw new Error("缺少对账 attemptId");
+  const reconciliationId = String(message.reconciliationId || crypto.randomUUID());
+  if (origin === "cloud") {
+    const state = await getStateInternal();
+    const response = await remoteRequest(state, "/v2/purchases/reconcile", {
+      method: "POST",
+      timeoutMs: 60_000,
+      body: JSON.stringify({ attemptId, reconciliationId })
+    });
+    if (response.session && response.detail) {
+      const account = (state.accountPool || []).find((item) => item.id === response.session.account?.id)
+        || response.account
+        || response.session.account;
+      return finishPlaybackSession({
+        movieId: response.session.movieId,
+        movieTitle: response.session.title,
+        detail: response.detail,
+        account,
+        suppliedSession: response.session,
+        session: response.session,
+        acquisition: response.session.acquisition
+      });
+    }
+    return response;
+  }
+  const state = await expireStaleLocalLedger(await getStateInternal());
+  const attempt = Object.values(state.localPurchaseLedger || {}).find((row) => row?.attemptId === attemptId);
+  if (!attempt) throw new Error("本地对账记录不存在");
+  if (!["charged", "uncertain"].includes(String(attempt.status || ""))) throw new Error("该记录当前不能执行对账");
+  return reconcileLocalPurchase({
+    movieId: attempt.movieId,
+    movieTitle: message.movieTitle || "",
+    requestId: reconciliationId,
+    contextKey: `reconcile:${attemptId}`,
+    bootstrapSession: message.bootstrapSession || null
+  }, attempt, []);
 }
 
 function hlsVariantUrls(text = "", baseUrl = "") {
@@ -1380,6 +1522,7 @@ function buildM3u8Stat(url, response, text, latencyMs = 0) {
     duration,
     latencyMs: Math.max(0, Math.round(latencyMs || 0)),
     score: Math.round(score),
+    protocol: "hls",
     ok: status >= 200 && status < 400 && segments > 0
   };
 }
@@ -1416,7 +1559,7 @@ async function fetchPlaybackProbe(url, signal) {
     || (response.status !== 206 && contentLength > 8 * 1024 * 1024 && !urlLooksHls && !/mpegurl/.test(contentType));
   if (definitelyLargeBinary) {
     await response.body?.cancel().catch(() => {});
-    return { response, text: "" };
+    return { response, text: "", binaryBodySkipped: true };
   }
   let text = await response.text();
   const partialManifest = (response.status === 206 || response.headers.get("content-range"))
@@ -1438,7 +1581,7 @@ async function fetchPlaybackProbe(url, signal) {
     }
     text = await response.text();
   }
-  return { response, text };
+  return { response, text, binaryBodySkipped: false };
 }
 
 async function statM3u8Quick(link, timeoutMs = 10000) {
@@ -1449,12 +1592,26 @@ async function statM3u8Quick(link, timeoutMs = 10000) {
   let timer = null;
   if (controller) timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const { response, text } = await fetchPlaybackProbe(url, controller?.signal);
+    const { response, text, binaryBodySkipped } = await fetchPlaybackProbe(url, controller?.signal);
     const direct = buildM3u8Stat(url, response, text, Date.now() - started);
     if (!String(text).includes("#EXTM3U") || direct.duration > 0) {
-      return String(text).includes("#EXTM3U")
-        ? direct
-        : { ...direct, ok: response.ok, segments: 0, duration: 0 };
+      if (String(text).includes("#EXTM3U")) return direct;
+      const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+      const progressiveByType = /^video\//.test(contentType) || /application\/(?:mp4|x-mp4|webm)/.test(contentType);
+      const progressiveByBinary = /application\/(?:octet-stream|binary)/.test(contentType)
+        && (binaryBodySkipped || response.status === 206 || /\.(?:mp4|webm|m4v)(?:[?#]|$)/i.test(url));
+      const progressiveByUrl = !contentType && /\.(?:mp4|webm|m4v)(?:[?#]|$)/i.test(url);
+      if (!response.ok || (!progressiveByType && !progressiveByBinary && !progressiveByUrl)) {
+        return {
+          ...direct,
+          ok: false,
+          error: `响应不是可播放媒体（${contentType || "unknown content-type"}）`,
+          protocol: "unknown",
+          segments: 0,
+          duration: 0
+        };
+      }
+      return { ...direct, ok: true, protocol: "progressive", segments: 0, duration: 0 };
     }
     const variants = hlsVariantUrls(text, url);
     const rows = await Promise.allSettled(variants.map(async (variantUrl) => {
@@ -1486,7 +1643,9 @@ async function resolvePlaybackDetail(detail = {}, summary = {}, suppliedSession 
     candidateRows.push({
       key: `session.${source.id || "source"}`,
       url: source.url,
-      priority: source.id === "primary" ? 120 : 90
+      priority: source.id === "primary" ? 120 : 90,
+      declaredProtocol: source.protocol,
+      declaredHealth: source.health
     });
   }
   const candidates = candidateRows.slice(0, 12).map((candidate) => ({
@@ -1497,7 +1656,19 @@ async function resolvePlaybackDetail(detail = {}, summary = {}, suppliedSession 
     ...candidate,
     stat: await statM3u8Quick(candidate.url)
   })));
-  const ranked = [...probed].sort((left, right) => {
+  const confirmed = probed.filter((candidate) => (
+    (candidate.stat?.ok === true && ["hls", "progressive"].includes(candidate.stat?.protocol))
+    || (
+      ["hls", "progressive"].includes(candidate.declaredProtocol)
+      && ["healthy", "degraded", "probing"].includes(candidate.declaredHealth?.state)
+    )
+  ));
+  if (!confirmed.length) {
+    const error = playbackBusinessError("发现疑似播放权益字段，但响应不是可播放媒体", "PLAYBACK_SOURCE_UNCONFIRMED", 502);
+    error.preventPurchase = true;
+    throw error;
+  }
+  const ranked = [...confirmed].sort((left, right) => {
     const leftDuration = Number(left.stat?.duration || 0);
     const rightDuration = Number(right.stat?.duration || 0);
     if (leftDuration > 0 && rightDuration > 0 && leftDuration !== rightDuration) {
@@ -1507,8 +1678,8 @@ async function resolvePlaybackDetail(detail = {}, summary = {}, suppliedSession 
     return (Number(right.stat?.score || 0) + Number(right.priority || 0))
       - (Number(left.stat?.score || 0) + Number(left.priority || 0));
   });
-  const explicitPrimaryUrl = absoluteUrl(detail?.play_link || summary?.playLink || "");
-  const primary = ranked.find((candidate) => candidate.url === explicitPrimaryUrl) || ranked[0] || null;
+  // 统一把实际探测后最完整的线路提升为 play_link；字段名不能压过覆盖时长。
+  const primary = ranked[0] || null;
   // backup 字段也可能只是第二条试看线。备用位应承载探测后最完整的不同线路，
   // 而不是无条件服从字段名；显式 backup 已通过 priority 参与同分排序。
   const backup = ranked.find((candidate) => candidate.url !== primary?.url) || null;
@@ -1529,10 +1700,17 @@ async function resolvePlaybackDetail(detail = {}, summary = {}, suppliedSession 
   };
 }
 
-function resolveDownloadLink(detail = {}, summary = {}, message = {}) {
+function resolveDownloadLink(detail = {}, summary = {}, message = {}, session = null) {
   const lineKey = String(message.lineKey || message.line || "auto").trim().toLowerCase();
   const preferredUrl = absoluteUrl(message.url || message.downloadUrl || "");
   if (preferredUrl) return { url: preferredUrl, lineKey: lineKey || "custom" };
+  const sessionSources = Array.isArray(session?.sources) ? session.sources.filter((source) => source?.url) : [];
+  const requestedSource = sessionSources.find((source) => source.id === String(message.sourceId || lineKey));
+  const recommendedSource = sessionSources.find((source) => source.id === session?.decision?.recommendedSourceId);
+  if (requestedSource) return { url: absoluteUrl(requestedSource.url), lineKey: requestedSource.id, source: requestedSource };
+  if (lineKey === "auto" && recommendedSource) {
+    return { url: absoluteUrl(recommendedSource.url), lineKey: recommendedSource.id, source: recommendedSource };
+  }
   const play = absoluteUrl(detail.play_link || summary.playLink || "");
   const backup = absoluteUrl(detail.backup_link || summary.backupLink || "");
   if (lineKey === "play" || lineKey === "main" || lineKey === "primary") {
@@ -1574,13 +1752,35 @@ function localLedgerBlockingEntry(state, movieId) {
 
 async function writeLocalLedger(movieId, accountId, patch) {
   const fresh = await getStateInternal();
-  const key = `${movieId}:${accountId}`;
-  const previous = fresh.localPurchaseLedger?.[key] || {};
+  const entries = Object.entries(fresh.localPurchaseLedger || {});
+  let key = "";
+  let previous = {};
+  if (patch.attemptId) {
+    const hit = entries.find(([, row]) => row?.attemptId === patch.attemptId);
+    if (hit) [key, previous] = hit;
+  }
+  if (!key && patch.status !== "pending") {
+    const hit = entries
+      .filter(([, row]) => String(row?.movieId) === String(movieId) && String(row?.accountId) === String(accountId))
+      .sort((left, right) => Date.parse(right[1]?.updatedAt || "") - Date.parse(left[1]?.updatedAt || ""))[0];
+    if (hit) [key, previous] = hit;
+  }
+  const attemptId = String(patch.attemptId || previous.attemptId || crypto.randomUUID());
+  key ||= attemptId;
+  const allowed = {
+    pending: ["charged", "failed_before_charge", "uncertain"],
+    charged: ["resolved", "uncertain"],
+    uncertain: ["resolved", "uncertain"]
+  };
+  if (previous.status && patch.status !== previous.status && !(allowed[previous.status] || []).includes(patch.status)) {
+    throw new Error(`非法本地购买账本迁移：${previous.status} → ${patch.status}`);
+  }
   fresh.localPurchaseLedger = {
     ...(fresh.localPurchaseLedger || {}),
     [key]: {
       ...previous,
       ...patch,
+      attemptId,
       movieId,
       accountId,
       createdAt: previous.createdAt || nowIso(),
@@ -1589,6 +1789,29 @@ async function writeLocalLedger(movieId, accountId, patch) {
   };
   await saveState(fresh);
   return fresh.localPurchaseLedger[key];
+}
+
+async function expireStaleLocalLedger(state, movieId = "") {
+  let changed = false;
+  const now = Date.now();
+  const next = { ...(state.localPurchaseLedger || {}) };
+  for (const [key, row] of Object.entries(next)) {
+    if (row?.status !== "pending" || (movieId && String(row.movieId) !== String(movieId))) continue;
+    const updatedAt = Date.parse(row.updatedAt || row.createdAt || "");
+    if (!Number.isFinite(updatedAt) || now - updatedAt <= 90_000) continue;
+    next[key] = {
+      ...row,
+      status: "uncertain",
+      error: row.error || "pending 超过 90 秒，扣费结果需要原账号对账",
+      updatedAt: nowIso()
+    };
+    changed = true;
+  }
+  if (changed) {
+    state.localPurchaseLedger = next;
+    await saveState(state);
+  }
+  return state;
 }
 
 async function ensurePlaybackSessionCompleteness(session = null) {
@@ -1696,7 +1919,7 @@ async function reconcileLocalPurchase(message, blocking, errors) {
   const state = await getStateInternal();
   const account = (state.accountPool || []).find((item) => item.id === blocking.accountId);
   if (!account) throw playbackBusinessError("本地购买账本对应账号不存在，需要人工核对", "PURCHASE_RECONCILIATION_REQUIRED", 409);
-  if (blocking.status === "pending" && localPurchaseLocks.has(String(message.movieId))) {
+  if (blocking.status === "pending") {
     throw playbackBusinessError("该视频正在解锁，请稍后重试", "PURCHASE_IN_PROGRESS", 409);
   }
   if (blocking.status === "resolved" && playableDetailReady(blocking.detail)) {
@@ -1719,8 +1942,7 @@ async function reconcileLocalPurchase(message, blocking, errors) {
     const verified = await updateAccountSession(account.id, message.bootstrapSession || message.session || null);
     const detail = normalizeFullDetail(await apiRequest("/movie/detail", { id: message.movieId }, verified.session));
     if (!playableDetailReady(detail)) throw new Error("原购买账号尚未返回可播放线路");
-    await writeLocalLedger(message.movieId, account.id, { status: "resolved", detail, error: "" });
-    return finishPlaybackSession({
+    const playbackResult = await finishPlaybackSession({
       movieId: message.movieId,
       movieTitle: message.movieTitle,
       requestId: message.requestId,
@@ -1734,8 +1956,14 @@ async function reconcileLocalPurchase(message, blocking, errors) {
         purchase: { status: "resolved", accountId: account.id, price: Number(blocking.price || 0) }
       }
     });
+    if (blocking.status !== "resolved") {
+      await writeLocalLedger(message.movieId, account.id, { attemptId: blocking.attemptId, status: "resolved", detail, error: "" });
+    }
+    return playbackResult;
   } catch (error) {
-    await writeLocalLedger(message.movieId, account.id, { status: "uncertain", error: error?.message || String(error) });
+    if (blocking.status !== "resolved") {
+      await writeLocalLedger(message.movieId, account.id, { attemptId: blocking.attemptId, status: "uncertain", error: error?.message || String(error) });
+    }
     throw playbackBusinessError("该视频存在已扣费或待核对记录，已阻止再次购买", "PURCHASE_RECONCILIATION_REQUIRED", 409);
   }
 }
@@ -1800,7 +2028,7 @@ async function createPlaybackSession(message = {}) {
       }
     }
 
-    state = await getStateInternal();
+    state = await expireStaleLocalLedger(await getStateInternal(), movieId);
     const cached = Object.values(state.fullDetailCache || {}).find((row) => (
       row?.detail
       && String(row?.summary?.movieId || row?.summary?.session?.movieId || "") === movieId
@@ -1827,18 +2055,23 @@ async function createPlaybackSession(message = {}) {
 
     const errors = [];
     const lockedCandidates = [];
+    let potentialEntitlementFound = false;
     for (const candidate of candidates) {
       try {
         const verified = await updateAccountSession(candidate.id, message.bootstrapSession || message.session || null);
         const latest = await getStateInternal();
         const account = latest.accountPool.find((item) => item.id === candidate.id) || candidate;
-        const detail = normalizeFullDetail(await apiRequest("/movie/detail", { id: movieId }, verified.session));
-        if (isLockedCoinVideo(detail)) {
+        const rawDetail = await apiRequest("/movie/detail", { id: movieId }, verified.session);
+        const detail = normalizeFullDetail(rawDetail);
+        if (isLockedCoinVideo(rawDetail)) {
           lockedCandidates.push({ account, session: verified.session, detail });
           continue;
         }
-        if (!playableDetailReady(detail)) throw new Error("播放详情未返回可播放链接");
-        return finishPlaybackSession({
+        if (!playableDetailReady(detail)) {
+          potentialEntitlementFound ||= hasPotentialPlaybackEntitlement(rawDetail);
+          throw new Error("发现疑似播放权益字段，但尚未确认可播放媒体");
+        }
+        return await finishPlaybackSession({
           movieId,
           movieTitle,
           ...requestContext,
@@ -1847,10 +2080,11 @@ async function createPlaybackSession(message = {}) {
           acquisition: { mode: "direct", attempts: errors.length + 1, failed: errors }
         });
       } catch (error) {
+        potentialEntitlementFound ||= error?.preventPurchase === true;
         errors.push({ accountId: candidate.id, label: candidate.label, stage: "detail", message: error?.message || String(error) });
       }
     }
-    if (!lockedCandidates.length) throw playbackBusinessError("所有本地账号均未取得可播放线路", "PLAYBACK_UNAVAILABLE", 502);
+    if (!lockedCandidates.length || potentialEntitlementFound) throw playbackBusinessError("所有本地账号均未取得可播放线路", "PLAYBACK_UNAVAILABLE", 502);
 
     state = await getStateInternal();
     const blocking = localLedgerBlockingEntry(state, movieId);
@@ -1859,7 +2093,7 @@ async function createPlaybackSession(message = {}) {
 
     localPurchaseLocks.add(movieId);
     try {
-      const afterLockState = await getStateInternal();
+      const afterLockState = await expireStaleLocalLedger(await getStateInternal(), movieId);
       const racedBlocking = localLedgerBlockingEntry(afterLockState, movieId);
       if (racedBlocking) return reconcileLocalPurchase({ ...message, movieId, movieTitle }, racedBlocking, errors);
       const ordered = lowestCoinRandomOrder(lockedCandidates.map((entry) => entry.account))
@@ -1867,28 +2101,29 @@ async function createPlaybackSession(message = {}) {
         .filter(Boolean);
       for (const item of ordered) {
         const price = Number(item.detail?.money || 0);
-        await writeLocalLedger(movieId, item.account.id, { requestId, status: "pending", price, error: "" });
+        const attempt = await writeLocalLedger(movieId, item.account.id, { requestId, status: "pending", price, error: "" });
         try {
           await apiRequest("/movie/doBuy", { id: movieId }, item.session);
         } catch (error) {
           if (confirmedBeforeChargeFailure(error)) {
             errors.push({ accountId: item.account.id, label: item.account.label, stage: "buy_before_charge", message: error?.message || String(error) });
-            await writeLocalLedger(movieId, item.account.id, { status: "failed_before_charge", error: error?.message || String(error) });
+            await writeLocalLedger(movieId, item.account.id, { attemptId: attempt.attemptId, status: "failed_before_charge", error: error?.message || String(error) });
             continue;
           }
-          await writeLocalLedger(movieId, item.account.id, { status: "uncertain", error: error?.message || String(error) });
+          await writeLocalLedger(movieId, item.account.id, { attemptId: attempt.attemptId, status: "uncertain", error: error?.message || String(error) });
           throw playbackBusinessError("购买请求结果不确定，已阻止再次扣费", "PURCHASE_RECONCILIATION_REQUIRED", 409);
         }
-        await writeLocalLedger(movieId, item.account.id, { status: "charged", error: "" });
+        await writeLocalLedger(movieId, item.account.id, { attemptId: attempt.attemptId, status: "charged", error: "" });
+        let purchasedDetail;
+        let playbackResult;
         try {
-          const detail = normalizeFullDetail(await apiRequest("/movie/detail", { id: movieId }, item.session));
-          if (isLockedCoinVideo(detail) || !playableDetailReady(detail)) throw new Error("扣费后尚未取得可播放线路");
-          await writeLocalLedger(movieId, item.account.id, { status: "resolved", detail, error: "" });
-          return finishPlaybackSession({
+          purchasedDetail = normalizeFullDetail(await apiRequest("/movie/detail", { id: movieId }, item.session));
+          if (isLockedCoinVideo(purchasedDetail) || !playableDetailReady(purchasedDetail)) throw new Error("扣费后尚未取得可播放线路");
+          playbackResult = await finishPlaybackSession({
             movieId,
             movieTitle,
             ...requestContext,
-            detail,
+            detail: purchasedDetail,
             account: item.account,
             acquisition: {
               mode: "purchased",
@@ -1897,10 +2132,13 @@ async function createPlaybackSession(message = {}) {
               purchase: { status: "resolved", accountId: item.account.id, price }
             }
           });
+          await writeLocalLedger(movieId, item.account.id, { attemptId: attempt.attemptId, status: "resolved", detail: purchasedDetail, error: "" });
         } catch (error) {
-          await writeLocalLedger(movieId, item.account.id, { status: "uncertain", error: error?.message || String(error) });
+          await writeLocalLedger(movieId, item.account.id, { attemptId: attempt.attemptId, status: "uncertain", error: error?.message || String(error) });
           throw playbackBusinessError("已完成扣费但详情需要核对，已阻止二次购买", "PURCHASE_RECONCILIATION_REQUIRED", 409);
         }
+        // resolved 是终态；会话与账本都已确认后，后续不得回退为 uncertain。
+        return playbackResult;
       }
       throw playbackBusinessError("没有本地账号能够完成视频解锁", "PLAYBACK_UNAVAILABLE", 502);
     } finally {
@@ -1953,7 +2191,7 @@ function upsertFullDetailList(list = [], summary = {}) {
   return [...prev, summary].slice(-80);
 }
 
-async function downloadFullVideo(message = {}) {
+async function prepareDownloadSource(message = {}) {
   const movieId = String(message.movieId || message.id || "").trim();
   if (!movieId) throw new Error("缺少视频编号 movieId");
   const full = await getFullDetail(message);
@@ -1969,7 +2207,7 @@ async function downloadFullVideo(message = {}) {
     fullStat: latestSummary.fullStat || full.summary?.fullStat || null,
     backupStat: latestSummary.backupStat || full.summary?.backupStat || null
   };
-  const picked = resolveDownloadLink(detail, summary, message);
+  const picked = resolveDownloadLink(detail, summary, message, full.session);
   const link = picked.url || "";
   if (!link) throw new Error("播放详情没有返回可下载播放链接");
   const url = absoluteUrl(link);
@@ -1977,15 +2215,80 @@ async function downloadFullVideo(message = {}) {
   const ext = linkExtension(url);
   const title = displayMovieTitle(detail, summary, message.title || message.movieTitle || "");
   const titleSnippet = downloadTitleSnippet(title, movieId);
-  const filename = downloadFileName(movieId, "mp4", title);
+  const protocol = String(picked.source?.protocol || "");
+  const mode = protocol === "progressive" || ext === "mp4" ? "progressive-opfs" : "hls-opfs";
+  const filename = downloadFileName(movieId, String(message.container || "mp4") === "ts" ? "ts" : "mp4", title);
   const taskId = downloadTaskId(movieId);
+  return {
+    movieId,
+    full,
+    detail,
+    summary,
+    picked,
+    url,
+    lineKey,
+    ext,
+    title,
+    titleSnippet,
+    mode,
+    filename,
+    taskId
+  };
+}
+
+async function planFullVideoDownload(message = {}) {
+  const source = await prepareDownloadSource(message);
+  await ensureOffscreenDocument();
+  const result = await chrome.runtime.sendMessage({
+    type: "offscreenPlanDownload",
+    taskId: `${source.taskId}_plan`,
+    movieId: source.movieId,
+    url: source.url,
+    mode: source.mode,
+    networkMode: String(message.networkMode || "balanced"),
+    qualityHeight: Number(message.qualityHeight || 0),
+    viewportHeight: Number(message.viewportHeight || 720),
+    durationSeconds: Number(source.picked.source?.media?.durationSeconds || 0)
+  });
+  if (result?.ok === false) throw new Error(result.error || "下载规划失败");
+  return {
+    ok: true,
+    movieId: source.movieId,
+    movieTitle: source.title,
+    taskId: source.taskId,
+    lineKey: source.lineKey,
+    mode: source.mode,
+    filename: source.filename,
+    source: {
+      id: source.picked.source?.id || source.lineKey,
+      label: source.picked.source?.label || source.lineKey,
+      protocol: source.picked.source?.protocol || (source.mode === "progressive-opfs" ? "progressive" : "hls"),
+      media: source.picked.source?.media || null
+    },
+    sources: (source.full.session?.sources || []).filter((item) => item?.url).map((item) => ({
+      id: item.id,
+      label: item.label,
+      role: item.role,
+      protocol: item.protocol,
+      health: item.health,
+      media: item.media
+    })),
+    plan: result.plan
+  };
+}
+
+async function downloadFullVideo(message = {}) {
+  const source = await prepareDownloadSource(message);
+  const {
+    movieId, summary, url, lineKey, title, titleSnippet, mode, filename, taskId
+  } = source;
   const existingState = await getStateInternal();
   const existingTask = existingState.downloadTasks?.[taskId];
-  if (isDownloadRunning(existingTask)) {
+  if (isDownloadRunning(existingTask) || normalizeDownloadStage(existingTask?.stage) === "paused") {
     return {
       ok: true,
       reused: true,
-      mode: existingTask.mode || (ext === "mp4" ? "direct" : "m3u8-merged-ts"),
+      mode: existingTask.mode || mode,
       url: existingTask.url || url,
       filename: existingTask.filename || filename,
       taskId,
@@ -1994,38 +2297,32 @@ async function downloadFullVideo(message = {}) {
       state: sanitizeState(existingState)
     };
   }
-  existingState.downloadDeletedTaskIds = (existingState.downloadDeletedTaskIds || []).filter((id) => id !== taskId);
-  await saveState(existingState);
-  if (ext === "mp4") {
-    const ready = await getStateInternal();
-    ready.downloadDeletedTaskIds = (ready.downloadDeletedTaskIds || []).filter((id) => id !== taskId);
-    ready.downloadTasks = {
-      ...(ready.downloadTasks || {}),
-      [taskId]: {
-        ...(ready.downloadTasks?.[taskId] || {}),
-        taskId,
-        movieId,
-        movieTitle: title,
-        titleSnippet,
-        mode: "direct",
-        stage: "ready",
-        current: 1,
-        total: 1,
-        percent: 100,
-        bytes: 0,
-        totalBytes: 0,
-        speedBps: 0,
-        lineKey,
-        filename,
-        url,
-        objectReady: true,
-        updatedAt: nowIso()
-      }
-    };
-    await saveState(ready);
-    return { ok: true, mode: "direct", ready: true, url, filename, taskId, lineKey, summary, state: sanitizeState(ready) };
-  }
   await ensureOffscreenDocument();
+  const planResult = await chrome.runtime.sendMessage({
+    type: "offscreenPlanDownload",
+    taskId: `${taskId}_plan`,
+    movieId,
+    url,
+    mode,
+    networkMode: String(message.networkMode || "balanced"),
+    qualityHeight: Number(message.qualityHeight || 0),
+    viewportHeight: Number(message.viewportHeight || 720),
+    durationSeconds: Number(source.picked.source?.media?.durationSeconds || 0)
+  });
+  if (planResult?.ok === false) throw new Error(planResult.error || "下载规划失败");
+  if (planResult?.plan?.blockedReason) throw new Error(planResult.plan.blockedReason);
+  const requestedContainer = String(message.container || "mp4") === "ts" ? "ts" : "mp4";
+  if (Array.isArray(planResult?.plan?.compatibleContainers) && !planResult.plan.compatibleContainers.includes(requestedContainer)) {
+    throw new Error(`所选片源不支持 ${requestedContainer.toUpperCase()} 容器`);
+  }
+  if (existingTask?.attemptId) {
+    await chrome.runtime.sendMessage({
+      type: "offscreenDeleteDownloadTask",
+      taskId,
+      attemptId: existingTask.attemptId
+    }).catch(() => {});
+  }
+  const attemptId = downloadAttemptId();
   const queued = await getStateInternal();
   queued.downloadDeletedTaskIds = (queued.downloadDeletedTaskIds || []).filter((id) => id !== taskId);
   queued.downloadTasks = {
@@ -2036,7 +2333,9 @@ async function downloadFullVideo(message = {}) {
       movieId,
       movieTitle: title,
       titleSnippet,
-      mode: "m3u8-merged-ts",
+      mode,
+      attemptId,
+      sequence: 0,
       stage: "queued",
       current: 0,
       total: 0,
@@ -2047,79 +2346,104 @@ async function downloadFullVideo(message = {}) {
       lineKey,
       filename,
       url,
+      container: requestedContainer,
+      networkMode: String(message.networkMode || "balanced"),
+      qualityHeight: Number(message.qualityHeight || 0),
+      plan: planResult.plan || null,
+      objectReady: false,
+      error: "",
       updatedAt: nowIso()
     }
   };
   await saveState(queued);
-  chrome.runtime.sendMessage({
-    type: "offscreenDownloadM3u8",
+  const startResult = await chrome.runtime.sendMessage({
+    type: mode === "progressive-opfs" ? "offscreenDownloadProgressive" : "offscreenDownloadM3u8",
     taskId,
+    attemptId,
+    sequence: 0,
     movieId,
     movieTitle: title,
     titleSnippet,
     url,
     filename,
     lineKey,
-    saveAs: false
-  }).then(async (result) => {
-    if (result?.ok === false) throw new Error(result.error || "视频下载失败");
-    if (result?.started) return;
-  }).catch(async (err) => {
-    const failed = await getStateInternal();
-    failed.downloadTasks = {
-      ...(failed.downloadTasks || {}),
-      [taskId]: {
-        ...(failed.downloadTasks?.[taskId] || {}),
-        taskId,
-        movieId,
-        movieTitle: title,
-        titleSnippet,
-        mode: "m3u8-merged-ts",
-        stage: "error",
-        filename,
-        url,
-        lineKey,
-        error: err?.message || String(err),
-        updatedAt: nowIso()
-      }
-    };
-    await saveState(failed);
+    mode,
+    container: requestedContainer,
+    networkMode: String(message.networkMode || "balanced"),
+    qualityHeight: Number(message.qualityHeight || 0),
+    viewportHeight: Number(message.viewportHeight || 720),
+    estimatedBytes: Number(planResult?.plan?.estimatedBytes || 0)
   });
-  return { ok: true, mode: "m3u8-merged-ts", queued: true, url, filename, taskId, lineKey, summary, state: sanitizeState(queued) };
+  if (startResult?.ok === false) {
+    await recordDownloadProgress({
+      taskId,
+      attemptId,
+      sequence: 1,
+      movieId,
+      mode,
+      stage: "error",
+      filename,
+      url,
+      lineKey,
+      error: startResult.error || "视频下载启动失败"
+    }, true);
+    throw new Error(startResult.error || "视频下载启动失败");
+  }
+  return {
+    ok: true,
+    mode,
+    queued: true,
+    url,
+    filename,
+    taskId,
+    attemptId,
+    lineKey,
+    plan: planResult.plan,
+    summary,
+    state: sanitizeState(queued)
+  };
 }
 
-async function recordDownloadProgress(message = {}) {
+async function applyDownloadProgress(message = {}) {
   const state = await getStateInternal();
   const taskId = String(message.taskId || "");
   if (!taskId) return { ok: true };
   if ((state.downloadDeletedTaskIds || []).includes(taskId)) return { ok: true, ignored: true };
+  const existing = state.downloadTasks?.[taskId];
+  // 进度只能更新后台已经创建的任务；未知任务一律忽略，避免清空后被离屏页重新写回。
+  const validation = stateMutationCore.validateDownloadEvent(existing, message, state.downloadDeletedTaskIds || []);
+  if (!validation.accepted) return { ok: true, ignored: true, reason: validation.reason };
+  const attemptId = String(message.attemptId || "");
+  const sequence = validation.sequence;
+  const stage = validation.stage;
   state.downloadTasks = {
     ...(state.downloadTasks || {}),
     [taskId]: {
-      ...(state.downloadTasks?.[taskId] || {}),
-      type: "offscreenDownloadM3u8",
+      ...existing,
+      type: message.mode === "progressive-opfs" ? "offscreenDownloadProgressive" : "offscreenDownloadM3u8",
       taskId,
-      movieId: String(message.movieId || state.downloadTasks?.[taskId]?.movieId || ""),
-      mode: String(message.mode || state.downloadTasks?.[taskId]?.mode || "m3u8-merged-ts"),
-      stage: message.stage || "",
-      current: Number(message.current || 0),
-      total: Number(message.total || 0),
-      movieTitle: String(message.movieTitle || state.downloadTasks?.[taskId]?.movieTitle || ""),
-      titleSnippet: String(message.titleSnippet || state.downloadTasks?.[taskId]?.titleSnippet || ""),
-      filename: String(message.filename || state.downloadTasks?.[taskId]?.filename || ""),
-      url: String(message.url || state.downloadTasks?.[taskId]?.url || ""),
-      error: String(message.error || ""),
-      downloadId: message.downloadId || state.downloadTasks?.[taskId]?.downloadId || null,
-      // 注意：?? 与 || 不能直接混用，否则 Service Worker 语法错误直接无法联网。
-      bytes: Number(message.bytes ?? state.downloadTasks?.[taskId]?.bytes ?? 0),
-      totalBytes: Number(message.totalBytes ?? state.downloadTasks?.[taskId]?.totalBytes ?? 0),
-      speedBps: Number(message.speedBps ?? state.downloadTasks?.[taskId]?.speedBps ?? 0),
-      percent: Number(message.percent ?? state.downloadTasks?.[taskId]?.percent ?? 0),
-      lineKey: String(message.lineKey || state.downloadTasks?.[taskId]?.lineKey || ""),
-      objectReady: message.stage === "ready" || Boolean(message.objectReady || state.downloadTasks?.[taskId]?.objectReady),
-      saveVia: String(message.saveVia || state.downloadTasks?.[taskId]?.saveVia || ""),
-      format: String(message.format || state.downloadTasks?.[taskId]?.format || ""),
-      transmuxError: String(message.transmuxError || state.downloadTasks?.[taskId]?.transmuxError || ""),
+      attemptId,
+      sequence,
+      movieId: String(message.movieId || existing.movieId || ""),
+      mode: String(message.mode || existing.mode || "hls-opfs"),
+      stage,
+      current: Math.max(Number(existing.current || 0), Number(message.current || 0)),
+      total: Math.max(Number(existing.total || 0), Number(message.total || 0)),
+      movieTitle: String(message.movieTitle || existing.movieTitle || ""),
+      titleSnippet: String(message.titleSnippet || existing.titleSnippet || ""),
+      filename: String(message.filename || existing.filename || ""),
+      url: String(message.url || existing.url || ""),
+      error: stage === "error" ? String(message.error || existing.error || "下载失败") : "",
+      downloadId: message.downloadId || existing.downloadId || null,
+      bytes: Math.max(Number(existing.bytes || 0), Number(message.bytes ?? 0)),
+      totalBytes: Math.max(Number(existing.totalBytes || 0), Number(message.totalBytes ?? 0)),
+      speedBps: Number(message.speedBps ?? existing.speedBps ?? 0),
+      percent: Math.max(Number(existing.percent || 0), Number(message.percent ?? 0)),
+      lineKey: String(message.lineKey || existing.lineKey || ""),
+      objectReady: ["ready", "complete"].includes(stage) && Boolean(message.objectReady ?? true),
+      saveVia: String(message.saveVia || existing.saveVia || ""),
+      format: String(message.format || existing.format || ""),
+      transmuxError: String(message.transmuxError || existing.transmuxError || ""),
       updatedAt: nowIso()
     }
   };
@@ -2130,69 +2454,278 @@ async function recordDownloadProgress(message = {}) {
   return { ok: true };
 }
 
+async function recordDownloadProgress(message = {}, force = false) {
+  const taskId = String(message.taskId || "");
+  if (!taskId) return { ok: true };
+  const sequence = Number(message.sequence || 0);
+  const buffered = downloadProgressBuffer.get(taskId);
+  if (stateMutationCore.bufferedDownloadEventIsStale(buffered, message)) return { ok: true, ignored: true };
+  const stage = normalizeDownloadStage(message.stage);
+  const attemptId = String(message.attemptId || "");
+  const stageChanged = stateMutationCore.downloadEventStageChanged(downloadObservedStage.get(taskId), { ...message, stage });
+  const immediate = force || stageChanged || ["paused", "ready", "complete", "cancelled", "stale", "error"].includes(stage);
+  if (immediate) {
+    const result = await applyDownloadProgress({ ...message, stage });
+    if (!result?.ignored) {
+      const timer = downloadProgressTimers.get(taskId);
+      if (timer) clearTimeout(timer);
+      downloadProgressTimers.delete(taskId);
+      downloadProgressBuffer.delete(taskId);
+      downloadObservedStage.set(taskId, { attemptId, stage });
+    }
+    return result;
+  }
+  downloadProgressBuffer.set(taskId, { ...message, stage });
+  downloadObservedStage.set(taskId, { attemptId, stage });
+  if (!downloadProgressTimers.has(taskId)) {
+    downloadProgressTimers.set(taskId, setTimeout(() => {
+      downloadProgressTimers.delete(taskId);
+      const latest = downloadProgressBuffer.get(taskId);
+      downloadProgressBuffer.delete(taskId);
+      if (latest) applyDownloadProgress(latest).catch(() => {});
+    }, 1000));
+  }
+  return { ok: true, buffered: true };
+}
+
+function saveTokenStorageKey(token) {
+  return `txzzSaveToken_${token}`;
+}
+
+function saveTokenStorageArea() {
+  return chrome.storage.session || chrome.storage.local;
+}
+
+function saveTokenClaimant(sender = {}) {
+  return String(sender.tab?.id ?? sender.documentId ?? "unknown");
+}
+
+function saveTokenClaimantTabId(sender = {}) {
+  const tabId = Number(sender.tab?.id);
+  return Number.isInteger(tabId) && tabId >= 0 ? tabId : null;
+}
+
+async function saveTokenPreviousClaimIsActive(record = {}) {
+  const tabId = Number(record.claimedTabId);
+  if (!Number.isInteger(tabId) || tabId < 0 || !chrome.tabs?.get) {
+    // 旧记录缺少 tab id 时无法安全证明领取者已离开，因此保持单标签阻断。
+    return Boolean(record.claimedBy);
+  }
+  try {
+    await chrome.tabs.get(tabId);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function createSavePageToken(payload) {
+  const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
+  const record = {
+    ...payload,
+    token,
+    status: "issued",
+    createdAt: Date.now(),
+    expiresAt: Date.now() + 10 * 60 * 1000,
+    claimedBy: "",
+    claimedTabId: null
+  };
+  saveTokens.set(token, record);
+  await saveTokenStorageArea().set({ [saveTokenStorageKey(token)]: record });
+  await chrome.tabs.create({ url: chrome.runtime.getURL(`save.html#token=${encodeURIComponent(token)}`), active: true });
+  return record;
+}
+
+async function claimSavePageToken(token, sender = {}) {
+  const claimTask = saveTokenMutationQueue.then(async () => {
+    const key = saveTokenStorageKey(token);
+    const stored = await saveTokenStorageArea().get(key);
+    const record = saveTokens.get(token) || stored[key];
+    if (!record || record.expiresAt <= Date.now()) {
+      await saveTokenStorageArea().remove(key);
+      saveTokens.delete(token);
+      throw new Error("保存令牌不存在或已过期，请返回插件重新点击保存");
+    }
+    const claimant = saveTokenClaimant(sender);
+    const previousClaimantActive = record.claimedBy && record.claimedBy !== claimant
+      ? await saveTokenPreviousClaimIsActive(record)
+      : false;
+    if (!stateMutationCore.canTakeSaveTokenClaim(record, claimant, previousClaimantActive)) {
+      throw new Error("该保存令牌已被另一个仍打开的标签领取");
+    }
+    const transferring = Boolean(record.claimedBy && record.claimedBy !== claimant);
+    const claimed = {
+      ...record,
+      status: "claimed",
+      claimedBy: claimant,
+      claimedTabId: saveTokenClaimantTabId(sender),
+      claimedAt: transferring ? Date.now() : record.claimedAt || Date.now()
+    };
+    saveTokens.set(token, claimed);
+    await saveTokenStorageArea().set({ [key]: claimed });
+    return {
+      ok: true,
+      token: claimed.token,
+      kind: claimed.kind,
+      taskId: claimed.taskId || "",
+      attemptId: claimed.attemptId || "",
+      artifact: claimed.artifact,
+      expectedSize: Number(claimed.expectedSize || claimed.artifact?.bytes || 0),
+      expectedSha256: String(claimed.expectedSha256 || ""),
+      filename: String(claimed.filename || claimed.artifact?.filename || "")
+    };
+  });
+  saveTokenMutationQueue = claimTask.catch(() => {});
+  return claimTask;
+}
+
+async function completeSavePageToken(token, sender = {}, result = {}) {
+  const completeTask = saveTokenMutationQueue.then(async () => {
+    const key = saveTokenStorageKey(token);
+    const stored = await saveTokenStorageArea().get(key);
+    const record = saveTokens.get(token) || stored[key];
+    if (!record || record.expiresAt <= Date.now()) throw new Error("保存令牌已失效，请返回插件重新打开保存页");
+    if (record.claimedBy !== saveTokenClaimant(sender)) throw new Error("当前标签没有领取该保存令牌");
+    if (result.saved !== true) throw new Error("浏览器尚未确认文件保存，保存票不会被核销");
+    if (record.kind === "video" && record.taskId) {
+      const state = await getStateInternal();
+      const task = state.downloadTasks?.[record.taskId];
+      if (task && task.attemptId === record.attemptId) {
+        state.downloadTasks = {
+          ...(state.downloadTasks || {}),
+          [record.taskId]: {
+            ...task,
+            stage: "complete",
+            saveVia: "extension-save-page",
+            savedAt: nowIso(),
+            updatedAt: nowIso()
+          }
+        };
+        await saveState(state);
+      }
+    }
+    if (record.kind === "crx" && record.completionResult) {
+      await recordRepositoryArchiveDownload({
+        ...record.completionResult,
+        ok: true,
+        downloadState: "submitted",
+        downloadPhase: "submitted",
+        downloadStatus: "已通过扩展安全保存页提交完整校验后的 CRX3",
+        saveVia: "extension-save-page",
+        downloadSubmittedAt: nowIso()
+      });
+    }
+    // 业务状态成功落盘后才删除令牌；如果状态持久化失败，原标签仍可重试确认。
+    saveTokens.delete(token);
+    await saveTokenStorageArea().remove(key);
+    return { ok: true, saved: Boolean(result.saved), kind: record.kind };
+  });
+  saveTokenMutationQueue = completeTask.catch(() => {});
+  return completeTask;
+}
+
 async function saveDownloadToDevice(taskId = "") {
   const state = await getStateInternal();
   const task = state.downloadTasks?.[taskId];
   if (!task) throw new Error("未找到下载任务");
   if (task.stage === "error") throw new Error(task.error || "该任务失败，不能保存");
-  if (isDownloadRunning(task)) throw new Error("任务仍在下载或合并中，请等待显示可保存后再操作");
-  if (task.mode === "direct") {
-    const downloadId = await chrome.downloads.download({ url: task.url, filename: task.filename || undefined, saveAs: true });
-    const fresh = await getStateInternal();
+  if (task.stage !== "saving" && isDownloadRunning(task)) throw new Error("任务仍在下载或合并中，请等待显示可保存后再操作");
+  if (!isDownloadReady(task) || !task.attemptId) throw new Error("下载成品尚未准备完成");
+  await ensureOffscreenDocument();
+  const result = await chrome.runtime.sendMessage({
+    type: "offscreenGetDownloadArtifact",
+    taskId,
+    attemptId: task.attemptId
+  });
+  if (result?.ok === false) throw new Error(result.error || "下载成品不存在，请恢复或重试任务");
+  await createSavePageToken({
+    kind: "video",
+    taskId,
+    attemptId: task.attemptId,
+    artifact: result.artifact,
+    expectedSize: result.artifact?.bytes,
+    filename: result.artifact?.filename
+  });
+  const fresh = await getStateInternal();
+  const current = fresh.downloadTasks?.[taskId];
+  if (current?.attemptId === task.attemptId) {
     fresh.downloadTasks = {
       ...(fresh.downloadTasks || {}),
-      [taskId]: {
-        ...(fresh.downloadTasks?.[taskId] || task),
-        stage: "complete",
-        downloadId,
-        objectReady: true,
-        updatedAt: nowIso()
-      }
+      [taskId]: { ...current, stage: "saving", updatedAt: nowIso() }
     };
     await saveState(fresh);
-    return { ok: true, downloadId, state: sanitizeState(fresh) };
   }
-  if (task.mode === "m3u8-merged-ts") {
-    await ensureOffscreenDocument();
-    const result = await chrome.runtime.sendMessage({
-      type: "offscreenSaveMergedDownload",
-      taskId,
-      url: task.url,
-      saveAs: false
+  return { ok: true, savePageOpened: true, state: sanitizeState(fresh) };
+}
+
+async function controlDownloadTask(taskId = "", action = "") {
+  const state = await getStateInternal();
+  const task = state.downloadTasks?.[taskId];
+  if (!task) throw new Error("未找到下载任务");
+  if (!task.attemptId) throw new Error("旧下载任务缺少恢复标识，请重新创建任务");
+  await ensureOffscreenDocument();
+  const messageType = {
+    pause: "offscreenPauseDownload",
+    resume: "offscreenResumeDownload",
+    cancel: "offscreenCancelDownload"
+  }[action];
+  if (!messageType) throw new Error(`未知下载控制动作：${action}`);
+  let result = await chrome.runtime.sendMessage({
+    type: messageType,
+    taskId,
+    attemptId: task.attemptId
+  });
+  if (action === "resume" && result?.ok === false) {
+    // 离屏页重启后内存控制器会消失；沿用 attemptId 从 OPFS 检查点恢复，而不是创建新任务。
+    result = await chrome.runtime.sendMessage({
+      ...task,
+      type: task.mode === "progressive-opfs" ? "offscreenDownloadProgressive" : "offscreenDownloadM3u8"
     });
-    if (result?.ok === false) throw new Error(result.error || "保存合并视频失败");
-    const fresh = await getStateInternal();
+  }
+  if (result?.ok === false) throw new Error(result.error || `下载任务${action}失败`);
+  const fresh = await getStateInternal();
+  const current = fresh.downloadTasks?.[taskId];
+  if (current?.attemptId === task.attemptId) {
+    const stage = action === "pause" ? "paused" : action === "resume" ? "recovering" : "cancelled";
     fresh.downloadTasks = {
       ...(fresh.downloadTasks || {}),
-      [taskId]: {
-        ...(fresh.downloadTasks?.[taskId] || task),
-        stage: "complete",
-        downloadId: result.downloadId || null,
-        bytes: result.bytes || task.bytes || 0,
-        current: result.segments || task.current || 0,
-        total: result.segments || task.total || 0,
-        saveVia: result.saveVia || "",
-        format: result.format || fresh.downloadTasks?.[taskId]?.format || "",
-        transmuxError: result.transmuxError || fresh.downloadTasks?.[taskId]?.transmuxError || "",
-        objectReady: true,
-        updatedAt: nowIso()
-      }
+      [taskId]: { ...current, stage, updatedAt: nowIso() }
     };
     await saveState(fresh);
-    return { ok: true, ...result, state: sanitizeState(fresh) };
   }
-  throw new Error(`未知下载模式：${task.mode || ""}`);
+  return { ok: true, action, state: sanitizeState(fresh) };
 }
 
 async function removeDownloadTask(taskId = "", movieId = "") {
   const state = await getStateInternal();
   const targetMovieId = String(movieId || state.downloadTasks?.[taskId]?.movieId || "");
   const deletedIds = new Set((state.downloadDeletedTaskIds || []).map(String));
+  const deleting = [];
   for (const [key, task] of Object.entries(state.downloadTasks || {})) {
     if (key === taskId || (targetMovieId && String(task.movieId || "") === targetMovieId)) {
       deletedIds.add(key);
-      delete state.downloadTasks[key];
-      chrome.runtime.sendMessage({ type: "offscreenDeleteDownloadTask", taskId: key }).catch(() => {});
+      deleting.push({ key, attemptId: String(task.attemptId || "") });
+    }
+  }
+  if (deleting.length) {
+    await ensureOffscreenDocument().catch(() => {});
+    for (const item of deleting) {
+      await chrome.runtime.sendMessage({
+        type: "offscreenCancelDownload",
+        taskId: item.key,
+        attemptId: item.attemptId
+      }).catch(() => {});
+      await chrome.runtime.sendMessage({
+        type: "offscreenDeleteDownloadTask",
+        taskId: item.key,
+        attemptId: item.attemptId
+      }).catch(() => {});
+      delete state.downloadTasks[item.key];
+      downloadProgressBuffer.delete(item.key);
+      downloadObservedStage.delete(item.key);
+      const timer = downloadProgressTimers.get(item.key);
+      if (timer) clearTimeout(timer);
+      downloadProgressTimers.delete(item.key);
     }
   }
   state.downloadDeletedTaskIds = Array.from(deletedIds).slice(-120);
@@ -2208,7 +2741,7 @@ async function saveDownloadSnapshot(label = "") {
     label: String(label || `下载记录 ${new Date().toLocaleString("zh-CN", { hour12: false })}`),
     savedAt: nowIso(),
     total: tasks.length,
-    running: tasks.filter((task) => ["queued", "playlist", "segments", "segment"].includes(String(task.stage || ""))).length,
+    running: tasks.filter((task) => isDownloadRunning(task)).length,
     completed: tasks.filter((task) => task.stage === "complete").length,
     failed: tasks.filter((task) => task.stage === "error").length,
     tasks: tasks.slice(-40).map((task) => ({
@@ -2233,6 +2766,31 @@ async function saveDownloadSnapshot(label = "") {
 
 async function clearDownloadTasks() {
   const state = await getStateInternal();
+  const tasks = Object.entries(state.downloadTasks || {});
+  if (tasks.length) {
+    await ensureOffscreenDocument().catch(() => {});
+    for (const [taskId, task] of tasks) {
+      await chrome.runtime.sendMessage({
+        type: "offscreenCancelDownload",
+        taskId,
+        attemptId: String(task.attemptId || "")
+      }).catch(() => {});
+      await chrome.runtime.sendMessage({
+        type: "offscreenDeleteDownloadTask",
+        taskId,
+        attemptId: String(task.attemptId || "")
+      }).catch(() => {});
+      downloadProgressBuffer.delete(taskId);
+      downloadObservedStage.delete(taskId);
+      const timer = downloadProgressTimers.get(taskId);
+      if (timer) clearTimeout(timer);
+      downloadProgressTimers.delete(taskId);
+    }
+  }
+  state.downloadDeletedTaskIds = [
+    ...(state.downloadDeletedTaskIds || []),
+    ...tasks.map(([taskId]) => taskId)
+  ].slice(-120);
   state.downloadTasks = {};
   await saveState(state);
   return { ok: true, state: sanitizeState(state) };
@@ -3372,62 +3930,26 @@ async function performRepositoryArchiveDownload(meta = {}) {
       const verifiedPackage = await fetchAndVerifyRepositoryPackage(url, manifest);
       const { bytes, packageProbe } = verifiedPackage;
       Object.assign(attemptRecord, { ok: true, phase: "validated", packageProbe });
-      const verifiedBase64 = toBase64(bytes);
-      let downloadApiError = "";
-
-      if (chrome.downloads?.download) {
-        try {
-          // downloads API 可以直接接收 data URL；字节来自刚刚完成全部校验的内存，
-          // 不会再次访问远程镜像，因此没有二次请求造成的 TOCTOU 替换窗口。
-          const verifiedDataUrl = `data:application/x-chrome-extension;base64,${verifiedBase64}`;
-          const downloadId = await chrome.downloads.download({
-            url: verifiedDataUrl,
-            filename,
-            // 用户主动点击更新时必须拉起保存对话框，不能只在后台静默创建编号。
-            saveAs: meta.saveAs !== false,
-            conflictAction: "uniquify"
-          });
-          if (!Number.isInteger(downloadId) || downloadId <= 0) throw new Error("浏览器未返回有效下载编号");
-          const result = {
-            ok: true,
-            downloadId,
-            downloadState: "submitted",
-            saveVia: "background-data-url",
-            filename,
-            url,
-            displayUrl,
-            candidates,
-            attempts,
-            manifestError,
-            update,
-            packageProbe,
-            packageProbeAttempts: [...packageProbeAttempts, { ...attemptRecord, phase: "submitted", downloadId }],
-            downloadPhase: "submitted",
-            downloadStatus: "已拉起浏览器并提交完整校验后的 CRX3",
-            downloadStartedAt,
-            downloadSubmittedAt: nowIso()
-          };
-          // 下载 ID 已取得后，即使本地状态持久化失败也绝不能换镜像重复提交。
-          try {
-            await recordRepositoryArchiveDownload(result);
-          } catch (stateError) {
-            result.statePersistenceError = stateError?.message || String(stateError);
-          }
-          return result;
-        } catch (error) {
-          downloadApiError = error?.message || String(error);
-        }
-      } else {
-        downloadApiError = "当前浏览器的扩展后台没有 downloads API";
-      }
-
-      // Kiwi、部分 Android Chromium 和某些离屏实现不会向扩展后台暴露 downloads API。
-      // 把同一份已验签字节交给当前 HTTPS 页面复核哈希后以 Blob 保存，避免退回未校验的远程直链。
-      return {
+      // 不再通过 data URL 或 runtime Base64 传输整个 CRX。离屏页按同一 URL 重新获取，
+      // 并用刚刚验证出的大小和 SHA-256 做第二次校验后写入 OPFS，消除消息尺寸和 TOCTOU 风险。
+      await ensureOffscreenDocument();
+      const crxTaskId = `txzz_crx_${safeFileName(update?.id || update?.version || "latest")}`;
+      const crxAttemptId = downloadAttemptId();
+      const stored = await chrome.runtime.sendMessage({
+        type: "offscreenStoreVerifiedCrx",
+        taskId: crxTaskId,
+        attemptId: crxAttemptId,
+        url,
+        filename: String(filename).split("/").filter(Boolean).pop() || "糖心志者最新版.crx",
+        expectedSize: bytes.length,
+        expectedSha256: packageProbe.sha256
+      });
+      if (stored?.ok === false) throw new Error(stored.error || "无法把已验证 CRX 写入 OPFS");
+      const result = {
         ok: true,
         downloadId: 0,
-        downloadState: "client-save-required",
-        saveVia: "content-blob-pending",
+        downloadState: "save-page-opened",
+        saveVia: "extension-save-page-pending",
         filename,
         url,
         displayUrl,
@@ -3436,19 +3958,28 @@ async function performRepositoryArchiveDownload(meta = {}) {
         manifestError,
         update,
         packageProbe,
-        packageProbeAttempts: [...packageProbeAttempts, { ...attemptRecord, phase: "client-save-required" }],
-        downloadPhase: "validating",
-        downloadStatus: "安装包已验证，正在通过当前页面拉起下载",
+        packageProbeAttempts: [...packageProbeAttempts, { ...attemptRecord, phase: "save-page-opened" }],
+        downloadPhase: "saving",
+        downloadStatus: "安装包已验证，请在扩展安全保存页点击保存",
         downloadStartedAt,
-        downloadApiError,
-        clientSave: {
-          base64: verifiedBase64,
-          expectedSize: bytes.length,
-          expectedSha256: packageProbe.sha256,
-          // HTML download 属性只接受文件名，不使用 downloads API 支持的子目录语义。
-          filename: String(filename).split("/").filter(Boolean).pop() || "糖心志者最新版.crx"
-        }
+        artifact: stored.artifact
       };
+      await createSavePageToken({
+        kind: "crx",
+        taskId: crxTaskId,
+        attemptId: crxAttemptId,
+        artifact: stored.artifact,
+        expectedSize: bytes.length,
+        expectedSha256: packageProbe.sha256,
+        filename: stored.artifact?.filename,
+        completionResult: result
+      });
+      try {
+        await recordRepositoryArchiveDownload(result);
+      } catch (stateError) {
+        result.statePersistenceError = stateError?.message || String(stateError);
+      }
+      return result;
     } catch (err) {
       const error = err?.message || String(err);
       errors.push(`${displayUrl}：${error}`);
@@ -3489,32 +4020,6 @@ async function performRepositoryArchiveDownload(meta = {}) {
     manifestError,
     update
   };
-}
-
-async function recordRepositoryArchiveClientSave(message = {}) {
-  const raw = message.result && typeof message.result === "object" ? message.result : {};
-  if (raw.ok !== true || raw.saveVia !== "content-blob" || raw.clientSave) {
-    throw new Error("页面下载确认数据无效");
-  }
-  const result = {
-    ok: true,
-    downloadId: 0,
-    downloadState: "submitted",
-    saveVia: "content-blob",
-    filename: String(raw.filename || ""),
-    url: String(raw.url || ""),
-    displayUrl: String(raw.displayUrl || ""),
-    candidates: Array.isArray(raw.candidates) ? raw.candidates : [],
-    attempts: Array.isArray(raw.attempts) ? raw.attempts : [],
-    packageProbe: raw.packageProbe && typeof raw.packageProbe === "object" ? raw.packageProbe : null,
-    packageProbeAttempts: Array.isArray(raw.packageProbeAttempts) ? raw.packageProbeAttempts : [],
-    downloadPhase: "submitted",
-    downloadStatus: "已通过当前页面提交完整校验后的 CRX3",
-    downloadStartedAt: String(raw.downloadStartedAt || ""),
-    downloadSubmittedAt: String(raw.downloadSubmittedAt || nowIso())
-  };
-  await recordRepositoryArchiveDownload(result);
-  return { ok: true, recorded: true };
 }
 
 async function downloadRepositoryArchive(meta = {}) {
@@ -3648,6 +4153,51 @@ async function removeAccount(accountId) {
   return { ok: true, state: sanitizeState(state) };
 }
 
+async function recoverPersistedDownloads() {
+  const state = await getStateInternal();
+  const recoveryPlan = stateMutationCore.planPersistedDownloadRecovery(state.downloadTasks || {});
+  if (!recoveryPlan.length) return { ok: true, recovered: 0 };
+  await ensureOffscreenDocument();
+  let recovered = 0;
+  for (const item of recoveryPlan) {
+    const task = item.task;
+    if (item.action === "stale") {
+      state.downloadTasks[task.taskId] = {
+        ...task,
+        stage: "stale",
+        error: "旧版任务没有恢复标识，请重新创建下载",
+        updatedAt: nowIso()
+      };
+      continue;
+    }
+    state.downloadTasks[task.taskId] = { ...task, stage: "recovering", updatedAt: nowIso() };
+    const result = await chrome.runtime.sendMessage({
+      ...task,
+      type: task.mode === "progressive-opfs" ? "offscreenDownloadProgressive" : "offscreenDownloadM3u8"
+    }).catch((error) => ({ ok: false, error: error?.message || String(error) }));
+    if (result?.ok === false) {
+      state.downloadTasks[task.taskId] = {
+        ...state.downloadTasks[task.taskId],
+        stage: "error",
+        error: result.error || "恢复下载失败",
+        updatedAt: nowIso()
+      };
+    } else {
+      recovered += 1;
+    }
+  }
+  await saveState(state);
+  return { ok: true, recovered };
+}
+
+chrome.runtime.onStartup?.addListener(() => {
+  recoverPersistedDownloads().catch(() => {});
+});
+
+chrome.runtime.onInstalled?.addListener(() => {
+  recoverPersistedDownloads().catch(() => {});
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     if (message?.type === "getState") {
@@ -3673,6 +4223,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse(await checkRemoteDiagnostics());
       return;
     }
+    if (message?.type === "listPurchaseReconciliation") {
+      sendResponse(await listPurchaseReconciliation());
+      return;
+    }
+    if (message?.type === "reconcilePurchaseRecord") {
+      sendResponse(await reconcilePurchaseRecord(message));
+      return;
+    }
     if (message?.type === "checkRepositoryUpdate") {
       sendResponse(await checkRepositoryUpdate({
         force: Boolean(message.force),
@@ -3687,10 +4245,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "downloadRepositoryArchive") {
       sendResponse(await downloadRepositoryArchive(message));
-      return;
-    }
-    if (message?.type === "recordRepositoryArchiveClientSave") {
-      sendResponse(await recordRepositoryArchiveClientSave(message));
       return;
     }
     if (message?.type === "uploadAccountToRemote") {
@@ -3756,6 +4310,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse(await createPlaybackSession(message));
       return;
     }
+    if (message?.type === "planFullVideoDownload") {
+      sendResponse(await planFullVideoDownload(message));
+      return;
+    }
     if (message?.type === "downloadFullVideo") {
       sendResponse(await downloadFullVideo(message));
       return;
@@ -3772,6 +4330,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse(await saveDownloadToDevice(String(message.taskId || "")));
       return;
     }
+    if (message?.type === "pauseDownloadTask") {
+      sendResponse(await controlDownloadTask(String(message.taskId || ""), "pause"));
+      return;
+    }
+    if (message?.type === "resumeDownloadTask") {
+      sendResponse(await controlDownloadTask(String(message.taskId || ""), "resume"));
+      return;
+    }
+    if (message?.type === "cancelDownloadTask") {
+      sendResponse(await controlDownloadTask(String(message.taskId || ""), "cancel"));
+      return;
+    }
     if (message?.type === "removeDownloadTask") {
       sendResponse(await removeDownloadTask(String(message.taskId || ""), String(message.movieId || "")));
       return;
@@ -3786,6 +4356,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "openDownloadFolder") {
       sendResponse(await openDownloadFolder());
+      return;
+    }
+    if (message?.type === "claimSavePageToken") {
+      sendResponse(await claimSavePageToken(String(message.token || ""), sender));
+      return;
+    }
+    if (message?.type === "completeSavePageToken") {
+      sendResponse(await completeSavePageToken(String(message.token || ""), sender, message.result || {}));
       return;
     }
     sendResponse({ ok: false, error: `unknown message: ${message?.type || ""}` });

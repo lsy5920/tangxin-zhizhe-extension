@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Clock3, Copy, Download, ExternalLink, Film, Footprints, Route, Save } from "lucide-react";
+import { Ban, Clock3, Copy, Download, ExternalLink, Film, Footprints, Pause, Play, Route, Save } from "lucide-react";
 import type { BridgeState, DownloadTask } from "../../types";
 import type { PlaybackSession } from "../../playback/types";
 import { formatDuration, maskUrl } from "../../helpers";
@@ -60,7 +60,7 @@ export function ScreeningDrawer({ state, session, history, onSelectHistory, onAc
                 <div className="mt-2 grid grid-cols-3 gap-1.5">
                   <button type="button" onClick={() => onAction(source.id === "backup" ? "copy-backup-link" : "copy-play-link", { url: source.url, label: `${source.label}完整链接` })} className="min-h-10 rounded-xl bg-white text-[10px] font-bold text-violet-600 shadow-sm"><Copy size={12} className="mr-1 inline" />复制</button>
                   <button type="button" onClick={() => onAction("open-playback-url", { url: source.url, label: source.label })} className="min-h-10 rounded-xl bg-white text-[10px] font-bold text-sky-600 shadow-sm"><ExternalLink size={12} className="mr-1 inline" />打开</button>
-                  <button type="button" onClick={() => onAction("download-full-video", { movieId: session.movieId, lineKey: source.id === "backup" ? "backup" : "play", url: source.url })} className="min-h-10 rounded-xl bg-violet-600 text-[10px] font-bold text-white shadow-sm"><Download size={12} className="mr-1 inline" />下载</button>
+                  <button type="button" onClick={() => onAction("plan-full-video-download", { movieId: session.movieId, sourceId: source.id })} className="min-h-10 rounded-xl bg-violet-600 text-[10px] font-bold text-white shadow-sm"><Download size={12} className="mr-1 inline" />规划下载</button>
                 </div>
               </article>
               );
@@ -75,10 +75,15 @@ export function ScreeningDrawer({ state, session, history, onSelectHistory, onAc
                 <div className="flex items-center justify-between"><strong className="text-[12px] text-slate-800">{task.movieTitle || session.title}</strong><span className="rounded-full bg-white px-2 py-1 text-[9px] font-bold text-violet-600">{task.stage || "准备中"}</span></div>
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-gradient-to-r from-fuchsia-400 to-violet-500" style={{ width: `${Math.max(0, Math.min(100, Number(task.percent || 0)))}%` }} /></div>
                 <p className="mt-2 text-[10px] text-slate-500">{Math.round(Number(task.percent || 0))}% · {task.filename || "正在整理糖果片段"}</p>
-                {task.stage === "ready" && <button type="button" onClick={() => onAction("save-download-device", { taskId: task.taskId })} className="mt-3 min-h-10 w-full rounded-xl bg-emerald-500 text-[10px] font-bold text-white"><Save size={13} className="mr-1 inline" />保存到设备</button>}
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {["queued", "probing", "downloading", "recovering", "assembling"].includes(String(task.stage)) && <button type="button" onClick={() => onAction("pause-download-task", { taskId: task.taskId })} className="min-h-10 rounded-xl bg-amber-100 text-[10px] font-bold text-amber-700"><Pause size={13} className="mr-1 inline" />暂停</button>}
+                  {task.stage === "paused" && <button type="button" onClick={() => onAction("resume-download-task", { taskId: task.taskId })} className="min-h-10 rounded-xl bg-sky-100 text-[10px] font-bold text-sky-700"><Play size={13} className="mr-1 inline" />继续</button>}
+                  {["queued", "probing", "downloading", "paused", "recovering", "assembling"].includes(String(task.stage)) && <button type="button" onClick={() => onAction("cancel-download-task", { taskId: task.taskId })} className="min-h-10 rounded-xl bg-rose-100 text-[10px] font-bold text-rose-700"><Ban size={13} className="mr-1 inline" />取消</button>}
+                  {["ready", "saving", "complete"].includes(String(task.stage)) && <button type="button" onClick={() => onAction("save-download-device", { taskId: task.taskId })} className="col-span-2 min-h-10 rounded-xl bg-emerald-500 text-[10px] font-bold text-white"><Save size={13} className="mr-1 inline" />保存到设备</button>}
+                </div>
               </article>
             ) : (
-              <button type="button" onClick={() => onAction("download-full-video", { movieId: session.movieId, lineKey: "auto" })} className="flex min-h-24 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-violet-200 bg-violet-50/45 text-violet-600">
+              <button type="button" onClick={() => onAction("plan-full-video-download", { movieId: session.movieId, lineKey: "auto" })} className="flex min-h-24 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-violet-200 bg-violet-50/45 text-violet-600">
                 <Download size={20} /><strong className="mt-2 text-[11px]">下载本场影片</strong><span className="mt-1 text-[9px] text-violet-400">自动选择健康线路</span>
               </button>
             )}

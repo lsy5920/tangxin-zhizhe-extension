@@ -63,6 +63,7 @@ export type PlayerMenuSheetProps = {
   fitMode: "auto" | "wide" | "vertical";
   orientationMode: "auto" | "landscape" | "portrait";
   orientationRequested: boolean;
+  networkMode: "data-saver" | "balanced" | "high-quality";
   onClose: () => void;
   onSetPanel: (panel: PlayerMorePanelKey) => void;
   onSelectPreview: (key: string) => void;
@@ -84,6 +85,7 @@ export type PlayerMenuSheetProps = {
   onDownload: () => void;
   onDiagnostic: () => void;
   onSwitchBackup: () => void;
+  onSetNetworkMode: (mode: "data-saver" | "balanced" | "high-quality") => void;
 };
 
 function MenuSection({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
@@ -104,11 +106,11 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
     rateOptions, seekStepOptions, qualities, qualityLevel, qualityLabel,
     previewOptions, activePreviewKey, previewSourceLabel, playerStatus, currentLineLabel,
     fillLabel, fitLabel, orientationLabel, fullscreenDiagnosticLabel, canBackup,
-    isBackupActive, hasMovieId, fitMode, orientationMode, orientationRequested,
+    isBackupActive, hasMovieId, fitMode, orientationMode, orientationRequested, networkMode,
     onClose, onSetPanel, onSelectPreview, onSetQuality, onSetRate, onSetSeekStep,
     onCycleFit, onCycleFill, onCycleOrientation, onToggleMute, onVolumeChange,
     onBrightnessChange, onScreenshot, onReload, onPip, onRecenter, onCopyLink,
-    onOpenLink, onDownload, onDiagnostic, onSwitchBackup
+    onOpenLink, onDownload, onDiagnostic, onSwitchBackup, onSetNetworkMode
   } = props;
 
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -239,6 +241,20 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
       <div id={`txzz-player-panel-${panel}`} role="tabpanel" aria-labelledby={`txzz-player-tab-${panel}`} className="txzz-player-menu-body space-y-2.5 overflow-y-auto p-2.5">
         {panel === "line" && (
           <>
+            <MenuSection title="糖果网络模式" hint="用户选择优先；均衡按画面尺寸自动选档，省流限制 720P / 2.5 Mbps。">
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  ["data-saver", "省流", "720P 上限"],
+                  ["balanced", "均衡", "尺寸自适应"],
+                  ["high-quality", "高清", "优先高画质"]
+                ] as const).map(([key, label, hint]) => (
+                  <CtrlChip key={key} active={networkMode === key} onClick={() => onSetNetworkMode(key)} title={`${label}模式：${hint}`} className="min-h-[3.25rem] flex-col gap-0.5">
+                    <span>{label}</span><span className="text-[9px] font-normal opacity-55">{hint}</span>
+                  </CtrlChip>
+                ))}
+              </div>
+            </MenuSection>
+
             <MenuSection title="播放线路" hint="播放开始后锁定当前源，只有连续失败才自动切换备用线路。">
               <div className="grid grid-cols-3 gap-1.5">
                 {previewOptions.map((item) => (
@@ -380,7 +396,7 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
       </div>
 
       <footer className="border-t border-white/8 bg-black/18 px-3 py-2 text-[10px] text-white/48">
-        <p className="truncate">{currentLineLabel} · {rate}x · {muted ? "静音" : `${volumePercent}%`} · {fillLabel} · {orientationLabel}</p>
+        <p className="truncate">{currentLineLabel} · {networkMode === "data-saver" ? "省流" : networkMode === "high-quality" ? "高清" : "均衡"} · {rate}x · {muted ? "静音" : `${volumePercent}%`} · {fillLabel} · {orientationLabel}</p>
         {fullscreen && <p className="mt-0.5 truncate text-sky-200/70">{fullscreenDiagnosticLabel}</p>}
       </footer>
     </div>

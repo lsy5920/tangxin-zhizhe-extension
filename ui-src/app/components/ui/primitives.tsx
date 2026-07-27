@@ -4,6 +4,7 @@ import type {
   InputHTMLAttributes,
   LabelHTMLAttributes,
   ReactNode,
+  RefObject,
   TextareaHTMLAttributes
 } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -68,11 +69,11 @@ function registerModal(element: HTMLElement) {
   syncModalAccessibility(element.getRootNode());
 }
 
-function unregisterModal(element: HTMLElement) {
-  const root = element.getRootNode();
+function unregisterModal(element: HTMLElement, registeredRoot: Node = element.getRootNode()) {
   const index = modalStack.indexOf(element);
   if (index >= 0) modalStack.splice(index, 1);
-  syncModalAccessibility(root);
+  // React 卸载时节点可能已经脱离 ShadowRoot；必须使用注册阶段保存的根节点恢复底层工作台。
+  syncModalAccessibility(registeredRoot);
 }
 
 function topModalFor(root: Node) {
@@ -95,6 +96,14 @@ function syncModalAccessibility(root: Node) {
       if (isTop) item.removeAttribute("aria-hidden");
       else item.setAttribute("aria-hidden", "true");
     });
+  const workspace = root instanceof Document || root instanceof ShadowRoot
+    ? root.querySelector<HTMLElement>('[data-txzz-workspace-panel="true"]')
+    : null;
+  if (workspace) {
+    workspace.inert = Boolean(top);
+    if (top) workspace.setAttribute("aria-hidden", "true");
+    else workspace.removeAttribute("aria-hidden");
+  }
 }
 
 function modalFocusableElements(dialog: HTMLElement) {
@@ -111,6 +120,81 @@ function focusWithoutScroll(element?: HTMLElement | null) {
   } catch {
     return false;
   }
+}
+
+/** 让定制外观弹层复用统一弹层栈、焦点循环、Esc 和关闭后焦点恢复。 */
+export function useModalFocusTrap<TDialog extends HTMLElement, TInitial extends HTMLElement>(
+  active: boolean,
+  onClose: () => void,
+  dialogRef: RefObject<TDialog | null>,
+  initialFocusRef: RefObject<TInitial | null>
+) {
+  const onCloseRef = useRef(onClose);
+  useDocumentScrollLock(active);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useLayoutEffect(() => {
+    if (!active) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const root = dialog.getRootNode();
+    const shadowActive = root instanceof ShadowRoot ? root.activeElement : null;
+    const previous = shadowActive instanceof HTMLElement
+      ? shadowActive
+      : document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    registerModal(dialog);
+    const focusTimer = window.setTimeout(() => {
+      if (topModalFor(root) === dialog) focusWithoutScroll(initialFocusRef.current || dialog);
+    }, 0);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (topModalFor(root) !== dialog) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = modalFocusableElements(dialog);
+      if (!focusable.length) return;
+      const focused = root instanceof ShadowRoot ? root.activeElement : document.activeElement;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!(focused instanceof Node) || !dialog.contains(focused)) {
+        event.preventDefault();
+        focusWithoutScroll(event.shiftKey ? last : first);
+      } else if (event.shiftKey && focused === first) {
+        event.preventDefault();
+        focusWithoutScroll(last);
+      } else if (!event.shiftKey && focused === last) {
+        event.preventDefault();
+        focusWithoutScroll(first);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      const wasTop = topModalFor(root) === dialog;
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", handleKeyDown, true);
+      unregisterModal(dialog, root);
+      if (!wasTop) return;
+      window.setTimeout(() => {
+        const remainingTop = topModalFor(root);
+        if (remainingTop) {
+          if (previous && remainingTop.contains(previous) && focusWithoutScroll(previous)) return;
+          focusWithoutScroll(modalFocusableElements(remainingTop)[0] || remainingTop);
+          return;
+        }
+        focusWithoutScroll(previous);
+      }, 0);
+    };
+  }, [active]);
 }
 
 /** 页面统一宽度、内边距和纵向节奏，桌面端充分利用工作台宽度。 */
@@ -516,7 +600,7 @@ export function ModalSheet({
       const wasTop = topModalFor(root) === dialog;
       window.clearTimeout(focusTimer);
       window.removeEventListener("keydown", handleKeyDown, true);
-      unregisterModal(dialog);
+      unregisterModal(dialog, root);
       if (!wasTop) return;
       window.setTimeout(() => {
         const remainingTop = topModalFor(root);

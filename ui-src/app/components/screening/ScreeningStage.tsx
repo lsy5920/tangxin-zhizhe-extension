@@ -165,7 +165,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
 
   const copyCurrentLink = () => onAction("copy-play-link", { url: activeSource?.url || "", label: `${activeSource?.label || "当前线路"}完整链接` });
   const openCurrentLink = () => onAction("open-playback-url", { url: activeSource?.url || "", label: activeSource?.label || "当前线路" });
-  const downloadCurrent = () => onAction("download-full-video", { movieId: session.movieId, lineKey: activeSource?.id === "backup" ? "backup" : "play", url: activeSource?.url || "" });
+  const downloadCurrent = () => onAction("plan-full-video-download", { movieId: session.movieId, sourceId: activeSource?.id || "" });
 
   const shellStyle = fullscreen.active
     ? ({ background: "#000" } as CSSProperties)
@@ -313,6 +313,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
           fillMode={player.preferences.fillMode}
           orientationMode={player.preferences.orientationMode}
           orientationRequested={fullscreen.active}
+          networkMode={player.preferences.networkMode}
           onSeekStart={onSeekStart}
           onSeekMove={onSeekMove}
           onSeekEnd={onSeekEnd}
@@ -346,6 +347,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
           onDownload={downloadCurrent}
           onCopyDiagnostic={() => onAction("copy-playback-health-report", { movieId: session.movieId })}
           onBrightnessChange={player.setBrightness}
+          onSetNetworkMode={player.setNetworkMode}
           onFocusWithinChange={setControlsFocused}
         />
       </div>

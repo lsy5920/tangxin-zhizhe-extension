@@ -193,6 +193,11 @@ export function SettingsPage({ state, onAction, onPage, intent = {}, onIntentHan
     return () => { alive = false; };
   }, [state.remote?.baseUrl]);
 
+  useEffect(() => {
+    if (settingsSection !== "service" || state.purchaseReconciliation?.checkedAt || state.purchaseReconciliation?.loading) return;
+    onAction("load-purchase-reconciliation");
+  }, [settingsSection, state.purchaseReconciliation?.checkedAt, state.purchaseReconciliation?.loading]);
+
   const checkWorkerHealth = async () => {
     const url = state.remote?.baseUrl || "";
     if (!url) { setServiceCheck({ ok: false, text: "请先在账号池页面配置云端服务地址" }); return; }
@@ -345,6 +350,46 @@ export function SettingsPage({ state, onAction, onPage, intent = {}, onIntentHan
             </SoftButton>
             <SoftButton className="w-full" variant="secondary" icon={RefreshCw} onClick={() => onAction("sync-remote")}>同步账号</SoftButton>
           </div>
+        </div>
+      </SectionCard>
+      )}
+
+      {settingsSection === "service" && (
+      <SectionCard title="金币购买安全对账" icon={Database} hint="只允许原购买账号重新获取详情，绝不会再次调用购买接口" tone="amber">
+        <div className="space-y-3">
+          {state.purchaseReconciliation?.cloudError && (
+            <p className="rounded-xl bg-warning-50 px-3 py-2 text-[11px] leading-5 text-warning-700">云端列表暂不可用：{state.purchaseReconciliation.cloudError}</p>
+          )}
+          {(state.purchaseReconciliation?.items || []).length ? (
+            <div className="space-y-2">
+              {(state.purchaseReconciliation?.items || []).map((item) => (
+                <article key={`${item.origin}-${item.attemptId}`} className="rounded-2xl border border-warning-100 bg-warning-50/45 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-semibold text-slate-800">视频 {item.movieId || "未知"} · {item.account?.label || "原购买账号"}</p>
+                      <p className="mt-1 text-[10px] text-slate-500">{item.origin === "cloud" ? "云端账本" : "本地账本"} · {item.updatedAt ? formatRelativeTime(item.updatedAt) : "时间未知"} · {Number(item.price || 0)} 金币</p>
+                    </div>
+                    <Pill className={item.status === "pending" ? "bg-info-50 text-info-600" : "bg-warning-100 text-warning-700"}>{item.status === "pending" ? "处理中" : item.status === "charged" ? "已扣费待核对" : "结果不确定"}</Pill>
+                  </div>
+                  {item.error && <p className="mt-2 break-words rounded-xl bg-white/85 px-2.5 py-2 text-[10px] leading-5 text-slate-500">{item.error}</p>}
+                  <div className="mt-2 flex justify-end">
+                    <SoftButton size="sm" variant="amber" icon={RefreshCw} disabled={!item.canReconcile} onClick={() => onAction("reconcile-purchase", { attemptId: item.attemptId || "", origin: item.origin || "cloud" })}>
+                      {item.canReconcile ? "用原账号安全对账" : "等待 90 秒安全窗口"}
+                    </SoftButton>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-success-200 bg-success-50/45 p-4 text-center">
+              <CheckCircle size={20} className="mx-auto text-success-500" />
+              <p className="mt-2 text-[12px] font-semibold text-success-700">没有待核对扣费记录</p>
+              <p className="mt-1 text-[10px] text-slate-500">resolved 与扣费前失败记录不会出现在这里，也不能手动清除安全阻断。</p>
+            </div>
+          )}
+          <SoftButton className="w-full" variant="secondary" icon={RefreshCw} disabled={state.purchaseReconciliation?.loading} onClick={() => onAction("load-purchase-reconciliation")}>
+            {state.purchaseReconciliation?.loading ? "正在核对账本…" : "刷新对账列表"}
+          </SoftButton>
         </div>
       </SectionCard>
       )}

@@ -127,6 +127,11 @@
       const previewRequest = previewScenario === "buffering"
         ? { phase: "resolving", requestId: "preview-buffering", movieId: "9527", startedAt: new Date().toISOString() }
         : { phase: "idle" };
+      const previewReconciliationItems = [
+        { origin: "cloud", attemptId: "attempt-charged", requestId: "request-charged", movieId: "9527", status: "charged", price: 18, account: { id: "cloud-1", label: "云端 VIP 一号" }, error: "扣费后详情刷新超时，等待原账号重新核对", createdAt: new Date(Date.now() - 240000).toISOString(), updatedAt: new Date(Date.now() - 180000).toISOString(), canReconcile: true },
+        { origin: "local", attemptId: "attempt-uncertain", requestId: "request-uncertain", movieId: "2048", status: "uncertain", price: 12, account: { id: "local-1", label: "本地测试账号" }, error: "页面在扣费确认后关闭，结果保持不确定", createdAt: new Date(Date.now() - 360000).toISOString(), updatedAt: new Date(Date.now() - 300000).toISOString(), canReconcile: true },
+        { origin: "cloud", attemptId: "attempt-pending", requestId: "request-pending", movieId: "4096", status: "pending", price: 9, account: { id: "cloud-2", label: "云端备用账号" }, createdAt: new Date(Date.now() - 45000).toISOString(), updatedAt: new Date(Date.now() - 45000).toISOString(), canReconcile: false }
+      ];
       if (previewScenario === "fullscreen-failure") {
         Element.prototype.requestFullscreen = () => Promise.reject(new Error("预览场景：系统全屏被拒绝"));
       }
@@ -155,9 +160,11 @@
           request: previewRequest
         },
         downloadTasks: {
-          task_preview: { taskId: "task_preview", movieId: "9527", movieTitle: "预览视频", stage: "segments", current: 18, total: 40, percent: 45, speedBps: 2457600, updatedAt: new Date().toISOString() }
+          task_preview: { taskId: "task_preview", attemptId: "attempt_preview", sequence: 18, movieId: "9527", movieTitle: "预览视频", mode: "hls-opfs", format: "mp4", lineKey: "primary", url: previewVideo, stage: "downloading", current: 18, total: 40, bytes: 188743680, totalBytes: 419430400, percent: 45, speedBps: 2457600, updatedAt: new Date().toISOString() }
         },
-      repositoryUpdate: { ok: true, checkPhase: "success", downloadPhase: "idle", checkedAt: new Date().toISOString(), updateAvailable: false, local: { version: "5.0.5", build: "2026-07-27-1315" }, remote: { version: "5.0.5", build: "2026-07-27-1315" } },
+        downloadPlanner: null,
+        purchaseReconciliation: { items: previewReconciliationItems, loading: false, checkedAt: new Date().toISOString() },
+        repositoryUpdate: { ok: true, checkPhase: "success", downloadPhase: "idle", checkedAt: new Date().toISOString(), updateAvailable: false, local: { version: "5.1.0", build: "2026-07-27-1925" }, remote: { version: "5.1.0", build: "2026-07-27-1925" } },
         adCleaner: { enabled: true, version: "v3", total: 12, removed: 8, blockedClicks: 3, splashHits: 1, countdownHits: 1, selectors: 1, lastRunAt: new Date().toISOString() },
         flow: [{ title: "本地预览", detail: `糖果影院确定性场景：${previewScenario}`, level: "ok", ts: new Date().toISOString() }]
       };
@@ -167,10 +174,95 @@
       });
       window.addEventListener("txzz:ui-action", (event) => {
         const action = event.detail?.action || "操作";
-        window.__txzzBridgeState = {
-          ...window.__txzzBridgeState,
-          flow: [...(window.__txzzBridgeState.flow || []), { title: "操作反馈", detail: `已触发：${action}`, level: "ok", ts: new Date().toISOString() }]
-        };
+        const payload = event.detail?.payload || {};
+        const now = new Date().toISOString();
+        const current = window.__txzzBridgeState;
+        let next = { ...current };
+
+        if (action === "plan-full-video-download") {
+          const source = fixtureSession.sources.find((item) => item.id === payload.sourceId)
+            || fixtureSession.sources.find((item) => item.id === fixtureSession.decision.recommendedSourceId)
+            || fixtureSession.sources[0];
+          next.downloadPlanner = {
+            open: true,
+            movieId: payload.movieId || fixtureSession.movieId,
+            movieTitle: fixtureSession.title,
+            taskId: "task_planned",
+            lineKey: source?.id || "auto",
+            mode: "hls-opfs",
+            filename: `${fixtureSession.title}.mp4`,
+            source: { id: source?.id, label: source?.label, protocol: source?.protocol },
+            sources: fixtureSession.sources.map((item, index) => ({ id: item.id, label: item.label, role: index ? "backup" : "primary", protocol: item.protocol, health: item.health })),
+            plan: {
+              playlistUrl: source?.url || previewVideo,
+              selectedVariant: { id: "720p", height: 720, bandwidth: 2400000 },
+              variants: [
+                { id: "480p", height: 480, bandwidth: 1200000 },
+                { id: "720p", height: 720, bandwidth: 2400000 },
+                { id: "1080p", height: 1080, bandwidth: 5200000 }
+              ],
+              durationSeconds: 3568,
+              container: "mpeg-ts",
+              audioMode: "muxed",
+              segmentCount: 86,
+              estimatedBytes: 333447168,
+              requiredBytes: 383464243,
+              storage: { known: true, quota: 2147483648, usage: 536870912, available: 1610612736 },
+              compatibleContainers: ["mp4", "ts"]
+            }
+          };
+        }
+        if (action === "close-download-planner") next.downloadPlanner = null;
+        if (action === "start-planned-download") {
+          next.downloadPlanner = null;
+          next.downloadTasks = {
+            ...(current.downloadTasks || {}),
+            task_planned: {
+              taskId: "task_planned",
+              attemptId: `attempt_${Date.now()}`,
+              sequence: 1,
+              movieId: payload.movieId || fixtureSession.movieId,
+              movieTitle: fixtureSession.title,
+              mode: "hls-opfs",
+              format: payload.container || "mp4",
+              lineKey: payload.sourceId || "primary",
+              url: previewVideo,
+              stage: "queued",
+              current: 0,
+              total: 86,
+              percent: 0,
+              bytes: 0,
+              totalBytes: 333447168,
+              updatedAt: now
+            }
+          };
+        }
+        if (["pause-download-task", "resume-download-task", "cancel-download-task"].includes(action)) {
+          const taskId = payload.taskId || Object.keys(current.downloadTasks || {})[0] || "";
+          const task = current.downloadTasks?.[taskId];
+          if (task) {
+            const stage = action === "pause-download-task" ? "paused" : action === "resume-download-task" ? "recovering" : "cancelled";
+            next.downloadTasks = { ...current.downloadTasks, [taskId]: { ...task, sequence: Number(task.sequence || 0) + 1, stage, updatedAt: now } };
+          }
+        }
+        if (action === "load-purchase-reconciliation") {
+          next.purchaseReconciliation = { ...(current.purchaseReconciliation || {}), loading: false, checkedAt: now };
+        }
+        if (action === "reconcile-purchase") {
+          const attemptId = payload.attemptId || current.purchaseReconciliation?.items?.find((item) => item.canReconcile)?.attemptId || "";
+          next.purchaseReconciliation = {
+            ...(current.purchaseReconciliation || {}),
+            items: (current.purchaseReconciliation?.items || []).filter((item) => item.attemptId !== attemptId),
+            loading: false,
+            checkedAt: now
+          };
+        }
+
+        next.flow = [...(current.flow || []), { title: "操作反馈", detail: `已触发：${action}`, level: "ok", ts: now }];
+        window.__txzzBridgeState = next;
+        document.documentElement.dataset.txzzPreviewLastAction = action;
+        document.documentElement.dataset.txzzPreviewTaskStage = String(Object.values(next.downloadTasks || {})[0]?.stage || "");
+        document.documentElement.dataset.txzzPreviewReconciliationCount = String(next.purchaseReconciliation?.items?.length || 0);
         window.dispatchEvent(new CustomEvent("txzz:state", { detail: window.__txzzBridgeState }));
       });
     </script>

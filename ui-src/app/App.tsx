@@ -12,6 +12,7 @@ import { UpdateModal } from "./update/UpdateModal";
 import { flowItemText } from "./helpers";
 import { useDocumentScrollLock } from "./components/ui/primitives";
 import { FloatingCompanion } from "./components/layout/FloatingCompanion";
+import { DownloadPlannerModal } from "./components/download/DownloadPlannerModal";
 import { WorkspaceShell } from "./components/layout/WorkspaceShell";
 import { PAGE_META } from "./model/navigation";
 import { buildWorkspaceViewModel } from "./model/workspaceViewModel";
@@ -129,6 +130,8 @@ export default function App() {
     const focusTimer = window.setTimeout(() => panelRef.current?.focus(), 0);
     const handler = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      // 顶层子弹层拥有 Esc 与 Tab；主工作台必须完全让出键盘焦点，不能把焦点偷回侧栏。
+      if (pluginShadowRoot()?.querySelector('[data-txzz-modal-sheet="true"]')) return;
       if (event.key === "Escape") {
         event.preventDefault();
         closePanel();
@@ -388,6 +391,8 @@ export default function App() {
         onDownload={handleDownloadUpdate}
         onCheck={handleCheckUpdate}
       />
+
+      <DownloadPlannerModal planner={bridgeState.downloadPlanner} onAction={action} />
 
       {updatePersistenceError && (
         <div

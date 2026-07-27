@@ -120,11 +120,11 @@ export function downloadStats(tasks: DownloadTask[]) {
 
 export function isRunningDownloadTask(task: DownloadTask) {
   // “可保存”已经单独展示，进行中只统计仍在下载或等待保存位置的任务。
-  return ["queued", "playlist", "segments", "segment", "save-dialog"].includes(String(task.stage || ""));
+  return ["queued", "probing", "downloading", "recovering", "assembling", "saving"].includes(String(task.stage || ""));
 }
 
 export function downloadProgress(task: DownloadTask) {
-  if (task.stage === "complete" || task.stage === "ready") return 100;
+  if (["complete", "ready", "saving"].includes(String(task.stage))) return 100;
   const explicit = Number(task.percent || 0);
   if (explicit > 0) return Math.max(0, Math.min(99, Math.round(explicit)));
   // 优先按体积估算百分比，更接近真实下载进度。
@@ -135,7 +135,7 @@ export function downloadProgress(task: DownloadTask) {
   }
   const total = Number(task.total || 0);
   const current = Number(task.current || 0);
-  if (!total) return task.stage === "queued" ? 2 : task.stage === "playlist" ? 6 : 0;
+  if (!total) return task.stage === "queued" ? 2 : task.stage === "probing" ? 6 : 0;
   return Math.max(0, Math.min(99, Math.round((current / total) * 100)));
 }
 
@@ -156,12 +156,16 @@ export function downloadLineLabel(lineKey?: string) {
 
 export function downloadStageLabel(stage?: string) {
   if (stage === "queued") return "已排队";
-  if (stage === "playlist") return "读取播放列表";
-  if (stage === "segments") return "准备分片";
-  if (stage === "segment") return "下载分片中";
-  if (stage === "ready") return "合并完成，待保存";
-  if (stage === "save-dialog") return "选择保存位置";
+  if (stage === "probing") return "正在规划与探测";
+  if (stage === "downloading") return "下载到 OPFS";
+  if (stage === "paused") return "已暂停，可继续";
+  if (stage === "recovering") return "从检查点恢复";
+  if (stage === "assembling") return "安全组装文件";
+  if (stage === "ready") return "成品就绪，待保存";
+  if (stage === "saving") return "安全保存页已打开";
   if (stage === "complete") return "已保存到设备";
+  if (stage === "cancelled") return "已取消";
+  if (stage === "stale") return "旧任务待重建";
   if (stage === "error") return "失败";
   return stage || "等待任务";
 }
@@ -169,7 +173,7 @@ export function downloadStageLabel(stage?: string) {
 export function downloadFormat(task: DownloadTask) {
   if (task.format === "mp4" || /\.mp4(?:[?#]|$)/i.test(task.filename || "")) return "MP4";
   if (task.format === "ts" || /\.ts(?:[?#]|$)/i.test(task.filename || "")) return "TS";
-  return task.mode === "direct" ? "原始格式" : "M3U8";
+  return task.mode === "progressive-opfs" ? "渐进式 MP4" : task.mode === "hls-opfs" ? "HLS / OPFS" : "原始格式";
 }
 
 export function downloadTitle(task: DownloadTask) {
@@ -177,7 +181,7 @@ export function downloadTitle(task: DownloadTask) {
 }
 
 export function canSaveDownload(task: DownloadTask) {
-  return task.stage === "ready" || (task.mode === "direct" && task.stage !== "complete" && task.stage !== "error" && Boolean(task.url));
+  return Boolean(task.objectReady) && ["ready", "saving", "complete"].includes(String(task.stage));
 }
 
 export function downloadTaskForMovie(state: BridgeState, movieId?: string) {

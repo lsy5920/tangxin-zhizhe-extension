@@ -1,6 +1,7 @@
 export type PlayerFillMode = "contain" | "cover" | "fill";
 export type PlayerFitMode = "auto" | "wide" | "vertical";
 export type PlayerOrientationMode = "auto" | "landscape" | "portrait";
+export type PlaybackNetworkMode = "data-saver" | "balanced" | "high-quality";
 
 export type PlaybackPreferences = {
   volume: number;
@@ -11,6 +12,7 @@ export type PlaybackPreferences = {
   fitMode: PlayerFitMode;
   orientationMode: PlayerOrientationMode;
   seekStep: number;
+  networkMode: PlaybackNetworkMode;
 };
 
 const KEY = "txzz-playback-v2-preferences";
@@ -23,7 +25,8 @@ export const defaultPlaybackPreferences: PlaybackPreferences = {
   fillMode: "contain",
   fitMode: "auto",
   orientationMode: "auto",
-  seekStep: 10
+  seekStep: 10,
+  networkMode: "balanced"
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -39,7 +42,10 @@ export function normalizePlaybackPreferences(value: Partial<PlaybackPreferences>
     fillMode: value.fillMode === "cover" || value.fillMode === "fill" ? value.fillMode : "contain",
     fitMode: value.fitMode === "wide" || value.fitMode === "vertical" ? value.fitMode : "auto",
     orientationMode: value.orientationMode === "landscape" || value.orientationMode === "portrait" ? value.orientationMode : "auto",
-    seekStep: [5, 10, 30, 60].includes(Number(value.seekStep)) ? Number(value.seekStep) : 10
+    seekStep: [5, 10, 30, 60].includes(Number(value.seekStep)) ? Number(value.seekStep) : 10,
+    networkMode: value.networkMode === "data-saver" || value.networkMode === "high-quality"
+      ? value.networkMode
+      : "balanced"
   };
 }
 

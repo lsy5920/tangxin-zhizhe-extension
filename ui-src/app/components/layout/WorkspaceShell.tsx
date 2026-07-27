@@ -78,6 +78,7 @@ export function WorkspaceShell({
       <div className="txzz-app-panel-backdrop absolute inset-0" onClick={onClose} aria-hidden="true" />
       <div
         ref={panelRef}
+        data-txzz-workspace-panel="true"
         role="dialog"
         aria-modal="true"
         aria-labelledby="txzz-panel-title"

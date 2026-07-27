@@ -1,8 +1,8 @@
 import { AlertTriangle, Check, LoaderCircle } from "lucide-react";
 import { updateStatusTone, type UpdateViewModel } from "./helpers";
 
-const UPDATE_STEPS = ["验证签名清单", "比对版本", "验证完整包", "提交下载"];
-const COMPACT_STEP_LABELS = ["清单", "比对", "验证", "提交"];
+const UPDATE_STEPS = ["验证签名清单", "比对版本", "验证完整包", "安全保存"];
+const COMPACT_STEP_LABELS = ["清单", "比对", "验证", "保存"];
 
 type Props = {
   vm: UpdateViewModel;

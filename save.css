@@ -1,0 +1,102 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
+  background: radial-gradient(circle at 20% 10%, #fff8d9 0 12%, transparent 30%), linear-gradient(145deg, #ffe8f2, #eee7ff 55%, #dff8ff);
+  color: #49334f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.ticket {
+  width: min(560px, 100%);
+  padding: 36px;
+  border: 1px solid rgb(255 255 255 / 82%);
+  border-radius: 32px;
+  background: rgb(255 252 253 / 88%);
+  box-shadow: 0 28px 80px rgb(113 71 138 / 18%), inset 0 1px 0 #fff;
+  backdrop-filter: blur(18px);
+  text-align: center;
+}
+
+.mascot {
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 26px;
+  background: linear-gradient(145deg, #ff9fc5, #ae91ff);
+  box-shadow: 0 14px 34px rgb(208 111 174 / 28%);
+  font-size: 38px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #a45d8d;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+h1 { margin: 10px 0 8px; font-size: clamp(24px, 6vw, 34px); }
+.message { margin: 0 auto 22px; color: #745f79; line-height: 1.7; }
+
+.details {
+  margin: 20px 0;
+  padding: 8px 18px;
+  border-radius: 20px;
+  background: #fff5fa;
+  text-align: left;
+}
+
+.details div { display: grid; grid-template-columns: 72px 1fr; gap: 12px; padding: 10px 0; }
+.details div + div { border-top: 1px dashed #eccfe0; }
+.details dt { color: #9a718d; }
+.details dd { margin: 0; overflow-wrap: anywhere; font-weight: 700; }
+
+.actions {
+  display: grid;
+  gap: 10px;
+}
+
+button {
+  width: 100%;
+  min-height: 52px;
+  border: 0;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #ff79ad, #9374ef);
+  color: white;
+  font: inherit;
+  font-weight: 900;
+  box-shadow: 0 14px 30px rgb(174 92 167 / 24%);
+  cursor: pointer;
+}
+
+button.secondary {
+  border: 1px solid #e5c9dc;
+  background: #fff7fb;
+  color: #7d4f70;
+  box-shadow: none;
+}
+
+button[hidden] { display: none; }
+
+button:disabled { cursor: wait; filter: grayscale(.35); opacity: .55; }
+button:focus-visible { outline: 4px solid rgb(125 98 227 / 28%); outline-offset: 3px; }
+.hint { margin: 18px 0 0; color: #8d778f; font-size: 12px; line-height: 1.6; }
+.error { color: #a72d59; }
+
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+
+@media (max-width: 480px) {
+  body { padding: 14px; }
+  .ticket { padding: 26px 20px; border-radius: 26px; }
+}

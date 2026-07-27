@@ -3,7 +3,7 @@ import { MediaKernel, type MediaKernelEvent, type MediaQuality, type MediaSnapsh
 import { loadPlaybackPreferences, savePlaybackPreferences, type PlaybackPreferences } from "./preferences";
 import { loadPlaybackResume, savePlaybackResume } from "./resumeStore";
 import { createPlaybackRuntimeState, playbackSessionReducer } from "./sessionReducer";
-import { nextFailoverSource, shouldFailover } from "./sourcePolicy";
+import { nextFailoverSource, selectRecommendedSource, shouldFailover } from "./sourcePolicy";
 import type { PlaybackRuntimeAction, PlaybackSession, PlaybackSource } from "./types";
 
 const emptyMediaSnapshot: MediaSnapshot = {
@@ -15,6 +15,15 @@ const emptyMediaSnapshot: MediaSnapshot = {
   muted: false,
   rate: 1
 };
+
+function mediaFingerprint(session: PlaybackSession | null) {
+  if (!session) return "";
+  return JSON.stringify({
+    movieId: session.movieId,
+    recommended: session.decision.recommendedSourceId,
+    sources: session.sources.map((source) => [source.id, source.url, source.protocol])
+  });
+}
 
 type WakeLockSentinelLike = { release?: () => Promise<void> };
 type NavigatorWithWakeLock = Navigator & {
@@ -136,6 +145,10 @@ export function usePlaybackController(session: PlaybackSession | null) {
       setQualityLevel(event.level);
       return;
     }
+    if (event.type === "adaptive") {
+      setStatus(event.message);
+      return;
+    }
     if (event.type === "ended") {
       dispatch(generationAction(generation, { type: "ENDED" }));
       setStatus("本场放映结束");
@@ -197,8 +210,15 @@ export function usePlaybackController(session: PlaybackSession | null) {
       onEvent: (event) => handleKernelEvent(event, generation)
     });
     kernelRef.current = kernel;
-    await kernel.load(source, snapshot, preferences.fillMode);
-  }, [dispatch, handleKernelEvent, preferences.fillMode]);
+    try {
+      await kernel.load(source, snapshot, preferences.fillMode, preferences.networkMode);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      dispatch(generationAction(generation, { type: "FAILED", message }));
+      setStatus("媒体内核装载失败");
+      throw error;
+    }
+  }, [dispatch, handleKernelEvent, preferences.fillMode, preferences.networkMode]);
 
   switchSourceRef.current = async (reason, automatic = true, sourceId) => {
     const currentSession = sessionRef.current;
@@ -216,10 +236,15 @@ export function usePlaybackController(session: PlaybackSession | null) {
     const snapshot = kernelRef.current?.snapshot() || emptyMediaSnapshot;
     persistResume(snapshot);
     clearTimers();
-    await loadSource(target, snapshot, true, reason);
+    await loadSource(target, snapshot, true, reason).catch(() => {});
   };
 
+  const currentMediaFingerprint = mediaFingerprint(session);
+
   useEffect(() => {
+    const previousSession = sessionRef.current;
+    const previousSnapshot = kernelRef.current?.snapshot();
+    const sameMovie = Boolean(session && previousSession?.movieId === session.movieId);
     sessionRef.current = session;
     clearTimers();
     kernelRef.current?.destroy();
@@ -238,31 +263,38 @@ export function usePlaybackController(session: PlaybackSession | null) {
       return undefined;
     }
     dispatch(generationAction(generation, { type: "SESSION_READY", session }));
-    const source = session.sources.find((item) => item.id === session.decision.recommendedSourceId)
-      || session.sources.find((item) => item.url);
+    const requested = session.sources.find((item) => item.id === session.decision.recommendedSourceId && item.url);
+    const source = requested || selectRecommendedSource(session.sources);
     if (!source) {
       dispatch(generationAction(generation, { type: "FAILED", message: "本场影片没有可播放线路" }));
       setStatus("无可用线路");
       return undefined;
     }
-    const resume = loadPlaybackResume(window.localStorage, session.movieId);
+    const resume = sameMovie ? null : loadPlaybackResume(window.localStorage, session.movieId);
     const snapshot: Partial<MediaSnapshot> = {
-      currentTime: resume?.currentTime || 0,
-      paused: true,
-      volume: preferences.volume,
-      muted: preferences.muted,
-      rate: preferences.rate
+      currentTime: sameMovie ? Number(previousSnapshot?.currentTime || 0) : resume?.currentTime || 0,
+      paused: sameMovie ? previousSnapshot?.paused !== false : true,
+      volume: sameMovie ? Number(previousSnapshot?.volume ?? preferences.volume) : preferences.volume,
+      muted: sameMovie ? Boolean(previousSnapshot?.muted) : preferences.muted,
+      rate: sameMovie ? Number(previousSnapshot?.rate || preferences.rate) : preferences.rate
     };
     if (resume) setResumeTip(`已找到 ${Math.floor(resume.currentTime / 60)} 分 ${Math.floor(resume.currentTime % 60)} 秒的续播点`);
-    void loadSource(source, snapshot, false);
+    void loadSource(source, snapshot, sameMovie, sameMovie ? "完整线路已刷新" : "").catch(() => {});
     return () => {
       clearTimers();
       kernelRef.current?.destroy();
       kernelRef.current = null;
     };
-  // 会话 ID 是唯一代次边界；偏好改变不应销毁正在播放的内核。
+  // URL/推荐线路才是媒体代次边界；同 ID 的完整线路刷新也必须重载。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id]);
+  }, [session?.id, currentMediaFingerprint]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+    if (session && runtimeRef.current.session?.id === session.id && mediaFingerprint(runtimeRef.current.session) === currentMediaFingerprint) {
+      dispatch(generationAction(generationRef.current, { type: "SESSION_METADATA_UPDATED", session }));
+    }
+  }, [currentMediaFingerprint, dispatch, session]);
 
   useEffect(() => {
     const onVisibility = () => {
@@ -293,10 +325,20 @@ export function usePlaybackController(session: PlaybackSession | null) {
 
   useEffect(() => {
     let sentinel: WakeLockSentinelLike | null = null;
+    let cancelled = false;
     if (runtime.phase === "playing") {
-      void (navigator as NavigatorWithWakeLock).wakeLock?.request?.("screen").then((value) => { sentinel = value; }).catch(() => {});
+      void (navigator as NavigatorWithWakeLock).wakeLock?.request?.("screen").then((value) => {
+        if (cancelled) {
+          void value.release?.().catch(() => {});
+          return;
+        }
+        sentinel = value;
+      }).catch(() => {});
     }
-    return () => { void sentinel?.release?.().catch(() => {}); };
+    return () => {
+      cancelled = true;
+      void sentinel?.release?.().catch(() => {});
+    };
   }, [runtime.phase]);
 
   const updatePreferences = useCallback((patch: Partial<PlaybackPreferences>) => {
@@ -305,6 +347,7 @@ export function usePlaybackController(session: PlaybackSession | null) {
       if (patch.volume !== undefined || patch.muted !== undefined) kernelRef.current?.setVolume(next.volume, next.muted);
       if (patch.rate !== undefined) kernelRef.current?.setRate(next.rate);
       if (patch.fillMode !== undefined) kernelRef.current?.setFill(next.fillMode);
+      if (patch.networkMode !== undefined) kernelRef.current?.setNetworkMode(next.networkMode);
       return next;
     });
   }, []);
@@ -367,6 +410,7 @@ export function usePlaybackController(session: PlaybackSession | null) {
     setFitMode: (fitMode: PlaybackPreferences["fitMode"]) => updatePreferences({ fitMode }),
     setOrientationMode: (orientationMode: PlaybackPreferences["orientationMode"]) => updatePreferences({ orientationMode }),
     setSeekStep: (seekStep: number) => updatePreferences({ seekStep }),
+    setNetworkMode: (networkMode: PlaybackPreferences["networkMode"]) => updatePreferences({ networkMode }),
     screenshot: (name: string) => kernelRef.current?.screenshot(name),
     togglePip: () => kernelRef.current?.togglePip()
   };

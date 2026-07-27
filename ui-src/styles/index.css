@@ -1553,7 +1553,7 @@
   object-fit: contain;
 }
 
-/* 糖果影院 5.0：奶油粉紫外壳只包围高对比黑色舞台，不污染视频画面。 */
+/* 糖果影院 5.1：奶油粉紫外壳只包围高对比黑色舞台，不污染视频画面。 */
 .txzz-playback-root {
   isolation: isolate;
   border-radius: 2rem;

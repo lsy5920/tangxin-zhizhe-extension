@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle, Copy, Download, FolderOpen, Link, Loader, MoreHorizontal, RefreshCw, Save, Search, SortDesc, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, Ban, CheckCircle, Copy, Download, FolderOpen, Link, Loader, MoreHorizontal, Pause, Play, RefreshCw, Save, Search, SortDesc, Trash2, XCircle } from "lucide-react";
 import type { BridgeState, DownloadTask } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadLineLabel, downloadProgress, downloadSpeedText, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, maskUrl, shortTime } from "../helpers";
 import {
@@ -30,7 +30,7 @@ type DeleteTarget = { type: "all" } | { type: "task"; task: DownloadTask };
 function taskTone(task: DownloadTask) {
   if (task.stage === "complete" || task.stage === "ready") return { label: downloadStageLabel(task.stage), color: "bg-success-50 text-success-600", icon: <CheckCircle size={12} /> };
   if (task.stage === "error") return { label: "失败", color: "bg-danger-50 text-danger-600", icon: <XCircle size={12} /> };
-  if (["playlist", "segments", "segment"].includes(String(task.stage || ""))) return { label: downloadStageLabel(task.stage), color: "bg-warning-50 text-warning-600", icon: <Download size={12} /> };
+  if (["queued", "probing", "downloading", "recovering", "assembling", "paused"].includes(String(task.stage || ""))) return { label: downloadStageLabel(task.stage), color: "bg-warning-50 text-warning-600", icon: <Download size={12} /> };
   return { label: downloadStageLabel(task.stage), color: "bg-info-50 text-info-600", icon: <Loader size={12} className="animate-spin" /> };
 }
 
@@ -196,6 +196,9 @@ export function DownloadsPage({ state, onAction }: Props) {
                 {(task.error || task.transmuxError) && <div className="flex items-start gap-2 rounded-xl bg-danger-50 p-2.5"><AlertTriangle size={13} className="mt-0.5 shrink-0 text-danger-500" /><p className="break-all text-[11px] leading-[1.55] text-danger-600">{task.error || `MP4 转封装失败，TS 已保留：${task.transmuxError}`}</p></div>}
                 <div className="flex flex-wrap gap-2">
                   {task.stage === "error" && <SoftButton size="sm" variant="amber" icon={RefreshCw} disabled={!task.movieId} onClick={() => onAction("download-full-video", { movieId: task.movieId || "" })}>重试</SoftButton>}
+                  {["queued", "probing", "downloading", "recovering", "assembling"].includes(String(task.stage)) && <SoftButton size="sm" variant="amber" icon={Pause} onClick={() => onAction("pause-download-task", { taskId: task.taskId || "" })}>暂停</SoftButton>}
+                  {task.stage === "paused" && <SoftButton size="sm" variant="sky" icon={Play} onClick={() => onAction("resume-download-task", { taskId: task.taskId || "" })}>继续</SoftButton>}
+                  {["queued", "probing", "downloading", "paused", "recovering", "assembling"].includes(String(task.stage)) && <SoftButton size="sm" variant="danger" icon={Ban} onClick={() => onAction("cancel-download-task", { taskId: task.taskId || "" })}>取消</SoftButton>}
                   <SoftButton size="sm" className="min-w-[8rem] flex-1" icon={Save} disabled={!canSaveDownload(task)} onClick={() => onAction("save-download-device", { taskId: task.taskId || "" })}>保存到设备</SoftButton>
                   {task.url && <SoftButton size="sm" variant="secondary" icon={Copy} title="复制链接" aria-label="复制下载链接" onClick={() => onAction("copy-download-url", { taskId: task.taskId || "" })} />}
                   <SoftButton size="sm" variant="danger" icon={Trash2} title="删除任务" aria-label="删除下载任务" onClick={() => setDeleteTarget({ type: "task", task })} />

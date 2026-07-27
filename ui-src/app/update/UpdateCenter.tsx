@@ -105,10 +105,10 @@ export function UpdateCenter({ state, onAction }: Props) {
           </div>
         </div>
 
-        {vm.status === "submitted" && (
+        {(vm.status === "saving" || vm.status === "submitted") && (
           <div className="rounded-xl border border-warning-100 bg-warning-50 px-3 py-2.5 text-[11px] leading-relaxed text-warning-700">
             <p className="font-semibold">
-              {vm.downloadSaveVia === "content-blob" ? "已通过当前页面提交 CRX 下载" : "已拉起浏览器 CRX 下载"}
+              {vm.status === "saving" ? "安全保存页已打开，请在新标签点击保存" : "已通过扩展安全保存页提交 CRX 下载"}
               {vm.downloadId ? ` · 编号 ${vm.downloadId}` : ""}
             </p>
             <p className="mt-1">下载完成不代表安装完成。请打开浏览器扩展管理页，手动安装或覆盖更新。</p>
@@ -146,8 +146,8 @@ export function UpdateCenter({ state, onAction }: Props) {
               <div><dt className="text-slate-400">检测阶段</dt><dd className="mt-0.5 text-slate-700">{updateCheckPhaseLabel(vm.checkPhase)}</dd></div>
               <div><dt className="text-slate-400">下载阶段</dt><dd className="mt-0.5 text-slate-700">{updateDownloadPhaseLabel(vm.downloadPhase)}</dd></div>
               <div><dt className="text-slate-400">检测来源</dt><dd className="mt-0.5 truncate text-slate-700">{vm.sourceLabel}</dd></div>
-              <div><dt className="text-slate-400">下载交付方式</dt><dd className="mt-0.5 text-slate-700">{vm.downloadSaveVia === "content-blob" ? "当前页面 Blob" : vm.downloadSaveVia === "background-data-url" ? "扩展后台 API" : "未提交"}</dd></div>
-              <div><dt className="text-slate-400">浏览器下载编号</dt><dd className="mt-0.5 text-slate-700">{vm.downloadId || (vm.downloadSaveVia === "content-blob" ? "页面交付无 API 编号" : "未提交")}</dd></div>
+              <div><dt className="text-slate-400">下载交付方式</dt><dd className="mt-0.5 text-slate-700">{vm.downloadSaveVia.startsWith("extension-save-page") ? "扩展安全保存页 / OPFS" : "未提交"}</dd></div>
+              <div><dt className="text-slate-400">浏览器下载编号</dt><dd className="mt-0.5 text-slate-700">{vm.downloadId || (vm.downloadSaveVia.startsWith("extension-save-page") ? "用户点击保存，无后台编号" : "未提交")}</dd></div>
               {vm.manifestUrl && <div className="sm:col-span-2"><dt className="text-slate-400">清单地址</dt><dd className="mt-0.5 break-all font-mono text-slate-700">{vm.manifestUrl}</dd></div>}
               {vm.downloadUrl && <div className="sm:col-span-2"><dt className="text-slate-400">候选下载地址（下载前仍会重新校验）</dt><dd className="mt-0.5 break-all font-mono text-slate-700">{vm.downloadUrl}</dd></div>}
             </dl>

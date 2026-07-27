@@ -8,7 +8,7 @@
 
 插件默认只显示左上角短时流程气泡和右下角「糖糖」伙伴入口，不遮挡网站主体。点击伙伴后展开糖果手帐工作台：桌面端使用浅色手帐侧栏与独立工作区，移动端使用全屏面板和安全区底栏；今日总览、账号小屋、放映室、下载收纳篮和照料中心保持统一信息层级与操作反馈。
 
-当前源码与正式 CRX 均为 `5.0.5`（构建 `2026-07-27-1315`），继续使用 4.0.0 已启用并妥善保留的正式私钥，扩展 ID 保持为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 及 5.0.x 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
+当前源码版本为 `5.1.0`（构建 `2026-07-27-1925`）；正式 CRX 发布时继续使用 4.0.0 已启用并妥善保留的私钥，扩展 ID 固定为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 及 5.x 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
 
 ## 环境要求
 
@@ -27,6 +27,8 @@
 - 云端数据库：Supabase
 - 部署工具：Wrangler `4.110.0`
 - 视频转封装：`mux.js@7.0.0`
+- HLS 下载清单解析：`m3u8-parser@7.2.0`
+- 大文件持久化：浏览器 OPFS；不支持 OPFS 的浏览器不能使用可恢复下载与安全保存页
 - 文件编码：UTF-8
 
 ## 核心功能
@@ -37,7 +39,7 @@
 - 五个业务空间：导航重命名为今日总览、账号小屋、放映室、收纳篮和照料中心，底层动作与 Worker 接口保持兼容。
 - 今日总览：按「今日运行清单 → 正在进行 → 快捷动作 → 小日记」组织内容，优先告诉用户当前风险与下一步，而不是只罗列统计数字。
 - 页面状态展示：集中展示会员状态、扩展运行状态、账号池状态和最近流程。
-- 播放状态展示：宽屏采用「播放器主舞台 + 本场影片侧栏」，片源、下载和足迹收纳在独立抽屉；窄屏自动改为单栏。解析、账号轮换和安全解锁使用可见步骤条，资源就绪后仍保持暂停，必须由用户点击「开映」。
+- 播放状态展示：宽屏采用「播放器主舞台 + 本场影片侧栏」，片源、下载和足迹收纳在独立抽屉；窄屏自动改为单栏。解析、账号轮换和安全解锁使用可见步骤条，资源就绪后仍保持暂停，必须由用户点击「开映」。Vlog 页额外显示电影票 HUD，交叉核对活动 DOM、播放器 ID、Vue `isActive` 与 Swiper 索引；换片时保留最后一个稳定 ID，并拒绝旧请求写回新卡片。
 - 账号池管理：账号池页重构为控制台布局，支持账号搜索、本地可靠编辑、删除二次确认、云端自动轮换和云端优先本地兜底。
 - 云端轮换策略：云端账号按金币数量升序排序；获取播放详情失败或金币视频处理失败时自动切换下一个云端账号。
 - 金币视频策略：先检查主线路和备用线路；VIP 等账号已经返回可播放链接时立即使用，绝不调用购买接口。无扩展名签名地址、相对播放地址同样按有效线路处理；只有确实没有链接且仍为金币锁定时，才从金币最少账号组中随机选择一个账号购买。
@@ -49,13 +51,14 @@
 - 远程同步：通过 Cloudflare Worker 读取 Supabase 账号池，扩展后台自动携带与 Worker 配套的内置 Bearer 访问密钥；用户只需填写服务地址，页面环境只看到脱敏摘要。
 - 云端服务体检：设置页通过扩展后台检测 `/v1/diagnostics`、`/v1/status` 和 `/v2/health`；v2 健康检查同时验证播放安全迁移是否就绪，再次打开时会按 Worker 地址展示匹配的上次体检结果。
 - 体检快捷处理：体检结果下方提供「处理账号池」「同步账号」「复制报告」三个快捷操作，可直接跳转账号池、打开失效账号视图或复制完整体检报告。
-- 播放页面：扩展只调用 Worker `POST /v2/playback/session`，把服务端线路决策、账号与获取摘要转成单一 `screening` 状态。页面编排与媒体生命周期完全分离：单 reducer 管理 `idle → resolving → ready → loading → playing/paused → buffering/switching → ended/error`，每个异步事件携带会话代次；任意时刻只保留一个 ArtPlayer `5.4.0` 和一个 hls.js `1.6.16` 实例。线路策略综合服务端健康度和实际播放反馈，起播超过 8 秒、30 秒内累计 3 次 HLS 致命错误或恢复失败时只自动切一次尚未尝试的备用线路，并保留进度、暂停状态、音量、倍速与画面模式。续播按视频编号每 5 秒保存，15 秒以内、距结尾不足 30 秒或超过 30 天的记录不会恢复。完整功能矩阵见 [`docs/player-system.md`](docs/player-system.md)。
-- 下载管理：接管视频详情页下载按钮并创建后台任务；下载页支持筛选、搜索、排序、失败摘要和任务详情。批量保存、复制链接、复制报告、批量重试、打开下载目录和清空任务统一收纳到「更多操作」菜单；失败重试带节流保护，清空任务和缓存均使用单一确认弹层，避免重复触发。
-- MP4 输出：M3U8 分片下载完成后优先转封装为真实 MP4，失败时保留 TS 兜底。
+- 播放页面：扩展只调用 Worker `POST /v2/playback/session`，把服务端线路决策、账号与获取摘要转成单一 `screening` 状态。页面编排与媒体生命周期完全分离：单 reducer 管理 `idle → resolving → ready → loading → playing/paused → buffering/switching → ended/error`，每个异步事件携带会话代次；任意时刻只保留一个 ArtPlayer `5.4.0` 和一个 hls.js `1.6.16` 实例。同一会话 URL 指纹变化时会保留进度与暂停状态后重载，同 URL 仅刷新健康元数据。线路错误和恢复次数按线路隔离，起播超过 8 秒、30 秒内累计 3 次 HLS 致命错误或恢复失败时只自动切一次尚未尝试的备用线路。新增省流、均衡、高清三档策略，用户偏好优先于 Network Information API，切线、全屏和续播均保持。续播按视频编号每 5 秒保存，15 秒以内、距结尾不足 30 秒或超过 30 天的记录不会恢复。完整功能矩阵见 [`docs/player-system.md`](docs/player-system.md)。
+- 下载管理：下载前先选择线路、播放模式、清晰度和容器，并展示预计大小、耗时、可用空间及兼容性。任务以 `attemptId + sequence` 隔离旧消息，分片和成品写入 OPFS，支持暂停、继续、取消、失败重试与浏览器重启恢复；删除或清空会先中止请求再清理 OPFS。清单上限 2 MiB、单分片 128 MiB、单任务默认上限 8 GiB，请求连续 20 秒无数据即超时，分片最多重试 3 次。
+- MP4 输出：锁定 `m3u8-parser@7.2.0` 解析 AES-128 序列 IV、显式 IV、初始化段、Byte Range、密钥轮换和 discontinuity；TS 分片优先流式转封装为 MP4。直播、SAMPLE-AES 和无法安全合并的独立音轨会在规划阶段明确拒绝，不生成损坏或静音文件。
+- 购买安全对账：设置页显示云端与本地 `pending / charged / uncertain` 记录；对账只使用原购买账号重新获取详情，绝不调用 `doBuy`，成功后进入 `resolved`，失败继续保持安全阻断且只展示脱敏错误。
 - 数据清理：设置页通过明确的「完整重置」操作清除旧版本缓存、账号池缓存、播放缓存、下载缓存、更新缓存和页面运行缓存，不再使用容易误解的假复选框。
 - 设置分类：云端服务、体验功能、版本升级和数据管理使用分类导航，低频与高风险操作不再挤在同一长页面。
 - 旧数据迁移：首次升级到 5.0.0 时会把旧 `fullDetails` 转换为新的放映历史；账号池、下载记录和设置保持不变。购买防重复账本与 `screening` 使用独立 schema，旧格式只迁移一次，不会覆盖新会话。
-- 更新管理（升级系统 v7）：后台并发读取固定仓库路径下的多份 `update.json`，先用内置正式公钥验证完整清单签名，再按 **version + build + 来源优先级**选取最新；任意镜像无法伪造版本或把地址改到其他仓库。自动检测复用 15 分钟成功缓存，手动检测和下载前检测实时绕过，不同任务契约分别去重，所有状态通过串行队列写入。安装包只发起一次完整请求，同一份内存字节必须通过大小、SHA-256、CRX3 结构、正式扩展 ID 和包自身 RSA 签名校验；随后由后台以 `saveAs:true` 提交同一份已校验 `data:` 字节，拉起浏览器保存对话框，避免文件头探测与实际下载之间被替换。升级中心与检测弹窗共用真实阶段，明确区分检测、已提交下载和手动安装；忽略提醒按更新 ID 持久化且失败可见。完整信任链见 [`docs/update-system.md`](docs/update-system.md)。
+- 更新管理（升级系统 v8）：后台并发读取固定仓库路径下的多份 `update.json`，先用内置正式公钥验证完整清单签名，再按 **version + build + 来源优先级**选取最新。安装包通过大小、SHA-256、CRX3 结构、正式扩展 ID 和包自身 RSA 签名校验后写入 OPFS，再打开扩展来源的安全保存页；保存页再次校验大小、CRX3 文件头和 SHA-256，并通过一次性令牌限制单标签领取。整个 CRX 不再通过 runtime 响应传输 Base64，也不依赖 `chrome.downloads.download`。完整信任链见 [`docs/update-system.md`](docs/update-system.md)。
 - 响应式适配：手机视图使用安全区底部导航和独立内容滚动，桌面视图使用侧栏工作区；插件采用独立尺寸基准，不受宿主网站根字号缩放影响。最终版本在真实网站以 `320`、`390`、`640`、`1024`、`1536` 像素宽度检查布局，并支持系统减少动态效果设置。
 
 ## 项目目录结构
@@ -75,7 +78,7 @@ tangxin-zhizhe-extension/
 │   └── pack-crx.mjs           # 固定私钥打包 CRX3，计算哈希并签署外置 update.json
 ├── docs/
 │   ├── player-system.md       # 播放器功能矩阵、模块边界、全屏状态与验收清单
-│   └── update-system.md       # 升级系统 v7 状态矩阵、签名信任链、并发规则与安装边界
+│   └── update-system.md       # 升级系统 v8 状态矩阵、签名信任链、OPFS 保存与安装边界
 ├── releases/                  # 对外分发的 CRX 安装包（latest + 版本号）
 │   ├── tangxin-zhizhe-latest.crx
 │   ├── tangxin-zhizhe-x.y.z.crx
@@ -90,6 +93,7 @@ tangxin-zhizhe-extension/
 │   │   ├── hooks/             # 页面偏好和悬浮伙伴位置持久化
 │   │   ├── model/             # 导航单一事实来源与跨页工作台视图模型
 │   │   ├── playback/          # 会话 reducer、线路策略、媒体内核、全屏、偏好、续播与迁移测试
+│   │   ├── download/          # 下载规划、清单能力判断与固定场景测试
 │   │   ├── update/            # 升级系统前端：状态机、共享进度、升级中心和更新弹层
 │   │   └── components/
 │   │       ├── ui/            # 面板统一设计系统（SectionCard、StatGrid、按钮、可访问弹层等）
@@ -102,17 +106,23 @@ tangxin-zhizhe-extension/
 │   ├── txzz-ui.js             # 糖果风 React 控制台脚本
 │   └── txzz-ui.css            # 糖果风 React 控制台样式
 ├── background.js              # 后台服务，负责账号池、远程请求、播放详情和下载任务
-├── update_downloader.js       # 后台下载 API 不可用时复核并保存已验签 CRX3
+├── state_mutation_core.js     # 浏览器状态三方合并与串行 mutation 纯核心
+├── page_context_core.js       # Vlog 当前卡片交叉判定与页面代次纯核心
+├── download_core.js           # M3U8 规划、限制、AES/Map/Byte Range 规则纯核心
 ├── content.js                 # 页面脚本，负责业务能力、页面监听和 React 状态事件桥
 ├── display_patch.js           # 页面展示覆盖逻辑
 ├── nav_guard.js               # 页面导航守卫和刷新控制逻辑
 ├── page_hook.js               # 页面主环境请求监听和播放资源处理
 ├── page_probe.js              # 页面会话和用户状态探针
 ├── offscreen.html             # 离屏下载页面
-├── offscreen_downloader.js    # M3U8 分片下载、合并、转封装和保存逻辑
+├── offscreen_downloader.js    # OPFS 分片、恢复、组装、转封装和 CRX 暂存
+├── save.html                  # 扩展来源的一次性安全保存页
+├── save.css                   # 安全保存页糖果主题样式
+├── save.js                    # OPFS 读取、CRX 复核、文件写盘与票据核销
 ├── update.json                # 外置 schema 3 签名更新清单（不打进 CRX，避免哈希自引用）
 ├── vendor/
-│   └── mux-7.0.0.min.js       # 固定版本 mux.js，用于 TS 转 MP4
+│   ├── mux-7.0.0.min.js       # 固定版本 mux.js，用于 TS 转 MP4
+│   └── m3u8-parser-7.2.0.min.js # 固定版本 HLS 清单解析器
 └── README.md                  # 当前插件文档
 ```
 
@@ -243,10 +253,10 @@ tangxin-zhizhe-extension/
 
 1. 打开视频详情页。
 2. 点击页面上的下载或缓存按钮。
-3. 插件会创建后台下载任务。
-4. 如果是 MP4 直链，会直接进入可保存状态。
-5. 如果是 M3U8，会先下载分片，再合并并优先转封装为 MP4。
-6. 进入「下载」页查看进度。
+3. 在下载规划器选择线路、省流/均衡/高清模式、清晰度和容器；确认预计大小、耗时、可用空间与兼容性。可用空间已知且不足预计大小 115% 时不会启动。
+4. 插件创建唯一 `attemptId` 后把任务交给离屏下载器；MP4 和 HLS 都写入 OPFS，不再把大视频完整保存在内存。
+5. M3U8 会按清单下载并校验分片，再流式组装或转封装；不支持的直播、SAMPLE-AES、独立音轨会在开始前说明原因。
+6. 进入「下载」页查看进度；任务可暂停、继续或取消，浏览器/离屏页重启后会按检查点恢复。
 7. 任务较多时，可点击「全部」「进行中」「可保存」「失败」快速筛选。
 8. 可在搜索框输入标题、视频编号、任务编号、阶段、失败原因或链接，进一步缩小当前筛选结果。
 9. 可切换「最近」「失败优先」「进度」「大小」排序，排序会影响当前可见列表和复制报告顺序。
@@ -258,7 +268,7 @@ tangxin-zhizhe-extension/
 15. 如果任务失败，可在失败任务卡片点击「重试」重新创建同一视频的下载任务。
 16. 切换到「失败」筛选后，可点击「重试失败」按视频编号去重批量重新创建当前结果中的失败任务。
 17. 切换到「可保存」筛选后，可点击「保存全部」逐个处理当前结果里的待保存任务。
-18. 合并完成后点击「保存到设备」。
+18. 合并完成后点击「保存到设备」，在扩展安全保存页核对文件并由用户手势启动保存。支持文件选择器时写盘成功后自动完成；Android Blob 兜底会保留票据，看到下载文件后再手动确认。
 
 ### 管理下载任务
 
@@ -276,8 +286,9 @@ tangxin-zhizhe-extension/
 - 失败筛选下可点击「重试失败」批量恢复失败任务。
 - 查看视频名称、视频编号、输出格式、文件大小和更新时间。
 - 查看完整源链接摘要，并复制包含域名的完整下载源链接。
+- 暂停、继续或取消当前任务；旧 `attemptId` 和乱序事件不会污染重试任务。
 - 保存单个任务到设备。
-- 删除单个任务卡片和缓存。
+- 删除单个任务时先中止网络请求，再清理卡片、检查点、分片与 OPFS 成品。
 - 打开浏览器下载目录。
 - 清空当前任务记录。
 
@@ -297,10 +308,12 @@ tangxin-zhizhe-extension/
 
 ## 视频格式说明
 
-插件处理 M3U8 时不会只改文件后缀，而是使用 `mux.js@7.0.0` 对 TS 分片合并结果进行转封装：
+插件使用 `m3u8-parser@7.2.0` 解析清单，并使用 `mux.js@7.0.0` 对 TS 分片进行流式转封装：
 
 - 转封装成功：输出 `.mp4`，MIME 为 `video/mp4`。
-- 转封装失败：保留 `.ts` 兜底文件，并在任务卡片显示失败原因。
+- 用户明确选择 TS 时：保留 `.ts` 组装文件。
+- 支持 AES-128 正确序列 IV、显式 IV、初始化段、Byte Range、密钥轮换和 discontinuity。
+- 直播清单、SAMPLE-AES 或独立音轨无法安全合并时：规划阶段失败并解释原因，不生成伪 MP4、静音文件或损坏文件。
 
 ## 本地账号上传云端
 
@@ -364,13 +377,16 @@ npm run dev
 
 ```powershell
 node --check .\background.js
-node --check .\update_downloader.js
+node --check .\state_mutation_core.js
+node --check .\page_context_core.js
+node --check .\download_core.js
 node --check .\content.js
 node --check .\page_hook.js
 node --check .\page_probe.js
 node --check .\display_patch.js
 node --check .\nav_guard.js
 node --check .\offscreen_downloader.js
+node --check .\save.js
 node -e "JSON.parse(require('fs').readFileSync('.\\manifest.json','utf8')); console.log('manifest 正常')"
 ```
 
@@ -378,9 +394,12 @@ node -e "JSON.parse(require('fs').readFileSync('.\\manifest.json','utf8')); cons
 
 ```powershell
 node --check .\tangxin-zhizhe-extension\background.js
-node --check .\tangxin-zhizhe-extension\update_downloader.js
+node --check .\tangxin-zhizhe-extension\state_mutation_core.js
+node --check .\tangxin-zhizhe-extension\page_context_core.js
+node --check .\tangxin-zhizhe-extension\download_core.js
 node --check .\tangxin-zhizhe-extension\content.js
 node --check .\tangxin-zhizhe-extension\offscreen_downloader.js
+node --check .\tangxin-zhizhe-extension\save.js
 node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\manifest.json','utf8')); console.log('manifest 正常')"
 ```
 
@@ -474,7 +493,7 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 
 ### 检查更新不灵敏、云端版本比本地旧、或没有检测到新版
 
-1. 进入「设置 → 版本升级」，点击「实时检查」（升级系统 v7，手动操作始终绕过 15 分钟成功缓存）。
+1. 进入「设置 → 版本升级」，点击「实时检查」（升级系统 v8，手动操作始终绕过 15 分钟成功缓存）。
 2. 检测会同时请求固定仓库路径的多个清单源（GitHub raw、gitmirror、ghproxy、jsDelivr 等），只有通过正式公钥签名的结果才参与 **version/build** 比较；单个 CDN 的旧缓存或被篡改内容不会覆盖有效新版本。
 3. 升级中心会显示缓存年龄、镜像成功/失败数量和逐源版本；自动打开面板时命中成功缓存属于正常现象，点击「实时检查」可立即刷新。
 4. 远程 `version` 大于本地 `manifest.json` 的 `version` 时会提醒；版本相同但远程 `build` 晚于本地构建时也会提醒。
@@ -487,11 +506,11 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 1. 进入「设置」页，点击「检查更新」后再点「下载」。
 2. 插件会实时验证 schema 3 签名清单，再按其中被签名的大小和 SHA-256 获取 **CRX3 安装包**（`releases/tangxin-zhizhe-latest.crx`）。
 3. 每个候选地址都必须完全匹配固定 owner/repo/branch/path；完整文件还要通过 SHA-256、CRX3 内嵌公钥、正式扩展 ID、ZIP 起点和包自身 RSA 签名校验，任何一项不符都会切换镜像。
-4. 后台 `chrome.downloads` 可用时直接提交同一份已校验字节；API 缺失或拒绝时，由 `update_downloader.js` 在当前 HTTPS 页面重新核对字节数、CRX3 文件头和 SHA-256，再点击临时 Blob 链接保存。两条路径都不会重新请求未经校验的远程文件。
-5. 高级信息会列出每个镜像的 `validated`、`client-save-required`、`submitted`、`validation-failed` 或 `submit-failed` 状态和具体错误。后台路径会显示浏览器下载编号，页面 Blob 路径没有 API 编号，但会明确显示 `content-blob` 交付状态。
-6. **5.0.3 自举例外**：该旧版已把更新交给缺少 `chrome.downloads` 的离屏页，因而可能报 `Cannot read properties of undefined (reading 'download')`；已安装代码无法被远程清单反向修补。遇到此错误需直接打开 [最新版 CRX](https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx) 并手动覆盖安装一次，升级到 5.0.5 后插件内下载会自动使用双通道。
-7. 如果浏览器拦截下载，请打开浏览器下载记录允许保留文件；CRX 提交下载不等于完成安装，下载后仍需在扩展管理页手动安装或覆盖更新。
-8. 如果仍然失败，在升级中心点「复制报告」保存完整镜像与校验结果；主界面不会把未经验证的候选 URL 标成可信安装入口。
+4. 校验后的安装包写入扩展 OPFS，并打开 `save.html` 安全保存页；整个 CRX 不会作为 Base64 放进 runtime 消息，也不依赖可能缺失的 `chrome.downloads.download`。
+5. 保存页再次核对文件大小、CRX3 文件头和 SHA-256。同一令牌只能被一个标签领取；支持 File System Access API 时实际写盘成功后才核销，Android Blob 兜底允许重复提交并由用户看到文件后确认。
+6. 高级信息会列出每个镜像的 `validated`、`save-page-opened`、`submitted`、`validation-failed` 或 `submit-failed` 状态和具体错误；安全保存页没有浏览器下载 API 编号。
+7. **5.0.3 自举例外**：该旧版会在离屏页读取不存在的 `chrome.downloads`，可能报 `Cannot read properties of undefined (reading 'download')`。已安装旧代码无法被远程清单修补，需直接打开 [最新版 CRX](https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx) 手动覆盖一次。
+8. 如果保存页被关闭，可回到升级中心点击「重新验证并打开保存页」生成新票；若仍失败，复制完整镜像与校验报告。CRX 保存完成也不等于安装完成，仍需在扩展管理页手动安装或覆盖更新。
 
 ### 开发者如何打 CRX 包（发版）
 
@@ -526,16 +545,27 @@ npm run release
 
 | 组件 | 版本 |
 | --- | --- |
-| 糖心志者源码 | `5.0.5`，构建 `2026-07-27-1315` |
-| 当前已签名 CRX | `5.0.5`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
+| 糖心志者源码 | `5.1.0`，构建 `2026-07-27-1925` |
+| 待发布签名 CRX | `5.1.0`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
 | Manifest | `3` |
 | ArtPlayer 播放器内核 | `5.4.0` |
 | hls.js HLS 播放内核 | `1.6.16` |
 | mux.js | `7.0.0` |
-| Worker 推荐版本 | `2.0.2` |
+| m3u8-parser | `7.2.0` |
+| Worker 推荐版本 | `2.1.0` |
 | Wrangler 推荐版本 | `4.110.0` |
 
 ## 更新日志
+
+[2026-07-27 19:25] 【重构】升级到 `5.1.0`（构建 `2026-07-27-1925`）：Vlog 当前卡片改为活动 DOM、播放器 ID、Vue `isActive` 与 Swiper 索引交叉锁定，旧 ID → 空值 → 新 ID 的换片窗口不再允许旧请求写回；网站播放器、插件播放器、复制和下载统一使用 v2 推荐线路，并新增电影票 HUD 与手动重新同步。
+
+[2026-07-27 19:25] 【体验】新增省流、均衡、高清播放模式和可见质量决策；播放器按媒体 URL 指纹处理同会话换源，HLS 恢复次数按线路隔离，MediaKernel 每次装载只发一次 `ready`，Wake Lock 延迟取得后会复核当前会话。
+
+[2026-07-27 19:25] 【下载】新增下载前规划器、OPFS 可暂停/继续/取消/重启恢复队列、`attemptId + sequence` 事件隔离，以及 AES-128、Map、Byte Range、密钥轮换和 discontinuity 支持；206 分片必须严格匹配 `Content-Range` 与字节数，忽略 Range 的 200 响应只有覆盖目标区间才可截取；直播、SAMPLE-AES 与独立音轨在规划阶段安全拒绝。
+
+[2026-07-27 19:25] 【安全】新增云端/本地金币购买对账中心与扩展安全保存页。视频和 CRX 成品从 OPFS 保存，一次性令牌同时只允许一个标签领取，旧标签关闭后可由新标签安全接管；CRX 再次校验大小、CRX3 头和 SHA-256，不再通过 runtime 响应传输整包 Base64，也不会把被浏览器拦截的点击误报为已保存。
+
+[2026-07-27 22:25] 【修复】最终发布回归补齐 Byte Range 响应区间/长度校验、下载进度缓冲的跨 `attemptId` 隔离、持久任务恢复计划测试、安全保存票关闭标签后接管，以及下载规划器顶层焦点、Esc、Tab 循环与底层工作台 inert；扩展 Vitest 增至 10 个文件、35 项并全部通过。
 
 [2026-07-27 13:15] 【修复】升级到 `5.0.5`：确认 5.0.3 在离屏页读取缺失的 `chrome.downloads` 导致最新版下载失败；新版在后台下载 API 缺失或拒绝时，把同一份已完成大小、SHA-256、扩展 ID 与 CRX3 签名验证的字节交给当前页面复核后以 Blob 保存。Vlog 回填同时改为优先使用实际探测后的推荐完整线路，并把候选线路统一规范为网站原生 `changeSources` 所需的 `line.link`。
 

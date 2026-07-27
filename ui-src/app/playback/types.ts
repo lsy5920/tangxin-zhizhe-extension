@@ -30,13 +30,30 @@ export type PlaybackSource = {
   label: string;
   url: string;
   protocol: "hls" | "progressive" | "unknown";
+  role?: "primary" | "backup" | "alternate";
   health: PlaybackSourceHealth;
+  media?: {
+    durationSeconds?: number;
+    container?: "mpeg-ts" | "fmp4" | "progressive" | "unknown";
+    live?: boolean;
+    audioMode?: "muxed" | "separate" | "unknown";
+    variants?: Array<{
+      id: string;
+      label: string;
+      width?: number;
+      height?: number;
+      bandwidth?: number;
+      url: string;
+      estimatedBytes?: number;
+    }>;
+  };
 };
 
 export type PlaybackDecision = {
   recommendedSourceId: string;
   reasonCodes: string[];
   failoverAllowed: boolean;
+  policyVersion?: string;
 };
 
 export type PlaybackAcquisition = {
@@ -52,6 +69,7 @@ export type PlaybackAcquisition = {
 
 export type PlaybackSession = {
   id: string;
+  revision?: string;
   movieId: string;
   title: string;
   phase: "ready";
@@ -85,6 +103,11 @@ export type PlaybackRuntimeState = {
   fatalErrorTimes: number[];
   networkRecoveryUsed: boolean;
   mediaRecoveryUsed: boolean;
+  sourceRecovery: Record<string, {
+    fatalErrorTimes: number[];
+    networkRecoveryUsed: boolean;
+    mediaRecoveryUsed: boolean;
+  }>;
   error: string;
   switchReason: string;
 };
@@ -92,6 +115,7 @@ export type PlaybackRuntimeState = {
 export type PlaybackRuntimeAction =
   | { type: "SESSION_REQUESTED"; generation: number }
   | { type: "SESSION_READY"; generation: number; session: PlaybackSession }
+  | { type: "SESSION_METADATA_UPDATED"; generation: number; session: PlaybackSession }
   | { type: "SOURCE_LOADING"; generation: number; sourceId: string; switching?: boolean; reason?: string }
   | { type: "PLAYING"; generation: number }
   | { type: "PAUSED"; generation: number }
@@ -107,4 +131,3 @@ export type LegacyPlaybackDetail = FullDetail & {
   accountId?: string;
   rotation?: { tried?: number; failed?: { accountId?: string; label?: string; stage?: string; error?: string }[] };
 };
-

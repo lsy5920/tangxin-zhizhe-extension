@@ -63,13 +63,19 @@
     pageEpoch: 0,
     pageKey: "",
     pageMovieId: "",
+    pageTransitioning: false,
     activeMovieId: "",
     activeHintAt: 0,
     activePointerAt: 0,
     activeVlogRequestKey: "",
     activeVlogRetryAt: 0,
     nativeVlogAppliedKey: "",
+    nativeVlogRestoreTimer: 0,
+    nativeVlogAbortController: null,
     contextTrackerInstalled: false,
+    contextPollTimer: 0,
+    contextInitialTimer: 0,
+    vlogHudTimer: 0,
     lastMessage: "糖心志者播放资源监听已安装"
   };
 
@@ -92,6 +98,55 @@
 
   function emit(kind, payload) {
     window.postMessage({ source: SOURCE, kind, payload: { ts: now(), ...payload } }, "*");
+  }
+
+  function formatHudDuration(value) {
+    const seconds = Number(value || 0);
+    if (!Number.isFinite(seconds) || seconds <= 0) return "时长待校准";
+    const minutes = Math.floor(seconds / 60);
+    const remain = Math.floor(seconds % 60);
+    return `${minutes}分${String(remain).padStart(2, "0")}秒`;
+  }
+
+  /** 网站 Vlog 页的轻量电影票 HUD，只展示当前稳定卡片，不读取或暴露账号凭据。 */
+  function renderVlogTicket(info = {}) {
+    if (!/^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))) {
+      document.getElementById("txzz-vlog-ticket-host")?.remove();
+      return;
+    }
+    let host = document.getElementById("txzz-vlog-ticket-host");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "txzz-vlog-ticket-host";
+      host.style.cssText = "position:fixed;left:max(10px,env(safe-area-inset-left));top:max(10px,env(safe-area-inset-top));z-index:2147483645;pointer-events:auto;font-family:system-ui,-apple-system,'Microsoft YaHei',sans-serif";
+      const root = host.attachShadow({ mode: "open" });
+      root.innerHTML = `<style>
+        .ticket{min-width:190px;max-width:min(290px,calc(100vw - 20px));padding:10px 12px;border:1px solid rgba(255,255,255,.82);border-radius:18px;background:linear-gradient(135deg,rgba(255,240,248,.96),rgba(238,232,255,.96));box-shadow:0 12px 34px rgba(76,45,110,.22);color:#55415f;transition:.22s ease;backdrop-filter:blur(14px)}
+        .ticket[data-compact='1']{min-width:0;max-width:175px;padding:7px 10px;opacity:.72;transform:scale(.94);transform-origin:left top}.ticket[data-compact='1'] .detail,.ticket[data-compact='1'] button{display:none}
+        .top{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800}.dot{width:8px;height:8px;border-radius:99px;background:#a77af3;box-shadow:0 0 0 4px rgba(167,122,243,.14)}
+        .id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status{margin-left:auto;color:#8b5cd6}.detail{margin-top:6px;font-size:10px;line-height:1.5;color:#796b80;word-break:break-all}
+        button{margin-top:7px;width:100%;min-height:32px;border:0;border-radius:11px;background:#8e66dc;color:white;font-size:10px;font-weight:800;cursor:pointer}button:focus-visible{outline:2px solid #fff;box-shadow:0 0 0 4px #8e66dc}
+      </style><section class="ticket" role="status" aria-live="polite"><div class="top"><span class="dot"></span><span class="id"></span><span class="status"></span></div><div class="detail"></div><button type="button">重新同步当前卡片</button></section>`;
+      root.querySelector("button")?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        renderVlogTicket({ movieId: fullplay.pageMovieId, status: "重新检票", detail: "正在核对当前活动卡片与完整线路" });
+        ensureActiveVlogDetail("manual-ticket")?.catch((error) => {
+          renderVlogTicket({ movieId: fullplay.pageMovieId, status: "同步失败", detail: error?.message || String(error) });
+        });
+      });
+      root.querySelector(".ticket")?.addEventListener("mouseenter", (event) => { event.currentTarget.dataset.compact = "0"; });
+      document.documentElement.appendChild(host);
+    }
+    const root = host.shadowRoot;
+    const ticket = root?.querySelector(".ticket");
+    const movieId = String(info.movieId || fullplay.pageMovieId || "");
+    if (root?.querySelector(".id")) root.querySelector(".id").textContent = movieId ? `糖果检票 · ${movieId}` : "糖果检票 · 等待卡片";
+    if (root?.querySelector(".status")) root.querySelector(".status").textContent = String(info.status || "核对中");
+    const duration = info.duration ? ` · ${formatHudDuration(info.duration)}` : "";
+    if (root?.querySelector(".detail")) root.querySelector(".detail").textContent = `${String(info.detail || "正在确认当前活动视频")}${duration}`;
+    if (ticket) ticket.dataset.compact = "0";
+    if (fullplay.vlogHudTimer) window.clearTimeout(fullplay.vlogHudTimer);
+    fullplay.vlogHudTimer = window.setTimeout(() => { if (ticket) ticket.dataset.compact = "1"; }, 3_200);
   }
 
   function norm(value) {
@@ -163,25 +218,28 @@
     if (!/^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))) return "";
     try {
       const listVm = document.querySelector(".vlog-list")?.__vue__;
-      const listId = movieIdFromVueValue(listVm?.playerInfo || listVm?.activeItem || listVm?.currentItem);
-      if (listId) return listId;
-
       const activeSlide = document.querySelector(".swiper-slide-active")
         || document.querySelector(".swiper-slide[aria-hidden='false']");
       const activeDetailVm = activeSlide?.querySelector(".short-video-detail")?.__vue__;
       const activeDetailId = movieIdFromVueValue(activeDetailVm?.r || activeDetailVm?.$options?.propsData?.r);
-      if (activeDetailId && activeDetailVm?.$options?.propsData?.isActive !== false) return activeDetailId;
       const activePlayerId = movieIdFromValue(activeSlide?.querySelector(".player")?.__vue__?.currentMovieId);
-      if (activePlayerId) return activePlayerId;
-
+      let markedActiveId = "";
       for (const element of document.querySelectorAll(".short-video-detail")) {
         const vm = element.__vue__;
         if (vm?.$options?.propsData?.isActive === true) {
           const id = movieIdFromVueValue(vm.r || vm.$options?.propsData?.r);
-          if (id) return id;
+          if (id) { markedActiveId = id; break; }
         }
       }
-      return "";
+      const listId = movieIdFromVueValue(listVm?.playerInfo || listVm?.activeItem || listVm?.currentItem);
+      return globalThis.TxzzPageContextCore?.resolveVlogMovieId({
+        listId,
+        activeSlideId: activeDetailId,
+        activeDetailId,
+        activeDetailEnabled: activeDetailVm?.$options?.propsData?.isActive !== false,
+        activePlayerId,
+        markedActiveId
+      })?.movieId || activeDetailId || activePlayerId || markedActiveId || listId || "";
     } catch (_) {
       return "";
     }
@@ -218,21 +276,26 @@
 
   function updatePageContext(reason = "route-check") {
     const nextKey = currentPageKey(location.href);
-    const nextMovieId = routeMovieId();
-    const routeChanged = Boolean(fullplay.pageKey && fullplay.pageKey !== nextKey);
-    // Vlog 刷视频不会改变 URL；active movie ID 的变化必须同样开启新代次，
-    // 否则旧 slide 的异步详情仍可能在 700ms 轮询窗口内回写。
-    const vlogMovieChanged = Boolean(
-      fullplay.pageKey
-      && fullplay.pageKey === nextKey
-      && fullplay.pageMovieId
-      && nextMovieId
-      && fullplay.pageMovieId !== nextMovieId
-      && /^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))
-    );
-    const changed = routeChanged || vlogMovieChanged;
+    const detectedMovieId = routeMovieId();
+    const isVlog = /^\/vlog(?:\/|$)/i.test(String(location.pathname || ""));
+    const reconciled = globalThis.TxzzPageContextCore?.reconcileContext(
+      { pageKey: fullplay.pageKey, pageEpoch: fullplay.pageEpoch, movieId: fullplay.pageMovieId },
+      { pageKey: nextKey, movieId: detectedMovieId, isVlog }
+    ) || {
+      pageKey: nextKey,
+      pageEpoch: fullplay.pageEpoch,
+      movieId: detectedMovieId,
+      transitioning: false,
+      routeChanged: Boolean(fullplay.pageKey && fullplay.pageKey !== nextKey),
+      movieChanged: false,
+      changed: Boolean(fullplay.pageKey && fullplay.pageKey !== nextKey)
+    };
+    const changed = Boolean(reconciled.changed);
     if (changed) {
-      fullplay.pageEpoch += 1;
+      if (fullplay.nativeVlogRestoreTimer) window.clearTimeout(fullplay.nativeVlogRestoreTimer);
+      fullplay.nativeVlogRestoreTimer = 0;
+      fullplay.nativeVlogAbortController?.abort?.();
+      fullplay.nativeVlogAbortController = null;
       fullplay.activeMovieId = "";
       fullplay.activeHintAt = 0;
       fullplay.activePointerAt = 0;
@@ -240,8 +303,10 @@
       fullplay.activeVlogRetryAt = 0;
       fullplay.nativeVlogAppliedKey = "";
     }
-    fullplay.pageKey = nextKey;
-    fullplay.pageMovieId = nextMovieId;
+    fullplay.pageKey = reconciled.pageKey;
+    fullplay.pageEpoch = reconciled.pageEpoch;
+    fullplay.pageMovieId = reconciled.movieId;
+    fullplay.pageTransitioning = Boolean(reconciled.transitioning);
     if (changed) {
       rejectStalePending(`page context changed: ${reason}`);
       emit("fullplay-context", {
@@ -251,7 +316,17 @@
         reason
       });
     }
-    return { pageKey: fullplay.pageKey, pageEpoch: fullplay.pageEpoch, movieId: fullplay.pageMovieId };
+    if (isVlog) renderVlogTicket({
+      movieId: fullplay.pageMovieId,
+      status: fullplay.pageTransitioning ? "换片中" : "已锁定",
+      detail: fullplay.pageTransitioning ? "等待活动卡片稳定" : `代次 ${fullplay.pageEpoch}`
+    });
+    return {
+      pageKey: fullplay.pageKey,
+      pageEpoch: fullplay.pageEpoch,
+      movieId: fullplay.pageMovieId,
+      transitioning: fullplay.pageTransitioning
+    };
   }
 
   function extractElementMovieId(element) {
@@ -340,7 +415,7 @@
       });
     }
     const hintFresh = fullplay.activeMovieId && Date.now() - fullplay.activeHintAt <= 15_000;
-    const active = routeId ? routeId === id : Boolean(hintFresh && fullplay.activeMovieId === id);
+    const active = !current.transitioning && (routeId ? routeId === id : Boolean(hintFresh && fullplay.activeMovieId === id));
     return {
       pageKey: current.pageKey,
       pageEpoch: current.pageEpoch,
@@ -387,8 +462,13 @@
       // 补发一次完整详情请求；同一 context 的请求由 pendingByContext 去重。
       ensureActiveVlogDetail("poll")?.catch(() => {});
     };
-    window.setTimeout(pollContext, 450);
-    window.setInterval(pollContext, 700);
+    fullplay.contextInitialTimer = window.setTimeout(pollContext, 450);
+    fullplay.contextPollTimer = window.setInterval(pollContext, 700);
+    window.addEventListener("pagehide", () => {
+      if (fullplay.contextInitialTimer) window.clearTimeout(fullplay.contextInitialTimer);
+      if (fullplay.contextPollTimer) window.clearInterval(fullplay.contextPollTimer);
+      if (fullplay.vlogHudTimer) window.clearTimeout(fullplay.vlogHudTimer);
+    }, { once: true });
   }
 
   function installSameDetailNavigationGuard() {
@@ -795,11 +875,21 @@
     const id = String(movieId || "").trim();
     const fullDetail = payload.data || payload.detail || {};
     const summary = payload.summary || {};
+    const session = payload.session || {};
+    const recommendedSource = Array.isArray(session.sources)
+      ? session.sources.find((source) => source?.id === session.decision?.recommendedSourceId && firstPlayableValue(source?.url))
+        || session.sources.find((source) => firstPlayableValue(source?.url))
+      : null;
+    const alternateSource = Array.isArray(session.sources)
+      ? session.sources.find((source) => source?.id !== recommendedSource?.id && firstPlayableValue(source?.url))
+      : null;
     const nodes = activeVlogNodes(id);
-    if (!nodes) return false;
+    if (!nodes || fullplay.pageTransitioning || activeVlogMovieId() !== id) return false;
     const current = nodes.currentData || {};
     if (String(current.id || id) !== id) return false;
     const playLink = firstPlayableValue(
+      recommendedSource?.url,
+      summary.recommendedPlayLink,
       summary.playLink,
       fullDetail.play_link,
       fullDetail.playLink,
@@ -807,6 +897,7 @@
       fullDetail.playUrl
     );
     const backupLink = firstPlayableValue(
+      alternateSource?.url,
       summary.backupLink,
       fullDetail.backup_link,
       fullDetail.backupLink,
@@ -824,6 +915,18 @@
       play_link: effectivePlayLink,
       backup_link: backupLink || current.backup_link || ""
     };
+    const probedDuration = Number(
+      recommendedSource?.media?.durationSeconds
+      || recommendedSource?.health?.duration
+      || summary.recommendedStat?.duration
+      || summary.fullStat?.duration
+      || 0
+    );
+    if (Number.isFinite(probedDuration) && probedDuration > 0) {
+      // 站点字段统一写秒数；字符串时长或短片摘要不得覆盖完整清单探测值。
+      merged.duration_time = probedDuration;
+      merged.duration = probedDuration;
+    }
     const sourceLines = Array.isArray(fullDetail.lines) && fullDetail.lines.length
       ? fullDetail.lines
         .filter((line) => line && typeof line === "object" && firstPlayableValue(line.link || line.url || line.play_link))
@@ -884,9 +987,22 @@
     let applied = sameSource;
     if (player && typeof player.changeSources === "function" && !sameSource) {
       try {
-        if (video?.addEventListener) video.addEventListener("loadedmetadata", restorePlayback, { once: true });
+        if (fullplay.nativeVlogRestoreTimer) window.clearTimeout(fullplay.nativeVlogRestoreTimer);
+        fullplay.nativeVlogAbortController?.abort?.();
+        fullplay.nativeVlogAbortController = typeof AbortController !== "undefined" ? new AbortController() : null;
+        if (video?.addEventListener) {
+          const options = fullplay.nativeVlogAbortController
+            ? { once: true, signal: fullplay.nativeVlogAbortController.signal }
+            : { once: true };
+          video.addEventListener("loadedmetadata", restorePlayback, options);
+        }
         player.changeSources(merged, { autoplay: wasPlaying });
-        window.setTimeout(restorePlayback, 1_500);
+        fullplay.nativeVlogRestoreTimer = window.setTimeout(() => {
+          restorePlayback();
+          fullplay.nativeVlogRestoreTimer = 0;
+          fullplay.nativeVlogAbortController?.abort?.();
+          fullplay.nativeVlogAbortController = null;
+        }, 1_500);
         applied = true;
       } catch (error) {
         recordError(error, { movieId: id, nativeVlog: true, reason });
@@ -901,6 +1017,12 @@
     }
     if (!applied) return false;
     fullplay.nativeVlogAppliedKey = sourceKey;
+    renderVlogTicket({
+      movieId: id,
+      status: "完整线路",
+      detail: `${recommendedSource?.label || "推荐线路"} · ${reason}`,
+      duration: probedDuration
+    });
     emit("fullplay-native-vlog", {
       movieId: id,
       pageKey: context.pageKey,
@@ -909,7 +1031,7 @@
       source: effectivePlayLink,
       backup: backupLink,
       reason,
-      duration: merged.duration_time || merged.duration || summary.fullStat?.duration || ""
+      duration: probedDuration || merged.duration_time || merged.duration || ""
     });
     setMessage(`网站 Vlog 播放器已切换完整线路：${id}`, "ok");
     return true;
@@ -933,14 +1055,14 @@
     const promise = requestFullDetail(movieId, activeVlogDetailSnapshot(movieId), context);
     promise.then(
       (payload) => {
-        if (fullplay.pageKey === context.pageKey && fullplay.pageEpoch === context.pageEpoch && fullplay.pageMovieId === movieId) {
+        if (!fullplay.pageTransitioning && fullplay.pageKey === context.pageKey && fullplay.pageEpoch === context.pageEpoch && fullplay.pageMovieId === movieId) {
           try { applyNativeVlogDetail(movieId, payload, context, reason); } catch (error) { recordError(error, { movieId, nativeVlog: true }); }
           setMessage(`Vlog 当前视频已完成完整线路检票：${movieId}`, "ok");
           emit("fullplay-status", { message: `Vlog 当前视频 ${movieId} 已完成完整线路检票`, movieId, reason, background: true });
         }
       },
       (error) => {
-        if (fullplay.pageKey === context.pageKey && fullplay.pageEpoch === context.pageEpoch && fullplay.pageMovieId === movieId) {
+        if (!fullplay.pageTransitioning && fullplay.pageKey === context.pageKey && fullplay.pageEpoch === context.pageEpoch && fullplay.pageMovieId === movieId) {
           fullplay.activeVlogRetryAt = Date.now() + 5_000;
           // 保留失败 context 键，确保 700ms 轮询尊重 5 秒退避；到期后同一键可再次发起。
           fullplay.activeVlogRequestKey = key;
@@ -982,7 +1104,8 @@
       const latest = fullplay.latestByContext.get(pending.contextKey);
       const contextStillCurrent = pending.pageKey === fullplay.pageKey
         && pending.pageEpoch === fullplay.pageEpoch
-        && (!fullplay.pageMovieId || String(pending.movieId) === String(fullplay.pageMovieId))
+        && !fullplay.pageTransitioning
+        && String(pending.movieId) === String(fullplay.pageMovieId)
         && latest === id;
       if (!contextStillCurrent || String(cachedMovieId || pending.movieId) !== String(pending.movieId)) {
         const stale = new Error("stale playback response");

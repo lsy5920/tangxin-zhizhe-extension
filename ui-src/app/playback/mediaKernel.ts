@@ -1,7 +1,7 @@
 import Artplayer from "artplayer";
 import Hls from "hls.js";
 import type { PlaybackSource } from "./types";
-import type { PlayerFillMode } from "./preferences";
+import type { PlaybackNetworkMode, PlayerFillMode } from "./preferences";
 
 export type MediaSnapshot = {
   currentTime: number;
@@ -25,6 +25,7 @@ export type MediaKernelEvent =
   | { type: "fatal"; kind: "network" | "media" | "other"; message: string }
   | { type: "qualities"; qualities: MediaQuality[]; level: number }
   | { type: "quality"; level: number }
+  | { type: "adaptive"; message: string }
   | { type: "error"; message: string };
 
 export type MediaKernelOptions = {
@@ -53,6 +54,8 @@ export class MediaKernel {
   private hls: Hls | null = null;
   private destroyed = false;
   private loadGeneration = 0;
+  private networkMode: PlaybackNetworkMode = "balanced";
+  private lastAdaptiveDowngradeAt = 0;
 
   constructor(options: MediaKernelOptions) {
     this.container = options.container;
@@ -80,11 +83,18 @@ export class MediaKernel {
     };
   }
 
-  async load(source: PlaybackSource, snapshot: Partial<MediaSnapshot> = {}, fillMode: PlayerFillMode = "contain") {
+  async load(
+    source: PlaybackSource,
+    snapshot: Partial<MediaSnapshot> = {},
+    fillMode: PlayerFillMode = "contain",
+    networkMode: PlaybackNetworkMode = "balanced"
+  ) {
     const loadGeneration = this.loadGeneration + 1;
     this.loadGeneration = loadGeneration;
     this.destroyCurrent();
     this.destroyed = false;
+    this.networkMode = networkMode;
+    this.lastAdaptiveDowngradeAt = 0;
     const useHls = source.protocol === "hls" || /m3u8/i.test(source.url);
     const art = new Artplayer({
       container: this.container,
@@ -103,11 +113,17 @@ export class MediaKernel {
       controls: [],
       contextmenu: [],
       customType: useHls ? {
-        m3u8: (video, url) => this.attachHls(video, url, loadGeneration)
+        m3u8: (video, url) => this.attachHls(video, url, loadGeneration, networkMode)
       } : {}
     });
     this.art = art;
     const active = () => !this.destroyed && this.loadGeneration === loadGeneration && this.art === art;
+    let readyEmitted = false;
+    const emitReadyOnce = () => {
+      if (readyEmitted || !active()) return;
+      readyEmitted = true;
+      this.emit({ type: "ready" });
+    };
     art.on("ready", () => {
       if (!active()) return;
       const video = art.video;
@@ -118,7 +134,7 @@ export class MediaKernel {
       if (Number(snapshot.currentTime) > 0 && Number.isFinite(Number(snapshot.currentTime))) {
         try { video.currentTime = Number(snapshot.currentTime); } catch { /* 元数据到达后由控制器再恢复一次。 */ }
       }
-      this.emit({ type: "ready" });
+      emitReadyOnce();
       this.emitTime();
     });
     art.on("video:loadedmetadata", () => {
@@ -126,13 +142,17 @@ export class MediaKernel {
       if (Number(snapshot.currentTime) > 0 && art.video.duration > Number(snapshot.currentTime)) {
         art.video.currentTime = Number(snapshot.currentTime);
       }
-      this.emit({ type: "ready" });
+      emitReadyOnce();
       this.emitTime();
     });
     art.on("video:playing", () => { if (active()) this.emit({ type: "playing" }); });
     art.on("video:pause", () => { if (active()) { this.emit({ type: "pause" }); this.emitTime(); } });
     art.on("video:waiting", () => { if (active()) this.emit({ type: "waiting" }); });
-    art.on("video:timeupdate", () => { if (active()) this.emitTime(); });
+    art.on("video:timeupdate", () => {
+      if (!active()) return;
+      this.applyBufferProtection();
+      this.emitTime();
+    });
     art.on("video:progress", () => { if (active()) this.emitTime(); });
     art.on("video:ratechange", () => { if (active()) this.emitTime(); });
     art.on("video:volumechange", () => { if (active()) this.emitTime(); });
@@ -173,6 +193,20 @@ export class MediaKernel {
     if (this.video) this.video.style.objectFit = fillMode;
   }
 
+  setNetworkMode(networkMode: PlaybackNetworkMode) {
+    this.networkMode = networkMode;
+    if (!this.hls) return;
+    this.hls.config.capLevelToPlayerSize = networkMode !== "high-quality";
+    if (networkMode === "data-saver") {
+      const cappedLevel = this.hls.levels.reduce((best, level, index) => (
+        Number(level.height || 0) <= 720 && Number(level.bitrate || 0) <= 2_500_000 ? index : best
+      ), -1);
+      this.hls.autoLevelCapping = cappedLevel >= 0 ? cappedLevel : 0;
+    } else {
+      this.hls.autoLevelCapping = -1;
+    }
+  }
+
   setQuality(level: number) {
     if (!this.hls) return;
     this.hls.currentLevel = level;
@@ -204,13 +238,14 @@ export class MediaKernel {
     this.destroyCurrent();
   }
 
-  private attachHls(video: HTMLVideoElement, url: string, loadGeneration: number) {
+  private attachHls(video: HTMLVideoElement, url: string, loadGeneration: number, networkMode: PlaybackNetworkMode) {
     this.hls?.destroy();
     this.hls = null;
     if (Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
+        capLevelToPlayerSize: networkMode !== "high-quality",
         maxBufferLength: 45,
         backBufferLength: 30,
         fragLoadingMaxRetry: 1,
@@ -227,6 +262,16 @@ export class MediaKernel {
           level: index,
           label: level.height ? `${level.height}P` : level.bitrate ? `${Math.round(level.bitrate / 1000)}K` : `档位 ${index + 1}`
         }));
+        if (networkMode === "data-saver") {
+          const cappedLevel = (data.levels || []).reduce((best, level, index) => {
+            const height = Number(level.height || 0);
+            const bitrate = Number(level.bitrate || 0);
+            return height <= 720 && bitrate <= 2_500_000 ? index : best;
+          }, -1);
+          hls.autoLevelCapping = cappedLevel >= 0 ? cappedLevel : 0;
+        } else if (networkMode === "high-quality") {
+          hls.autoLevelCapping = -1;
+        }
         this.emit({ type: "qualities", qualities: [{ level: -1, label: "自动" }, ...qualities], level: hls.currentLevel });
       });
       hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => { if (active()) this.emit({ type: "quality", level: data.level }); });
@@ -251,6 +296,17 @@ export class MediaKernel {
 
   private emit(event: MediaKernelEvent) {
     if (!this.destroyed) this.onEvent(event);
+  }
+
+  private applyBufferProtection() {
+    if (this.networkMode !== "high-quality" || !this.hls || !this.video || this.video.paused) return;
+    const snapshot = this.snapshot();
+    const bufferAhead = snapshot.bufferedEnd - snapshot.currentTime;
+    const currentLevel = this.hls.currentLevel;
+    if (bufferAhead >= 5 || currentLevel <= 0 || Date.now() - this.lastAdaptiveDowngradeAt < 10_000) return;
+    this.lastAdaptiveDowngradeAt = Date.now();
+    this.hls.nextAutoLevel = Math.max(0, currentLevel - 1);
+    this.emit({ type: "adaptive", message: "缓冲不足 5 秒，已临时降低一档清晰度" });
   }
 
   private emitTime() {

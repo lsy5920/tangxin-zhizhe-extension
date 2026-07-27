@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.0.5",
-  "build": "2026-07-27-1315",
-  "releasedAt": "2026-07-27 13:15",
+  "version": "5.1.0",
+  "build": "2026-07-27-1925",
+  "releasedAt": "2026-07-27 19:25",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-27-1925",
+      "type": "重构",
+      "title": "Vlog 锁片、可恢复下载与金币安全对账",
+      "detail": "Vlog 当前卡片改由活动 DOM、播放器、Vue isActive 与 Swiper 索引交叉检票，网站播放器、内置播放器、复制和下载统一使用会话推荐线路。新增省流/均衡/高清模式、OPFS 暂停恢复下载队列、下载前线路/画质/容器/空间规划器及金币购买对账中心；HLS 支持 MEDIA-SEQUENCE、AES-128 IV、Map、Byte Range、密钥轮换和 discontinuity，直播、SAMPLE-AES 与独立音轨会在开始前拒绝。视频和 CRX 统一通过一次性令牌的扩展安全保存页交付，不再传输整包 Base64。",
+      "releasedAt": "2026-07-27 19:25"
+    },
     {
       "id": "2026-07-27-1315",
       "type": "修复",
@@ -165,11 +172,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 610361,
-  "packageSha256": "bb31b842de813529f548bb4da451a9b983a820feb5950e5e42d4904fbccd6b9b",
+  "packageSize": 653402,
+  "packageSha256": "351a3862cc06914879f50f6b6e42ab52564248a2d2676359a3208098193c2c56",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "g0NFrpENpwUSmjo6Y9aSZXfHFYYRgm1jjkvPBEKHeTV9b3fuFfcqPS6llvQIJ5pOkfuRXr0oV/lCmFu2jiXhEOZeolh3ctntsc4AVgc0kyFnNGDH0moS+UdAVo7jtmWp8gT9A4lvYBVt69MxqdHsDt/OY1Nit7H/Ltu8K1AHGYHhxgvBN71+mj1762AczMxp/AQhAaV7rucj2rfoLEtxqJVTH2v5TpCFkC8cwGZ6wxwLvtDEhQw8/HrF71YhM5yoOuK8vBL2HdrQeL7BCxZCv39i+7L6cG6qy5s5mHcwV2Bbh1fTgAVK/rVNLL/teDEkhWnKC0Bp8RdyDBcTngrYYg=="
+    "value": "r6Z1VzFwmAUpIHGc91epQxKROk7ZCOJW6/OLANFRYY3lcZG84RmMfUiRBhdpBo+qsSgy8S+WdqijDGWQVD2hWzYzTNwK3shlTPuOixaQOdVnU+WAAgJB1iY9McDhx9ntESvLA0JBUJHYhWhrhzbiDY/tifmBaxArK3c9dKwCsfRcZzQnrCVCbJuI/xg/Zf7sWx9BXNsbVjq5ZmFUnhbprp0/oWLReCWCT5TM4ImWg85iLddQkJ6+WZpT/FAX6ykWZSwlNHIM0neERMSs1Qt8DHmhkPH86l8CqLtmmZjguoNNtffr9yXSkgbh66ZN03dM2Kxp6HVPIcYUk/s7c/xtAA=="
   }
 }

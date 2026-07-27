@@ -61,6 +61,7 @@ export type PlayerControlBarProps = {
   fillMode: "contain" | "cover" | "fill";
   orientationMode: "auto" | "landscape" | "portrait";
   orientationRequested: boolean;
+  networkMode: "data-saver" | "balanced" | "high-quality";
   onSeekStart: (ratio: number, event: ReactPointerEvent<HTMLDivElement>) => void;
   onSeekMove: (ratio: number) => void;
   onSeekEnd: (ratio: number) => void;
@@ -95,6 +96,7 @@ export type PlayerControlBarProps = {
   onCopyDiagnostic: () => void;
   onBrightnessChange: (value: number) => void;
   onFocusWithinChange?: (focused: boolean) => void;
+  onSetNetworkMode: (mode: "data-saver" | "balanced" | "high-quality") => void;
   compact?: boolean;
 };
 
@@ -110,13 +112,13 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
     orientationLabel, brightness, moreOpen, morePanel, previewOptions, activePreviewKey,
     previewSourceLabel, playerStatus, currentLineLabel, fullscreenDiagnosticLabel,
     rateOptions, seekStepOptions, qualities, qualityLevel, canBackup, isBackupActive,
-    hasMovieId, fitMode, orientationMode, orientationRequested, onSeekStart, onSeekMove,
+    hasMovieId, fitMode, orientationMode, orientationRequested, networkMode, onSeekStart, onSeekMove,
     onSeekEnd, onSeekCancel, onKeyboardSeek, onTogglePlay, onSeekBack, onSeekForward,
     onToggleMore, onCloseMore, onToggleLock, onToggleFullscreen, onToggleMute,
     onVolumeChange, onCycleRate, onSetRate, onSetSeekStep, onSetMorePanel, onSelectPreview,
     onSetQuality, onCycleFit, onCycleFill, onCycleOrientation, onSwitchBackup, onScreenshot,
     onReload, onPip, onRecenter, onCopyLink, onOpenLink, onDownload, onCopyDiagnostic,
-    onBrightnessChange, onFocusWithinChange
+    onBrightnessChange, onFocusWithinChange, onSetNetworkMode
   } = props;
   const volumePercent = muted ? 0 : Math.round(volume * 100);
   const controlsInactive = !visible || locked;
@@ -163,6 +165,7 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
         fitMode={fitMode}
         orientationMode={orientationMode}
         orientationRequested={orientationRequested}
+        networkMode={networkMode}
         onClose={onCloseMore}
         onSetPanel={onSetMorePanel}
         onSelectPreview={onSelectPreview}
@@ -184,6 +187,7 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
         onDownload={onDownload}
         onDiagnostic={onCopyDiagnostic}
         onSwitchBackup={onSwitchBackup}
+        onSetNetworkMode={onSetNetworkMode}
       />
 
       <PlayerProgressBar

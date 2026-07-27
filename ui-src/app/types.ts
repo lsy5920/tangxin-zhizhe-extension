@@ -14,7 +14,7 @@ export type UpdateChangelogItem = {
 };
 
 export type UpdateCheckPhase = "idle" | "checking" | "cached" | "success" | "error";
-export type UpdateDownloadPhase = "idle" | "validating" | "submitted" | "failed";
+export type UpdateDownloadPhase = "idle" | "validating" | "saving" | "submitted" | "failed";
 
 /** 对同一份完整 CRX3 字节执行大小、哈希、身份、结构与包签名校验后的结果。 */
 export type UpdatePackageProbe = {
@@ -189,7 +189,9 @@ export type DownloadTask = {
   filename?: string;
   format?: string;
   mode?: string;
-  stage?: string;
+  attemptId?: string;
+  sequence?: number;
+  stage?: "queued" | "probing" | "downloading" | "paused" | "recovering" | "assembling" | "ready" | "saving" | "complete" | "cancelled" | "stale" | "error" | string;
   current?: number;
   total?: number;
   bytes?: number;
@@ -201,6 +203,65 @@ export type DownloadTask = {
   error?: string;
   transmuxError?: string;
   url?: string;
+  container?: "mp4" | "ts" | string;
+  networkMode?: "data-saver" | "balanced" | "high-quality" | string;
+  qualityHeight?: number;
+  objectReady?: boolean;
+  saveVia?: string;
+  plan?: DownloadPlan | null;
+};
+
+export type DownloadVariant = {
+  id?: string;
+  url?: string;
+  bandwidth?: number;
+  averageBandwidth?: number;
+  width?: number;
+  height?: number;
+  codecs?: string;
+  separateAudio?: boolean;
+};
+
+export type DownloadPlan = {
+  playlistUrl?: string;
+  selectedVariant?: DownloadVariant | null;
+  variants?: DownloadVariant[];
+  durationSeconds?: number;
+  container?: string;
+  audioMode?: string;
+  segmentCount?: number;
+  estimatedBytes?: number;
+  requiredBytes?: number;
+  storage?: { known?: boolean; quota?: number; usage?: number; available?: number };
+  blockedReason?: string;
+  compatibleContainers?: string[];
+};
+
+export type DownloadPlannerState = {
+  open?: boolean;
+  movieId?: string;
+  movieTitle?: string;
+  taskId?: string;
+  lineKey?: string;
+  mode?: string;
+  filename?: string;
+  source?: { id?: string; label?: string; protocol?: string; media?: Record<string, unknown> | null };
+  sources?: Array<{ id?: string; label?: string; role?: string; protocol?: string; health?: Record<string, unknown>; media?: Record<string, unknown> }>;
+  plan?: DownloadPlan | null;
+};
+
+export type PurchaseReconciliationItem = {
+  origin?: "cloud" | "local" | string;
+  attemptId?: string;
+  requestId?: string;
+  movieId?: string;
+  status?: "pending" | "charged" | "uncertain" | string;
+  price?: number;
+  account?: { id?: string; label?: string; coin?: number };
+  error?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  canReconcile?: boolean;
 };
 
 export type AccountItem = {
@@ -296,6 +357,13 @@ export type BridgeState = {
   screening?: ScreeningState;
   downloadTasks?: Record<string, DownloadTask>;
   downloadSnapshots?: unknown[];
+  downloadPlanner?: DownloadPlannerState | null;
+  purchaseReconciliation?: {
+    items?: PurchaseReconciliationItem[];
+    loading?: boolean;
+    cloudError?: string;
+    checkedAt?: string;
+  } | null;
   remote?: {
     baseUrl?: string;
     accountSourceMode?: string;

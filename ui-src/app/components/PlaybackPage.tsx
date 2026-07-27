@@ -44,7 +44,7 @@ export function PlaybackPage({ state, onAction }: Props) {
         <span className="pointer-events-none absolute -right-8 -top-12 h-32 w-32 rounded-full bg-fuchsia-200/35 blur-2xl" />
         <div className="relative flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-[10px] font-black tracking-[.18em] text-fuchsia-500"><Sparkles size={12} /> CANDY CINEMA 5.0</p>
+            <p className="flex items-center gap-1.5 text-[10px] font-black tracking-[.18em] text-fuchsia-500"><Sparkles size={12} /> CANDY CINEMA 5.1</p>
             <h1 className="mt-1 flex items-center gap-2 text-[19px] font-black tracking-[-.03em] text-slate-900 sm:text-[22px]"><Ticket size={20} className="text-violet-500" />沉浸糖果影院</h1>
             <p className="mt-1 text-[11px] leading-5 text-slate-500">检票、轮换、解锁和选线都由同一会话编排；资源就绪后仍需你亲自点击开映。</p>
           </div>

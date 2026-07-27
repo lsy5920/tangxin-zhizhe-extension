@@ -8,6 +8,7 @@ export type PageContext = {
   pageKey: string;
   pageEpoch: number;
   movieId: string;
+  transitioning?: boolean;
 };
 
 export type PlaybackRequestContext = {
@@ -24,6 +25,8 @@ export type VlogContextSnapshot = {
   activeDetail?: unknown;
   activeDetailEnabled?: boolean;
   activePlayerMovieId?: unknown;
+  activeSlideMovieId?: unknown;
+  markedActiveMovieId?: unknown;
 };
 
 const MOVIE_ID_KEYS = ["id", "movie_id", "movieId", "vid", "videoId"] as const;
@@ -49,12 +52,18 @@ function movieIdFromRecord(value: unknown): string {
  */
 export function getActiveVlogMovieId(snapshot: VlogContextSnapshot): string {
   const fromList = movieIdFromRecord(snapshot.listPlayerInfo);
-  if (fromList) return fromList;
-  if (snapshot.activeDetailEnabled !== false) {
-    const fromDetail = movieIdFromRecord(snapshot.activeDetail);
-    if (fromDetail) return fromDetail;
-  }
-  return cleanMovieId(snapshot.activePlayerMovieId);
+  const fromDetail = snapshot.activeDetailEnabled !== false ? movieIdFromRecord(snapshot.activeDetail) : "";
+  const fromSlide = cleanMovieId(snapshot.activeSlideMovieId);
+  const fromPlayer = cleanMovieId(snapshot.activePlayerMovieId);
+  const fromMarked = cleanMovieId(snapshot.markedActiveMovieId);
+  const strong = [fromSlide, fromDetail, fromPlayer, fromMarked].filter(Boolean);
+  const counts = new Map<string, number>();
+  strong.forEach((id) => counts.set(id, (counts.get(id) || 0) + 1));
+  const consensus = [...counts.entries()].sort((left, right) => right[1] - left[1])[0];
+  if (consensus?.[1] >= 2) return consensus[0];
+  if (strong.length === 1) return strong[0];
+  if (fromList && strong.includes(fromList)) return fromList;
+  return strong.length ? "" : fromList;
 }
 
 export function getDetailMovieId(value: unknown): string {
@@ -114,6 +123,8 @@ export function sameDetailPage(left: PageContext | null | undefined, right: Page
   if (!left || !right) return false;
   return left.pageKey === right.pageKey
     && left.pageEpoch === right.pageEpoch
+    && !left.transitioning
+    && !right.transitioning
     && (!left.movieId || !right.movieId || left.movieId === right.movieId);
 }
 
@@ -132,10 +143,30 @@ export function requiresNewPageGeneration(previous: PageContext | null | undefin
     && previous.movieId !== current.movieId;
 }
 
+/** Vlog 空 ID 仅表示 Swiper 正在换片；保留最后稳定 ID，等新 ID 出现再换代。 */
+export function reconcilePageContext(previous: PageContext | null | undefined, current: PageContext): PageContext {
+  if (!previous) return current;
+  let isVlog = false;
+  try { isVlog = /^\/vlog\/?$/i.test(new URL(current.href).pathname); } catch { /* 使用普通路由逻辑。 */ }
+  if (previous.pageKey !== current.pageKey) return { ...current, pageEpoch: previous.pageEpoch + 1 };
+  if (!isVlog) return current;
+  if (!current.movieId) {
+    return { ...current, movieId: previous.movieId, pageEpoch: previous.pageEpoch, transitioning: true };
+  }
+  return {
+    ...current,
+    pageEpoch: previous.movieId && previous.movieId !== current.movieId ? previous.pageEpoch + 1 : previous.pageEpoch,
+    transitioning: false
+  };
+}
+
 export function isCurrentRequest(current: PageContext, request: PlaybackRequestContext): boolean {
   if (request.active === false) return false;
   if (request.pageKey && request.pageKey !== current.pageKey) return false;
   if (Number.isFinite(request.pageEpoch) && Number(request.pageEpoch) !== current.pageEpoch) return false;
+  let isVlog = false;
+  try { isVlog = /^\/vlog\/?$/i.test(new URL(current.href).pathname); } catch { /* 非标准 URL 按普通页面。 */ }
+  if (isVlog && (current.transitioning || !request.movieId || !current.movieId)) return false;
   if (request.movieId && current.movieId && String(request.movieId) !== current.movieId) return false;
   return true;
 }

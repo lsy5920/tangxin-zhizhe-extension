@@ -5,20 +5,26 @@
   window.__txzzContentInstalled = true;
 
   function injectMainWorldScript(file, marker) {
-    try {
-      if (document.documentElement.dataset[marker] === "1") return;
+    return new Promise((resolve) => {
+      try {
+      if (document.documentElement.dataset[marker] === "1") {
+        resolve(true);
+        return;
+      }
       document.documentElement.dataset[marker] = "1";
       const script = document.createElement("script");
       script.src = chrome.runtime.getURL(file);
-      script.onload = () => script.remove();
+      script.onload = () => { script.remove(); resolve(true); };
       script.onerror = () => {
         try {
           delete document.documentElement.dataset[marker];
           script.remove();
         } catch (_) {}
+        resolve(false);
       };
       document.documentElement.appendChild(script);
-    } catch (_) {}
+      } catch (_) { resolve(false); }
+    });
   }
 
   injectMainWorldScript("nav_guard.js", "txzzNavGuardInjected");
@@ -159,7 +165,9 @@
     showInvalidCloudAccounts: false,
     editingAccountId: "",
     lastActionPayload: {},
-    repositoryUpdate: null
+    repositoryUpdate: null,
+    downloadPlanner: null,
+    purchaseReconciliation: { items: [], loading: false, cloudError: "" }
   };
 
   let drag = null;
@@ -172,6 +180,7 @@
   let pageContextEpoch = 0;
   let pageContextKey = "";
   let pageContextMovieId = "";
+  let pageContextTransitioning = false;
   let latestFullDetailToken = null;
   const FLOW_BADGE_TITLES = [
     "展示覆盖",
@@ -405,22 +414,28 @@
     if (!/^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))) return "";
     try {
       const listVm = document.querySelector(".vlog-list")?.__vue__;
-      const listId = movieIdFromVueValue(listVm?.playerInfo || listVm?.activeItem || listVm?.currentItem);
-      if (listId) return listId;
       const activeSlide = document.querySelector(".swiper-slide-active")
         || document.querySelector(".swiper-slide[aria-hidden='false']");
       const detailVm = activeSlide?.querySelector(".short-video-detail")?.__vue__;
       const detailId = movieIdFromVueValue(detailVm?.r || detailVm?.$options?.propsData?.r);
-      if (detailId && detailVm?.$options?.propsData?.isActive !== false) return detailId;
       const playerId = movieIdFromValue(activeSlide?.querySelector(".player")?.__vue__?.currentMovieId);
-      if (playerId) return playerId;
+      let markedActiveId = "";
       for (const element of document.querySelectorAll(".short-video-detail")) {
         const vm = element.__vue__;
         if (vm?.$options?.propsData?.isActive === true) {
           const id = movieIdFromVueValue(vm.r || vm.$options?.propsData?.r);
-          if (id) return id;
+          if (id) { markedActiveId = id; break; }
         }
       }
+      const listId = movieIdFromVueValue(listVm?.playerInfo || listVm?.activeItem || listVm?.currentItem);
+      return globalThis.TxzzPageContextCore?.resolveVlogMovieId({
+        listId,
+        activeSlideId: detailId,
+        activeDetailId: detailId,
+        activeDetailEnabled: detailVm?.$options?.propsData?.isActive !== false,
+        activePlayerId: playerId,
+        markedActiveId
+      })?.movieId || detailId || playerId || markedActiveId || listId || "";
     } catch (_) {}
     return "";
   }
@@ -449,30 +464,40 @@
 
   function refreshPageContext(reason = "poll") {
     const nextKey = currentPageKey();
-    const nextMovieId = currentMovieId();
-    const routeChanged = Boolean(pageContextKey && nextKey !== pageContextKey);
-    const vlogMovieChanged = Boolean(
-      pageContextKey
-      && nextKey === pageContextKey
-      && pageContextMovieId
-      && nextMovieId
-      && pageContextMovieId !== nextMovieId
-      && /^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))
-    );
+    const detectedMovieId = currentMovieId();
+    const isVlog = /^\/vlog(?:\/|$)/i.test(String(location.pathname || ""));
+    const reconciled = globalThis.TxzzPageContextCore?.reconcileContext(
+      { pageKey: pageContextKey, pageEpoch: pageContextEpoch, movieId: pageContextMovieId },
+      { pageKey: nextKey, movieId: detectedMovieId, isVlog }
+    ) || {
+      pageKey: nextKey,
+      pageEpoch: pageContextEpoch + (pageContextKey && nextKey !== pageContextKey ? 1 : 0),
+      movieId: detectedMovieId,
+      transitioning: false,
+      changed: Boolean(pageContextKey && nextKey !== pageContextKey)
+    };
+    const routeChanged = Boolean(reconciled.routeChanged);
+    const vlogMovieChanged = Boolean(reconciled.movieChanged);
     if (routeChanged || vlogMovieChanged) {
-      pageContextEpoch += 1;
       latestFullDetailToken = null;
       // 保留 history，但当前页面不能继续显示上一页的 active session。
       state.screening = {
         ...(state.screening || { schemaVersion: 2, history: [] }),
         activeSession: null,
-        request: { phase: "idle", pageKey: nextKey, pageEpoch: pageContextEpoch, reason }
+        request: { phase: "idle", pageKey: nextKey, pageEpoch: reconciled.pageEpoch, reason }
       };
       publishState();
     }
-    pageContextKey = nextKey;
-    pageContextMovieId = nextMovieId;
-    return { pageKey: pageContextKey, pageEpoch: pageContextEpoch, movieId: pageContextMovieId };
+    pageContextKey = reconciled.pageKey;
+    pageContextEpoch = reconciled.pageEpoch;
+    pageContextMovieId = reconciled.movieId;
+    pageContextTransitioning = Boolean(reconciled.transitioning);
+    return {
+      pageKey: pageContextKey,
+      pageEpoch: pageContextEpoch,
+      movieId: pageContextMovieId,
+      transitioning: pageContextTransitioning
+    };
   }
 
   function createFullDetailToken(payload = {}) {
@@ -481,6 +506,7 @@
     const payloadPageKey = String(payload.pageKey || payload.href || context.pageKey);
     const active = payload.active !== false
       && payloadPageKey === context.pageKey
+      && !context.transitioning
       && (!context.movieId || context.movieId === movieId);
     return {
       requestId: String(payload.requestId || payload.id || crypto.randomUUID()),
@@ -497,10 +523,15 @@
   function isFullDetailTokenCurrent(token) {
     if (!token || latestFullDetailToken?.requestId !== token.requestId) return false;
     const context = refreshPageContext("guard");
-    return token.active
+    return globalThis.TxzzPageContextCore?.isCurrentRequest(
+      { ...context, pageEpoch: context.pageEpoch },
+      { ...token, pageEpoch: token.localEpoch },
+      /^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))
+    ) ?? (token.active
+      && !context.transitioning
       && token.pageKey === context.pageKey
       && token.localEpoch === context.pageEpoch
-      && (!context.movieId || context.movieId === token.movieId);
+      && (!context.movieId || context.movieId === token.movieId));
   }
 
   function postStaleFullDetailResponse(payload, token, reason = "stale playback request") {
@@ -1493,6 +1524,8 @@
         screening: state.screening,
         downloadTasks: state.downloadTasks || {},
         downloadSnapshots: state.downloadSnapshots || [],
+        downloadPlanner: uiState.downloadPlanner,
+        purchaseReconciliation: uiState.purchaseReconciliation,
         adCleaner: adCleanerStats(),
         repositoryUpdate: uiState.repositoryUpdate,
         publishedAt: new Date().toISOString()
@@ -1840,57 +1873,6 @@
         finish(resolve, response || {});
       });
     });
-  }
-
-  async function completeRepositoryClientSave(response = {}) {
-    const clientSave = response?.clientSave;
-    if (!clientSave) return response;
-
-    const { clientSave: _privateBytes, ...publicResponse } = response;
-    const downloader = globalThis.TxzzUpdateDownloader;
-    if (!downloader?.saveVerifiedPackage) {
-      const error = new Error("页面下载兜底未加载，请重新加载网站后再试");
-      error.response = { ...publicResponse, ok: false, error: error.message };
-      throw error;
-    }
-
-    let clientResult;
-    try {
-      clientResult = await downloader.saveVerifiedPackage(clientSave);
-    } catch (cause) {
-      const message = cause?.message || String(cause);
-      const error = new Error(`已验证安装包无法交给当前页面保存：${message}`);
-      error.response = { ...publicResponse, ok: false, error: error.message };
-      throw error;
-    }
-
-    const submittedAt = new Date().toISOString();
-    const packageProbeAttempts = (Array.isArray(publicResponse.packageProbeAttempts)
-      ? publicResponse.packageProbeAttempts
-      : []).map((attempt, index, rows) => (
-      index === rows.length - 1
-        ? { ...attempt, ok: true, phase: "submitted", saveVia: "content-blob" }
-        : attempt
-    ));
-    const completed = {
-      ...publicResponse,
-      ok: true,
-      downloadId: 0,
-      downloadState: clientResult.state || "submitted",
-      saveVia: "content-blob",
-      packageProbeAttempts,
-      downloadPhase: "submitted",
-      downloadStatus: "已通过当前页面提交完整校验后的 CRX3",
-      downloadSubmittedAt: submittedAt
-    };
-
-    // Blob 点击已经发生，后续状态持久化失败不能把成功下载误报为失败或再次提交。
-    try {
-      await sendRuntime("recordRepositoryArchiveClientSave", { result: completed }, 10000);
-    } catch (stateError) {
-      completed.statePersistenceError = stateError?.message || String(stateError);
-    }
-    return completed;
   }
 
   function openRepositoryHome() {
@@ -2376,10 +2358,15 @@
         accountId: state.selectedFullAccountId,
         bootstrapSession,
         lineKey,
-        url: options.url || ""
+        url: options.url || "",
+        sourceId: options.sourceId || "",
+        container: options.container || "mp4",
+        networkMode: options.networkMode || "balanced",
+        qualityHeight: Number(options.qualityHeight || 0),
+        viewportHeight: Math.max(window.innerHeight || 0, window.innerWidth || 0, 720)
       });
       if (response.state) syncSavedState(response.state);
-      const mode = response.mode === "m3u8-merged-ts" ? "m3u8 分片合并" : "直接下载";
+      const mode = response.mode === "hls-opfs" ? "HLS 断点下载" : "直链断点下载";
       const usedLine = response.lineKey === "backup" ? "备用" : response.lineKey === "play" ? "主线" : lineLabel;
       emitFlow("视频下载", `${mode} 已创建（${usedLine}）：${response.filename || id}`, "ok");
       showToast(`${mode}任务已创建（${usedLine}）`, "ok");
@@ -2604,9 +2591,72 @@
     emitFlow("账号池", "已导入当前页面 token/deviceId 为账号池账号", "ok");
   }
 
-  function installHook() {
-    injectMainWorldScript("nav_guard.js", "txzzNavGuardInjected");
-    injectMainWorldScript("page_hook.js", "txzzPageHookInjected");
+  async function installHook() {
+    void injectMainWorldScript("nav_guard.js", "txzzNavGuardInjected");
+    await injectMainWorldScript("page_context_core.js", "txzzPageContextCoreInjected");
+    await injectMainWorldScript("page_hook.js", "txzzPageHookInjected");
+  }
+
+  async function loadPurchaseReconciliation() {
+    uiState.purchaseReconciliation = { ...(uiState.purchaseReconciliation || {}), loading: true };
+    publishState();
+    try {
+      const response = await sendRuntime("listPurchaseReconciliation");
+      uiState.purchaseReconciliation = {
+        items: Array.isArray(response.items) ? response.items : [],
+        loading: false,
+        cloudError: response.cloudError || "",
+        checkedAt: new Date().toISOString()
+      };
+      if (response.state) syncSavedState(response.state);
+      publishState();
+      return response;
+    } catch (error) {
+      uiState.purchaseReconciliation = {
+        ...(uiState.purchaseReconciliation || {}),
+        loading: false,
+        cloudError: error?.message || String(error)
+      };
+      publishState();
+      throw error;
+    }
+  }
+
+  async function reconcilePurchase(payload = {}) {
+    const bootstrapSession = await collectSession();
+    const response = await sendRuntime("reconcilePurchaseRecord", {
+      attemptId: payload.attemptId || "",
+      origin: payload.origin || "cloud",
+      reconciliationId: crypto.randomUUID(),
+      bootstrapSession
+    }, 60_000);
+    if (response.state) syncSavedState(response.state);
+    await loadPurchaseReconciliation();
+    emitFlow("金币安全对账", "已使用原购买账号完成核对，全程未再次调用购买接口", "ok");
+    return response;
+  }
+
+  async function planFullVideo(movieId = currentMovieId(), options = {}) {
+    const id = String(movieId || currentMovieId()).trim();
+    if (!id) throw new Error("当前页面未识别到正在播放的视频（请先让 Vlog 当前卡片完成加载）");
+    emitFlow("下载规划", `正在探测视频 ${id} 的线路、清晰度与空间`);
+    const bootstrapSession = await collectSession();
+    const response = await sendRuntime("planFullVideoDownload", {
+      movieId: id,
+      movieTitle: currentMovieTitle(),
+      accountId: state.selectedFullAccountId,
+      bootstrapSession,
+      lineKey: options.lineKey || options.line || "auto",
+      sourceId: options.sourceId || "",
+      url: options.url || "",
+      networkMode: options.networkMode || "balanced",
+      qualityHeight: Number(options.qualityHeight || 0),
+      viewportHeight: Math.max(window.innerHeight || 0, window.innerWidth || 0, 720)
+    });
+    uiState.downloadPlanner = { ...response, open: true };
+    publishState();
+    emitFlow("下载规划", "探测完成，请确认线路、清晰度、容器与空间", "ok");
+    return response;
   }
 
   function togglePanel(force) {
@@ -2803,14 +2853,32 @@
       if (action === "save-account") await saveAccount(payload);
       if (action === "save-remote") await saveRemoteConfig(payload);
       if (action === "sync-remote") await syncRemoteAccounts();
+      if (action === "load-purchase-reconciliation") await loadPurchaseReconciliation();
+      if (action === "reconcile-purchase") await reconcilePurchase(payload);
       if (action === "upload-account-remote") await uploadAccountRemote(payload);
       if (action === "upload-local-account-remote") await uploadLocalAccountRemote(accountId);
       if (action === "refresh-full-detail") await refreshFullDetail(payload.movieId || currentMovieId());
       if (action === "refresh-playback-session") await refreshFullDetail(payload.movieId || currentMovieId());
+      if (action === "plan-full-video-download") {
+        await planFullVideo(payload.movieId || currentMovieId(), payload);
+      }
+      if (action === "close-download-planner") {
+        uiState.downloadPlanner = null;
+        publishState();
+      }
+      if (action === "start-planned-download") {
+        uiState.downloadPlanner = null;
+        publishState();
+        await downloadFullVideo(payload.movieId || currentMovieId(), payload);
+      }
       if (action === "download-full-video") {
         await downloadFullVideo(payload.movieId || currentMovieId(), {
           lineKey: payload.lineKey || payload.line || "auto",
-          url: payload.url || ""
+          url: payload.url || "",
+          sourceId: payload.sourceId || "",
+          container: payload.container || "mp4",
+          networkMode: payload.networkMode || "balanced",
+          qualityHeight: Number(payload.qualityHeight || 0)
         });
       }
       if (action === "refresh-downloads") {
@@ -2825,6 +2893,21 @@
       if (action === "copy-failed-download-summary") await copyFailedDownloadSummary(payload.taskIds || [], payload.filterLabel || "当前筛选");
       if (action === "copy-download-snapshot") await copyDownloadSnapshot(payload.snapshotId || "");
       if (action === "save-download-device") await saveDownloadDevice(payload.taskId || "");
+      if (action === "pause-download-task") {
+        const response = await sendRuntime("pauseDownloadTask", { taskId: payload.taskId || "" });
+        syncSavedState(response.state || {});
+        emitFlow("下载管理", "任务已暂停", "ok");
+      }
+      if (action === "resume-download-task") {
+        const response = await sendRuntime("resumeDownloadTask", { taskId: payload.taskId || "" });
+        syncSavedState(response.state || {});
+        emitFlow("下载管理", "任务正在从检查点恢复", "ok");
+      }
+      if (action === "cancel-download-task") {
+        const response = await sendRuntime("cancelDownloadTask", { taskId: payload.taskId || "" });
+        syncSavedState(response.state || {});
+        emitFlow("下载管理", "任务已取消，分片保留到删除或重试", "ok");
+      }
       if (action === "save-ready-downloads") await saveReadyDownloads(payload.taskIds || []);
       if (action === "remove-download-task") await removeDownloadTask(payload.taskId || "", payload.movieId || "");
       if (action === "clear-downloads") await clearDownloadTasks(payload);
@@ -2882,7 +2965,6 @@
         let response = null;
         try {
           response = await sendRuntime("downloadRepositoryArchive", { saveAs: true }, 120000);
-          response = await completeRepositoryClientSave(response);
         } catch (err) {
           const failed = err?.response || {};
           rememberRepositoryUpdate({
@@ -2902,17 +2984,18 @@
           });
           throw err;
         }
+        const downloadPhase = String(response.downloadPhase || (response.downloadId ? "submitted" : "saving"));
         const mergedUpdate = {
           ...(response.update || current),
-          downloadPhase: "submitted",
+          downloadPhase,
           downloadUrl: response.displayUrl || response.url || current.downloadUrl || "",
           downloadCandidates: response.candidates || current.downloadCandidates || [],
           downloadAttemptUrls: response.attempts || [],
-          downloadStatus: response.downloadId
+          downloadStatus: response.downloadStatus || (response.downloadId
             ? "已拉起浏览器 CRX 下载"
-            : response.saveVia === "content-blob"
-              ? "已通过当前页面提交完整校验后的 CRX3"
-              : "已发送下载请求",
+            : downloadPhase === "saving"
+              ? "安装包已验证，请在扩展安全保存页点击保存"
+              : "已发送下载请求"),
           downloadError: "",
           downloadId: Number(response.downloadId || 0),
           downloadSaveVia: String(response.saveVia || ""),
@@ -2924,12 +3007,12 @@
         rememberRepositoryUpdate(mergedUpdate);
         emitFlow(
           "版本更新",
-          response.downloadId
+          downloadPhase === "saving"
+            ? `CRX3 已完整校验并写入扩展安全存储，已打开保存页：${response.filename}；请在新标签中点击保存`
+            : response.downloadId
             ? `同一份 CRX3 字节已完整校验并拉起浏览器下载（编号 ${response.downloadId}）：${response.filename}；下载后请手动安装或覆盖更新`
-            : response.saveVia === "content-blob"
-              ? `扩展后台下载 API 不可用，已通过当前页面保存同一份完整验签的 CRX3：${response.filename}；下载后请手动安装或覆盖更新`
-              : "已验证 CRX3 已提交浏览器下载；下载后请手动安装或覆盖更新",
-          "ok"
+            : "已验证 CRX3 已提交浏览器保存；下载后请手动安装或覆盖更新",
+          downloadPhase === "saving" ? "running" : "ok"
         );
         if (response.statePersistenceError) {
           emitFlow("更新状态", `下载已成功提交，但本地状态保存失败：${response.statePersistenceError}`, "error");

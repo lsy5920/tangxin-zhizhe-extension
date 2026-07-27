@@ -6,7 +6,9 @@
 export const RELEASE_INCLUDE_PATHS = [
   "manifest.json",
   "background.js",
-  "update_downloader.js",
+  "state_mutation_core.js",
+  "page_context_core.js",
+  "download_core.js",
   "content.js",
   "display_patch.js",
   "nav_guard.js",
@@ -14,6 +16,9 @@ export const RELEASE_INCLUDE_PATHS = [
   "page_probe.js",
   "offscreen.html",
   "offscreen_downloader.js",
+  "save.html",
+  "save.css",
+  "save.js",
   "README.md",
   "dist-ui",
   "vendor"

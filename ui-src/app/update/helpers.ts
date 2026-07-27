@@ -18,6 +18,7 @@ export type UpdateUiStatus =
   | "available"
   | "error"
   | "validating"
+  | "saving"
   | "submitted"
   | "download-error";
 
@@ -106,6 +107,7 @@ export function deriveUpdateStatus(update?: RepositoryUpdateState | null): Updat
   if (!update) return "idle";
   if (update.checkPhase === "checking" || update.status === "checking") return "checking";
   if (update.downloadPhase === "validating") return "validating";
+  if (update.downloadPhase === "saving") return "saving";
   const checkFailed = update.checkPhase === "error" || update.status === "error";
   const checkedAt = Date.parse(String(update.checkedAt || update.checkStartedAt || ""));
   const downloadActivityAt = Date.parse(String(update.downloadSubmittedAt || update.downloadStartedAt || ""));
@@ -128,6 +130,7 @@ const STATUS_LABEL: Record<UpdateUiStatus, string> = {
   available: "发现新版本",
   error: "检测失败",
   validating: "正在验证完整包",
+  saving: "等待安全保存",
   submitted: "下载已提交",
   "download-error": "完整包获取失败"
 };
@@ -136,9 +139,10 @@ function statusSummary(status: UpdateUiStatus, update: RepositoryUpdateState | n
   const remote = update?.remote || null;
   if (status === "checking") return "正在并发获取更新清单，并验证清单签名、版本、构建号与发布来源。";
   if (status === "validating") return "正在下载并验证完整 CRX3 包：核对完整包大小、SHA-256、正式扩展 ID 与 CRX3 包签名。";
+  if (status === "saving") return "CRX3 已通过校验并写入扩展 OPFS；请在安全保存页点击按钮，由浏览器打开系统保存流程。";
   if (status === "submitted") {
-    if (update?.downloadSaveVia === "content-blob") {
-      return "CRX3 完整包验证通过；扩展后台下载 API 不可用，已由当前页面复核并提交 Blob 下载。";
+    if (update?.downloadSaveVia === "extension-save-page") {
+      return "CRX3 完整包验证通过，并已由扩展安全保存页写入设备。";
     }
     const suffix = update?.downloadId ? `（浏览器下载编号 ${update.downloadId}）` : "";
     return `CRX3 完整包验证通过，已拉起浏览器下载${suffix}。`;
@@ -160,6 +164,7 @@ function statusHint(status: UpdateUiStatus) {
   if (status === "latest") return "本地版本与远程版本一致";
   if (status === "checking") return "手动检查始终绕过成功缓存";
   if (status === "validating") return "完整包验证全部通过后才会拉起浏览器下载";
+  if (status === "saving") return "一次性令牌只能由一个标签领取，关闭后可重新生成";
   if (status === "submitted") return "已把验签文件交给浏览器，完成后需手动安装";
   if (status === "download-error") return "可重试下载，系统会重新验证全部镜像";
   if (status === "error") return "可重新检测，或前往项目主页核对发布状态";
@@ -210,11 +215,12 @@ export function buildUpdateViewModel(state: BridgeState): UpdateViewModel {
     latest: 1,
     available: 1,
     validating: 2,
+    saving: 3,
     "download-error": 2,
     submitted: 3
   };
   const busy = status === "checking" || status === "validating";
-  const canDownload = !busy && (["latest", "available", "submitted", "download-error"] as UpdateUiStatus[]).includes(status);
+  const canDownload = !busy && (["latest", "available", "saving", "submitted", "download-error"] as UpdateUiStatus[]).includes(status);
 
   return {
     status,
@@ -270,6 +276,7 @@ export function buildUpdateViewModel(state: BridgeState): UpdateViewModel {
 
 export function updateDownloadActionLabel(status: UpdateUiStatus, compact = false) {
   if (status === "validating") return compact ? "验证中…" : "验证完整包中…";
+  if (status === "saving") return compact ? "重开保存页" : "重新验证并打开保存页";
   if (status === "submitted") return compact ? "再次下载" : "再次下载 CRX";
   if (status === "download-error") return compact ? "重试下载" : "重新验证并下载";
   if (status === "available") return compact ? "下载 CRX" : "下载最新 CRX";
@@ -281,13 +288,14 @@ export function updateCheckPhaseLabel(phase: UpdateCheckPhase) {
 }
 
 export function updateDownloadPhaseLabel(phase: UpdateDownloadPhase) {
-  return ({ idle: "未开始", validating: "验证完整包", submitted: "已拉起浏览器下载", failed: "完整包获取失败" } as const)[phase] || phase;
+  return ({ idle: "未开始", validating: "验证完整包", saving: "安全保存页已打开", submitted: "已提交浏览器保存", failed: "完整包获取失败" } as const)[phase] || phase;
 }
 
 export function updateAttemptPhaseLabel(phase?: string) {
   const labels: Record<string, string> = {
     validating: "校验中",
     validated: "校验通过",
+    "save-page-opened": "安全保存页已打开",
     "client-save-required": "切换页面保存",
     submitted: "已提交",
     rejected: "已拒绝",
@@ -318,7 +326,7 @@ export function buildUpdateCopyText(vm: UpdateViewModel) {
     `候选地址：${vm.candidates.length ? vm.candidates.join(" | ") : "无"}`,
     `实际尝试：${vm.attemptUrls.length ? vm.attemptUrls.join(" | ") : "未开始"}`,
     `完整包验证：${vm.packageProbeLabel}`,
-    `浏览器下载编号：${vm.downloadId || (vm.downloadSaveVia === "content-blob" ? "页面交付无 API 编号" : "未提交")}`,
+    `浏览器下载编号：${vm.downloadId || (vm.downloadSaveVia?.startsWith("extension-save-page") ? "安全保存页无 API 编号" : "未提交")}`,
     `下载交付方式：${vm.downloadSaveVia || "未提交"}`,
     `下载状态：${vm.downloadStatus || "未开始"}`,
     `错误信息：${vm.downloadError || "无"}`,
@@ -342,7 +350,7 @@ export function updateStatusTone(status: UpdateUiStatus) {
       bar: "bg-danger-500"
     };
   }
-  if (status === "available" || status === "submitted") {
+  if (status === "available" || status === "saving" || status === "submitted") {
     return {
       badge: "bg-warning-50 text-warning-600",
       soft: "from-warning-50 to-white",
