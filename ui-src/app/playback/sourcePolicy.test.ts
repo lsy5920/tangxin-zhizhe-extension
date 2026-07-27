@@ -10,6 +10,24 @@ it("健康且更快的备用线路可以成为推荐线路，平分时主线优�
   expect(selectRecommendedSource([{ ...primary, health: { state: "unknown" } }, { ...backup, health: { state: "unknown" } }])?.id).toBe("primary");
 });
 
+it("按每个视频主备清单的相对覆盖时长选择完整版", () => {
+  const shortPrimary: PlaybackSource = {
+    ...primary,
+    health: { state: "healthy", duration: 17 * 60, segments: 170, latencyMs: 30 }
+  };
+  const fullBackup: PlaybackSource = {
+    ...backup,
+    health: { state: "healthy", duration: 60 * 60, segments: 600, latencyMs: 900 }
+  };
+  expect(selectRecommendedSource([shortPrimary, fullBackup])?.id).toBe("backup");
+
+  // 几秒钟的转码误差不属于截短，仍按健康度和延迟决策。
+  expect(selectRecommendedSource([
+    { ...shortPrimary, health: { ...shortPrimary.health, duration: 3_590 } },
+    { ...fullBackup, health: { ...fullBackup.health, duration: 3_600 } }
+  ])?.id).toBe("primary");
+});
+
 describe("故障切换", () => {
   const session: PlaybackSession = {
     id: "s", movieId: "1", title: "t", phase: "ready", sources: [primary, backup],
@@ -28,4 +46,3 @@ describe("故障切换", () => {
     expect(nextFailoverSource(session, "primary", ["primary", "backup"])).toBeNull();
   });
 });
-

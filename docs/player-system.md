@@ -1,6 +1,6 @@
 # 沉浸糖果影院播放系统 5.0
 
-本文档描述扩展 5.0.0 的播放架构、状态边界、线路策略、持久化规则和验收标准。页面只负责展示统一 ViewModel，不直接持有 ArtPlayer、Hls、计时器或购买流程。
+本文档描述扩展 5.0.1 的播放架构、状态边界、线路策略、持久化规则和验收标准。页面只负责展示统一 ViewModel，不直接持有 ArtPlayer、Hls、计时器或购买流程。
 
 ## 端到端边界
 
@@ -45,6 +45,8 @@ idle → resolving → ready → loading → paused → playing
 ## 线路策略
 
 - URL 为空或服务端明确标记失败的线路直接淘汰；健康线路优先，同分时主线路优先。
+- Worker 在返回会话前并行探测主备 HLS；主清单没有 `EXTINF` 时继续解析最多四个变体清单。两条可用线路覆盖时长的差值同时超过 90 秒和短线路的 8% 时，优先选择较长线路，避免短预览线凭低延迟或主线身份覆盖完整版；阈值是相对规则，不依赖某个视频的固定时长。
+- 扩展本地账号模式复用相同探测与相对时长规则；旧缓存若已记录主备时长，会在加载时自动纠正推荐线路。无扩展名地址使用有限 Range 探测，明确的大型 MP4 不会被完整下载。
 - 用户首次播放后启动 8 秒起播保护；超过 8 秒仍未进入 `playing` 时尝试下一条未自动尝试的线路。
 - HLS 30 秒内累计 3 次致命错误时切线。网络恢复与媒体恢复每种各尝试一次；恢复后 4 秒仍未播放则切线。
 - 稳定播放 10 秒会清空致命错误和恢复使用标记。
@@ -84,6 +86,7 @@ idle → resolving → ready → loading → paused → playing
 
 ```text
 ?scenario=normal
+?scenario=duration-mismatch
 ?scenario=buffering
 ?scenario=primary-failure
 ?scenario=double-failure
@@ -92,7 +95,7 @@ idle → resolving → ready → loading → paused → playing
 ?scenario=fullscreen-failure
 ```
 
-Vitest 覆盖 reducer 代次隔离、旧数据迁移、线路评分、8 秒起播判定、HLS 恢复条件、单次自动切线、续播阈值和 30 天过期。发布前还必须通过 TypeScript、生产构建、CRX3 内容/签名门禁和浏览器控制台检查。
+Vitest 覆盖 reducer 代次隔离、旧数据迁移、相对时长完整线路选择、线路评分、8 秒起播判定、HLS 恢复条件、单次自动切线、续播阈值和 30 天过期。发布前还必须通过 TypeScript、生产构建、CRX3 内容/签名门禁和浏览器控制台检查。
 
 ## 视觉与响应式验收
 
@@ -104,3 +107,4 @@ Vitest 覆盖 reducer 代次隔离、旧数据迁移、线路评分、8 秒起�
 - 全屏故障场景下，主舞台、媒体容器和 video 都必须覆盖整个视口；退出后不得残留 `txzz-player-fullscreen-mode` 或 `data-txzz-fs-forced`。
 
 [2026-07-27 01:00] 播放系统 5.0 文档随扩展 5.0.0 发布。
+[2026-07-27 08:51] 扩展 5.0.1 新增 HLS 主/变体清单完整度探测、相对时长选线、旧会话纠偏和 `duration-mismatch` 回归场景。

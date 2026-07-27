@@ -25,16 +25,40 @@ export function sourceScore(source?: PlaybackSource | null) {
   return score;
 }
 
+export function sourceDuration(source?: PlaybackSource | null) {
+  const duration = Number(source?.health.duration || 0);
+  return Number.isFinite(duration) && duration > 0 ? duration : 0;
+}
+
+/** 只把明显的覆盖差异视为“完整版差异”，容忍转码产生的少量时长误差。 */
+export function isMeaningfullyLongerSource(candidate?: PlaybackSource | null, baseline?: PlaybackSource | null) {
+  const candidateDuration = sourceDuration(candidate);
+  const baselineDuration = sourceDuration(baseline);
+  if (!candidateDuration || !baselineDuration || candidateDuration <= baselineDuration) return false;
+  return candidateDuration - baselineDuration >= Math.max(90, baselineDuration * 0.08);
+}
+
+export function compareSources(left: PlaybackSource, right: PlaybackSource) {
+  const leftScore = sourceScore(left);
+  const rightScore = sourceScore(right);
+  const leftUsable = leftScore > FAILED_SCORE;
+  const rightUsable = rightScore > FAILED_SCORE;
+  if (leftUsable !== rightUsable) return leftUsable ? -1 : 1;
+  if (leftUsable && rightUsable) {
+    if (isMeaningfullyLongerSource(left, right)) return -1;
+    if (isMeaningfullyLongerSource(right, left)) return 1;
+  }
+  const scoreDiff = rightScore - leftScore;
+  if (scoreDiff) return scoreDiff;
+  if (left.id === "primary") return -1;
+  if (right.id === "primary") return 1;
+  return left.id.localeCompare(right.id);
+}
+
 export function selectRecommendedSource(sources: PlaybackSource[]) {
   return [...sources]
     .filter((source) => source.url)
-    .sort((left, right) => {
-      const scoreDiff = sourceScore(right) - sourceScore(left);
-      if (scoreDiff) return scoreDiff;
-      if (left.id === "primary") return -1;
-      if (right.id === "primary") return 1;
-      return left.id.localeCompare(right.id);
-    })[0] || null;
+    .sort(compareSources)[0] || null;
 }
 
 export function nextFailoverSource(
@@ -45,7 +69,7 @@ export function nextFailoverSource(
   if (!session?.decision.failoverAllowed) return null;
   return [...session.sources]
     .filter((source) => source.url && source.id !== activeSourceId && !attemptedSourceIds.includes(source.id))
-    .sort((left, right) => sourceScore(right) - sourceScore(left))[0] || null;
+    .sort(compareSources)[0] || null;
 }
 
 export function shouldFailover(params: {
@@ -78,4 +102,3 @@ export function sourceHealthFromLegacy(stat?: {
     error: stat.error
   };
 }
-

@@ -25,8 +25,8 @@ export function lineScore(line?: PlaybackLine | null) {
   const segments = Number(stat.segments || 0);
   const duration = Number(stat.duration || 0);
   const latency = Number((stat as { latencyMs?: number }).latencyMs || 0);
-  score += Math.min(50, segments / 4);
-  score += Math.min(40, duration / 20);
+  score += Math.min(120, segments / 3);
+  score += Math.min(360, duration / 10);
   if (latency > 0) score += Math.max(0, 50 - Math.min(50, latency / 80));
   if (segments <= 0 && duration <= 0) score -= 20;
   return score;
@@ -40,16 +40,22 @@ export function lineState(line: PlaybackLine) {
 }
 
 export function bestLine(lines: PlaybackLine[]) {
-  let best: PlaybackLine | undefined;
-  let bestScore = -Infinity;
-  for (const line of lines) {
-    const score = lineScore(line);
-    if (score > bestScore) {
-      bestScore = score;
-      best = line;
+  return [...lines].sort((left, right) => {
+    const leftScore = lineScore(left);
+    const rightScore = lineScore(right);
+    const leftDuration = Number(left.stat?.duration || 0);
+    const rightDuration = Number(right.stat?.duration || 0);
+    const leftUsable = leftScore > -800;
+    const rightUsable = rightScore > -800;
+    if (leftUsable !== rightUsable) return leftUsable ? -1 : 1;
+    if (leftUsable && rightUsable && leftDuration > 0 && rightDuration > 0) {
+      if (leftDuration - rightDuration >= Math.max(90, rightDuration * 0.08)) return -1;
+      if (rightDuration - leftDuration >= Math.max(90, leftDuration * 0.08)) return 1;
     }
-  }
-  return best || lines.find((line) => line.url) || lines[0];
+    const scoreDiff = rightScore - leftScore;
+    if (scoreDiff) return scoreDiff;
+    return left.key === "play" ? -1 : 1;
+  })[0] || lines.find((line) => line.url) || lines[0];
 }
 
 export function isPlaylistUrl(url?: string) {

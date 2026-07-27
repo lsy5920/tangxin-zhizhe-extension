@@ -63,7 +63,7 @@
 
 开发源码允许先提升 `manifest.json`、`package.json`、前端常量和后台本地构建号，而 `update.json` 与 `releases/` 继续保留上一个已签名版本。`npm run check` 的源码门禁会分别校验两组数据：源码内部必须一致，现有签名清单自身也必须完整；它不会把未签名源码伪装成已经发布。
 
-只有 `npm run release` 会要求源码版本、`update.json`、`latest.json` 和 CRX 完全一致，并使用固定私钥重新签名。当前源码与签名发布均为 `5.0.0 / 2026-07-27-0100`，继续使用 4.0.0 启用的固定私钥，扩展 ID 保持为 `ddefadnhgebdclpkabeobjidjllkdkhm`。
+只有 `npm run release` 会要求源码版本、`update.json`、`latest.json` 和 CRX 完全一致，并使用固定私钥重新签名。当前源码与签名发布均为 `5.0.1 / 2026-07-27-0851`，继续使用 4.0.0 启用的固定私钥，扩展 ID 保持为 `ddefadnhgebdclpkabeobjidjllkdkhm`。
 
 ## 4.0.0 签名身份轮换
 

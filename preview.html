@@ -95,7 +95,15 @@
       });
       const normalSession = makeSession();
       const historySession = makeSession({ id: "preview-history", movieId: "2048", title: "棉花糖云海巡游", fetchedAt: new Date(Date.now() - 86400000).toISOString() });
-      const fixtureSession = previewScenario === "primary-failure"
+      const fixtureSession = previewScenario === "duration-mismatch"
+        ? makeSession({
+            sources: [
+              { id: "primary", label: "主线路", url: previewVideo, protocol: "progressive", health: { state: "healthy", status: 200, duration: 1020, segments: 170, latencyMs: 30 } },
+              { id: "backup", label: "备用线路", url: previewVideo, protocol: "progressive", health: { state: "healthy", status: 200, duration: 3600, segments: 600, latencyMs: 900 } }
+            ],
+            decision: { recommendedSourceId: "backup", reasonCodes: ["longer-playlist-duration", "healthy-source"], failoverAllowed: true }
+          })
+        : previewScenario === "primary-failure"
         ? makeSession({
             sources: [
               { id: "primary", label: "主线路", url: failedVideo, protocol: "progressive", health: { state: "degraded", status: 503, score: 90 } },
@@ -149,7 +157,7 @@
         downloadTasks: {
           task_preview: { taskId: "task_preview", movieId: "9527", movieTitle: "预览视频", stage: "segments", current: 18, total: 40, percent: 45, speedBps: 2457600, updatedAt: new Date().toISOString() }
         },
-      repositoryUpdate: { ok: true, checkPhase: "success", downloadPhase: "idle", checkedAt: new Date().toISOString(), updateAvailable: false, local: { version: "5.0.0", build: "2026-07-27-0100" }, remote: { version: "5.0.0", build: "2026-07-27-0100" } },
+      repositoryUpdate: { ok: true, checkPhase: "success", downloadPhase: "idle", checkedAt: new Date().toISOString(), updateAvailable: false, local: { version: "5.0.1", build: "2026-07-27-0851" }, remote: { version: "5.0.1", build: "2026-07-27-0851" } },
         adCleaner: { enabled: true, version: "v3", total: 12, removed: 8, blockedClicks: 3, splashHits: 1, countdownHits: 1, selectors: 1, lastRunAt: new Date().toISOString() },
         flow: [{ title: "本地预览", detail: `糖果影院确定性场景：${previewScenario}`, level: "ok", ts: new Date().toISOString() }]
       };

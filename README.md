@@ -8,7 +8,7 @@
 
 插件默认只显示左上角短时流程气泡和右下角「糖糖」伙伴入口，不遮挡网站主体。点击伙伴后展开糖果手帐工作台：桌面端使用浅色手帐侧栏与独立工作区，移动端使用全屏面板和安全区底栏；今日总览、账号小屋、放映室、下载收纳篮和照料中心保持统一信息层级与操作反馈。
 
-当前源码与正式 CRX 均为 `5.0.0`（构建 `2026-07-27-0100`），继续使用 4.0.0 已启用并妥善保留的正式私钥，扩展 ID 保持为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
+当前源码与正式 CRX 均为 `5.0.1`（构建 `2026-07-27-0851`），继续使用 4.0.0 已启用并妥善保留的正式私钥，扩展 ID 保持为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 及 5.0.0 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
 
 ## 环境要求
 
@@ -359,7 +359,7 @@ npm run check
 npm run dev
 ```
 
-然后访问 `http://127.0.0.1:5173/preview.html`。预览页使用脱敏模拟数据，不会连接真实账号；通过 `?scenario=normal|buffering|primary-failure|double-failure|coin-unlock|history|fullscreen-failure` 可确定性复现正常、缓冲、主线失败、双线失败、金币解锁、历史和全屏故障场景。
+然后访问 `http://127.0.0.1:5173/preview.html`。预览页使用脱敏模拟数据，不会连接真实账号；通过 `?scenario=normal|duration-mismatch|buffering|primary-failure|double-failure|coin-unlock|history|fullscreen-failure` 可确定性复现正常、主备时长不一致、缓冲、主线失败、双线失败、金币解锁、历史和全屏故障场景。
 
 ```powershell
 node --check .\background.js
@@ -522,17 +522,19 @@ npm run release
 
 | 组件 | 版本 |
 | --- | --- |
-| 糖心志者源码 | `5.0.0`，构建 `2026-07-27-0100` |
-| 当前已签名 CRX | `5.0.0`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
+| 糖心志者源码 | `5.0.1`，构建 `2026-07-27-0851` |
+| 当前已签名 CRX | `5.0.1`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
 | Manifest | `3` |
 | ArtPlayer 播放器内核 | `5.4.0` |
 | hls.js HLS 播放内核 | `1.6.16` |
 | mux.js | `7.0.0` |
-| Worker 推荐版本 | `2.0.0` |
+| Worker 推荐版本 | `2.0.1` |
 | Wrangler 推荐版本 | `4.110.0` |
 
 ## 更新日志
 
+[2026-07-27 08:51] 【修复】升级到 `5.0.1`：主备 HLS 在会话返回前完成媒体清单与变体清单探测，按每个视频的相对覆盖时长优先选择完整版，修复短预览线因低延迟或“主线优先”覆盖较长完整线的问题；本地账号模式、缓存会话纠偏、自动切线和下载选线使用同一规则。
+[2026-07-27 08:51] 【体验】片源抽屉显示每条线路的实际探测时长，并为因覆盖更完整而被选中的线路标记“完整版优先”；新增 `duration-mismatch` 确定性预览和相关回归测试，覆盖 17 分钟主线与 1 小时备用线的相对选择，但业务规则不依赖固定时长。
 [2026-07-27 01:00] 【重构】发布沉浸糖果影院 5.0：播放页拆为页面编排、单 reducer 会话状态机、单 ArtPlayer/Hls 媒体内核、线路策略、全屏控制、偏好与续播存储，以及主舞台、影片侧栏和片源/下载/足迹抽屉；资源就绪后默认暂停，所有旧媒体与全屏回调按会话代次隔离。
 [2026-07-27 01:00] 【安全】扩展只调用 Worker v2 播放会话接口，本地账号模式新增 `pending / charged / resolved / failed_before_charge / uncertain` 五态购买账本；任何账号已有主线或备用线时禁止购买，扣费后详情失败也不会自动二次购买。
 [2026-07-27 01:00] 【发布】升级到 `5.0.0`（构建 `2026-07-27-0100`），继续使用正式私钥和扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm`；新增 Vitest 状态机、迁移、线路策略和续播测试，并完成桌面、移动、横屏、故障切线、右键、键盘和沉浸全屏兜底验收。

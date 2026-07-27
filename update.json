@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.0.0",
-  "build": "2026-07-27-0100",
-  "releasedAt": "2026-07-27 01:00",
+  "version": "5.0.1",
+  "build": "2026-07-27-0851",
+  "releasedAt": "2026-07-27 08:51",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,12 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-27-0851",
+      "type": "修复",
+      "title": "Vlog 完整线路时长校验",
+      "detail": "修复主备线路在十几分钟后评分过早封顶、导致短预览线可能压过更长完整版的问题。Worker 现在于返回播放会话前并行探测主备 HLS，支持递归解析主清单变体，并按每个视频候选线路的相对覆盖时长选择完整版；扩展本地模式、旧会话纠偏、自动切线与下载选线同步使用相同规则，片源抽屉显示探测时长和“完整版优先”标记。"
+    },
     {
       "id": "2026-07-27-0100",
       "type": "重构",
@@ -131,11 +137,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 588342,
-  "packageSha256": "33e57a91e5e3fbf988bdc3743a85a186ed42f5e4f7a37ed55d445b30f5f6f477",
+  "packageSize": 591004,
+  "packageSha256": "79fcb0d3231c2e897c3a061c1057dc1c27ea86038977bd6b5d9056693069ba5f",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "gu0+UJCfjCkTNJz9s4XnbqarmReTmv+Z9w5WXfug9EOLiN+BZGh/UZNWTsweNdBk1qINi6zeXKAwPU8DIoeizpwo46lXxBA5akeaFCB/DCVycNlqtqBu1eQuLaGH4gJfjKT+FqxuUUATiRRWevtOpnvf3l31pgXHEz8wv2g0z2Qr+P/eCFXFGlK8fvSRvXds2WQZFnHVhDv+fq5tf1u1VSHWUcsuFB88vwrJJgpzKf6RyLsuHL6C8yuTEb62WDmtjbOxlUvNqCu94HEeyIgLQu8cPFqsKOhm55V5wZFByv4vOULFHBTLvc3jW2xmaafOEM3D0fKMS51c/vswSx7TXA=="
+    "value": "AhXTFLD7JRKPpf1G+fdzzw/ACGSYfOe3zJo0n4PC7hVD/k4x8VYSfGYgXlTZ3TsUvC278rw0/6tmAalWfWKaikabjo8LeBaVFRdKq4KBHcavTRtdvaKq3DNrSfcvicp85Y1SJ7nHFWeeqPcGLUNlEKyjY2anjdsJvuYW5WCCWlY2iaLcQUKY+QXAEkLOZO6OryoeXIEJA/Nv+hKX+HYmOaGAdgSi98Y+Ecv75zXy+Q2eFgIlz93NWBctvWaRJdK/sEua7a4u0jbKsF3Dektvu49V5psjbJSBukJ8bvbhj4LfcykkxoAc65YP/gBREL+GM07l+D+npZJfEf0H3Qdqtw=="
   }
 }

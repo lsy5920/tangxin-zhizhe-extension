@@ -7,7 +7,7 @@ const API_CONFIG = {
   aesKey: "fd14f9f8e38808fa"
 };
 
-const STORAGE_SCHEMA_VERSION = "2026-07-27-screening-v2";
+const STORAGE_SCHEMA_VERSION = "2026-07-27-screening-v3-completeness";
 // v7：签名清单、完整 CRX3 字节校验、固定扩展身份与串行状态写入。
 const UPDATE_STATE_SCHEMA_VERSION = "2026-07-10-update-system-v7";
 const UPDATE_MANIFEST_SCHEMA_VERSION = 3;
@@ -79,7 +79,7 @@ let repositoryUpdateStateWriteQueue = Promise.resolve();
 let updateVerificationKeyPromise = null;
 const localPurchaseLocks = new Set();
 
-const LOCAL_UPDATE_BUILD = "2026-07-27-0100";
+const LOCAL_UPDATE_BUILD = "2026-07-27-0851";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -447,6 +447,63 @@ function sourceHealthFromLegacy(stat = null) {
   };
 }
 
+function playbackSourceScore(source = null) {
+  if (!source?.url || source.health?.state === "failed" || source.health?.error) return -10000;
+  const explicit = Number(source.health?.score);
+  if (Number.isFinite(explicit)) return explicit;
+  let score = source.health?.state === "healthy" ? 160 : source.health?.state === "degraded" ? 80 : source.health?.state === "probing" ? 35 : 20;
+  const status = Number(source.health?.status || 0);
+  if (status >= 200 && status < 400) score += 40;
+  else if (status > 0) score -= 80;
+  const latency = Number(source.health?.latencyMs || 0);
+  if (latency > 0) score -= Math.min(30, latency / 100);
+  return score;
+}
+
+function playbackSourceDuration(source = null) {
+  const duration = Number(source?.health?.duration || 0);
+  return Number.isFinite(duration) && duration > 0 ? duration : 0;
+}
+
+function isMeaningfullyLongerSource(candidate = null, baseline = null) {
+  const candidateDuration = playbackSourceDuration(candidate);
+  const baselineDuration = playbackSourceDuration(baseline);
+  if (!candidateDuration || !baselineDuration || candidateDuration <= baselineDuration) return false;
+  return candidateDuration - baselineDuration >= Math.max(90, baselineDuration * 0.08);
+}
+
+function comparePlaybackSources(left, right) {
+  const leftScore = playbackSourceScore(left);
+  const rightScore = playbackSourceScore(right);
+  const leftUsable = leftScore > -10000;
+  const rightUsable = rightScore > -10000;
+  if (leftUsable !== rightUsable) return leftUsable ? -1 : 1;
+  if (leftUsable && rightUsable) {
+    if (isMeaningfullyLongerSource(left, right)) return -1;
+    if (isMeaningfullyLongerSource(right, left)) return 1;
+  }
+  const scoreDiff = rightScore - leftScore;
+  if (scoreDiff) return scoreDiff;
+  if (left.id === "primary") return -1;
+  if (right.id === "primary") return 1;
+  return String(left.id).localeCompare(String(right.id));
+}
+
+function recommendedPlaybackSource(sources = []) {
+  return [...sources].sort(comparePlaybackSources)[0] || null;
+}
+
+function playbackReasonCodes(recommended, sources = []) {
+  if (!recommended) return ["no-playable-source"];
+  const completeness = sources.some((source) => (
+    source.id !== recommended.id && isMeaningfullyLongerSource(recommended, source)
+  ));
+  return [
+    ...(completeness ? ["longer-playlist-duration"] : []),
+    recommended.health?.state === "healthy" ? "healthy-source" : "best-available-source"
+  ];
+}
+
 function legacyDetailToPlaybackSession(detail = {}, summary = {}, account = null, options = {}) {
   const movieId = String(options.movieId || summary.movieId || detail.id || "").trim();
   const normalizedDetail = normalizeFullDetail({ ...summary, ...detail }) || {};
@@ -463,12 +520,7 @@ function legacyDetailToPlaybackSession(detail = {}, summary = {}, account = null
       health: sourceHealthFromLegacy(row.stat)
     }))
     .filter((source) => Boolean(source.url));
-  const score = (source) => {
-    if (!source?.url || source.health?.state === "failed") return -10000;
-    if (Number.isFinite(Number(source.health?.score))) return Number(source.health.score);
-    return source.health?.state === "healthy" ? 160 : source.health?.state === "degraded" ? 80 : source.health?.state === "probing" ? 35 : 20;
-  };
-  const recommended = [...sources].sort((left, right) => score(right) - score(left) || (left.id === "primary" ? -1 : 1))[0];
+  const recommended = recommendedPlaybackSource(sources);
   const fetchedAt = String(summary.fetchedAt || nowIso());
   return {
     id: String(options.sessionId || crypto.randomUUID()),
@@ -478,7 +530,7 @@ function legacyDetailToPlaybackSession(detail = {}, summary = {}, account = null
     sources,
     decision: {
       recommendedSourceId: recommended?.id || sources[0]?.id || "",
-      reasonCodes: recommended ? [recommended.health.state === "healthy" ? "healthy-source" : "best-available-source"] : ["no-playable-source"],
+      reasonCodes: playbackReasonCodes(recommended, sources),
       failoverAllowed: sources.length > 1
     },
     account: account ? { id: account.id, label: account.label } : undefined,
@@ -504,18 +556,22 @@ function normalizeStoredPlaybackSession(session = null) {
       health: source?.health && typeof source.health === "object" ? source.health : { state: "unknown" }
     }))
     .filter((source) => hasReturnedPlayLink(source.url));
-  const requested = String(session.decision?.recommendedSourceId || "");
-  const recommendedSourceId = sources.some((source) => source.id === requested)
-    ? requested
-    : sources.find((source) => source.health?.state !== "failed")?.id || sources[0]?.id || "";
+  const requested = sources.find((source) => source.id === String(session.decision?.recommendedSourceId || ""));
+  const ranked = recommendedPlaybackSource(sources);
+  // 保留服务端有效决定；但旧会话若明确选中了显著更短的线路，升级后立即纠正。
+  const recommended = !requested || requested.health?.state === "failed" || (ranked && isMeaningfullyLongerSource(ranked, requested))
+    ? ranked
+    : requested;
   return {
     ...session,
     movieId: String(session.movieId),
     sources,
     decision: {
       ...(session.decision || {}),
-      recommendedSourceId,
-      reasonCodes: Array.isArray(session.decision?.reasonCodes) ? session.decision.reasonCodes : ["stored-session"],
+      recommendedSourceId: recommended?.id || "",
+      reasonCodes: recommended?.id !== requested?.id
+        ? playbackReasonCodes(recommended, sources)
+        : Array.isArray(session.decision?.reasonCodes) ? session.decision.reasonCodes : ["stored-session"],
       failoverAllowed: sources.length > 1
     }
   };
@@ -617,7 +673,7 @@ function buildAutoCleanState(storedState = {}) {
       lastAutoCleanAt: nowIso(),
       lastAutoCleanReason: isLegacyRemoteBaseUrl(previousRemote.baseUrl)
         ? "检测到旧 Worker 地址或空地址，已自动切换到当前默认 Worker；账号池和下载记录均已保留"
-        : "播放系统已升级到 5.0；账号池和下载记录均已保留"
+        : "播放线路完整度探测已升级；旧片源缓存已清理，账号池、历史和下载记录均已保留"
     },
     fullDetails: legacyDetails.slice(-80),
     screening: normalizeScreeningState(storedState.screening, legacyDetails),
@@ -1257,17 +1313,37 @@ async function checkRemoteDiagnostics() {
   throw lastError || new Error("云端服务体检失败");
 }
 
+function hlsDurations(text = "") {
+  return [...String(text).matchAll(/#EXTINF:([0-9.]+)/g)]
+    .map((match) => Number(match[1]))
+    .filter(Number.isFinite);
+}
+
+function hlsVariantUrls(text = "", baseUrl = "") {
+  const lines = String(text).split(/\r?\n/).map((line) => line.trim());
+  const variants = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].startsWith("#EXT-X-STREAM-INF")) continue;
+    const candidate = lines.slice(index + 1).find((line) => line && !line.startsWith("#"));
+    if (!candidate) continue;
+    try {
+      variants.push(new URL(candidate, baseUrl).href);
+    } catch (_) {}
+  }
+  return [...new Set(variants)].slice(0, 4);
+}
+
 function buildM3u8Stat(url, response, text, latencyMs = 0) {
-  const durations = [...String(text || "").matchAll(/#EXTINF:([0-9.]+)/g)].map((match) => Number(match[1]));
+  const durations = hlsDurations(text);
   const segments = durations.length;
   const duration = Number(durations.reduce((sum, item) => sum + (Number.isFinite(item) ? item : 0), 0).toFixed(3));
   const status = Number(response?.status || 0);
-  // 与前端 lineScore 同思路：完整、快、状态正常的线路分更高。
+  // 时长不再在十几分钟处过早饱和，避免短预览线凭低延迟压过完整版。
   let score = 100;
   if (status >= 200 && status < 400) score += 60;
   else if (status > 0) score -= 40;
-  score += Math.min(50, segments / 4);
-  score += Math.min(40, duration / 20);
+  score += Math.min(120, segments / 3);
+  score += Math.min(360, duration / 10);
   if (latencyMs > 0) score += Math.max(0, 50 - Math.min(50, latencyMs / 80));
   if (segments <= 0 && duration <= 0) score -= 20;
   return {
@@ -1281,17 +1357,32 @@ function buildM3u8Stat(url, response, text, latencyMs = 0) {
   };
 }
 
-async function statM3u8(link) {
-  if (!link) return null;
-  const url = absoluteUrl(link);
-  const started = Date.now();
-  try {
-    const response = await fetch(url);
-    const text = await response.text();
-    return buildM3u8Stat(url, response, text, Date.now() - started);
-  } catch (err) {
-    return { url, error: err?.message || String(err), latencyMs: Date.now() - started, score: -800, ok: false };
+async function fetchPlaybackProbe(url, signal) {
+  const headers = {
+    accept: "application/vnd.apple.mpegurl, application/x-mpegURL, text/plain, */*;q=0.1",
+    range: "bytes=0-524287"
+  };
+  let response = await fetch(url, {
+    ...(signal ? { signal } : {}),
+    headers
+  });
+  if (!response.ok && /m3u8|mpegurl/i.test(url)) {
+    await response.body?.cancel().catch(() => {});
+    response = await fetch(url, {
+      ...(signal ? { signal } : {}),
+      headers: { accept: headers.accept }
+    });
   }
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  const contentLength = Number(response.headers.get("content-length") || 0);
+  const urlLooksHls = /m3u8|mpegurl/i.test(url);
+  const definitelyLargeBinary = /video\/(?:mp4|webm|quicktime)|application\/mp4/.test(contentType)
+    || (response.status !== 206 && contentLength > 2 * 1024 * 1024 && !urlLooksHls);
+  if (definitelyLargeBinary) {
+    await response.body?.cancel().catch(() => {});
+    return { response, text: "" };
+  }
+  return { response, text: await response.text() };
 }
 
 async function statM3u8Quick(link, timeoutMs = 3500) {
@@ -1302,9 +1393,23 @@ async function statM3u8Quick(link, timeoutMs = 3500) {
   let timer = null;
   if (controller) timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, controller ? { signal: controller.signal } : undefined);
-    const text = await response.text();
-    return buildM3u8Stat(url, response, text, Date.now() - started);
+    const { response, text } = await fetchPlaybackProbe(url, controller?.signal);
+    const direct = buildM3u8Stat(url, response, text, Date.now() - started);
+    if (!String(text).includes("#EXTM3U") || direct.duration > 0) {
+      return String(text).includes("#EXTM3U")
+        ? direct
+        : { ...direct, ok: response.ok, segments: 0, duration: 0 };
+    }
+    const variants = hlsVariantUrls(text, url);
+    const rows = await Promise.allSettled(variants.map(async (variantUrl) => {
+      const variant = await fetchPlaybackProbe(variantUrl, controller?.signal);
+      return buildM3u8Stat(variantUrl, variant.response, variant.text, Date.now() - started);
+    }));
+    const best = rows
+      .filter((row) => row.status === "fulfilled")
+      .map((row) => row.value)
+      .sort((left, right) => right.duration - left.duration || right.segments - left.segments)[0];
+    return best ? { ...best, url, resolvedPlaylistUrl: best.url, masterPlaylist: true } : direct;
   } catch (err) {
     return {
       url,
@@ -1316,15 +1421,6 @@ async function statM3u8Quick(link, timeoutMs = 3500) {
   } finally {
     if (timer) clearTimeout(timer);
   }
-}
-
-function pickBetterStat(a, b) {
-  if (!a && !b) return null;
-  if (!a) return b;
-  if (!b) return a;
-  const as = Number(a.score ?? (a.error ? -800 : a.pending ? 25 : 0));
-  const bs = Number(b.score ?? (b.error ? -800 : b.pending ? 25 : 0));
-  return bs > as ? b : a;
 }
 
 function resolveDownloadLink(detail = {}, summary = {}, message = {}) {
@@ -1342,11 +1438,13 @@ function resolveDownloadLink(detail = {}, summary = {}, message = {}) {
   // auto：用探测分选择更好线路，不再写死主线优先。
   const fullStat = summary.fullStat || null;
   const backupStat = summary.backupStat || null;
-  const playScore = fullStat ? Number(fullStat.score ?? (fullStat.error ? -800 : fullStat.pending ? 25 : 50)) : (play ? 15 : -10000);
-  const backupScore = backupStat ? Number(backupStat.score ?? (backupStat.error ? -800 : backupStat.pending ? 25 : 50)) : (backup ? 15 : -10000);
-  if (backup && backupScore > playScore) return { url: backup, lineKey: "backup" };
-  if (play) return { url: play, lineKey: "play" };
-  return { url: backup, lineKey: backup ? "backup" : "auto" };
+  const recommended = recommendedPlaybackSource([
+    { id: "primary", url: play, health: sourceHealthFromLegacy(fullStat) },
+    { id: "backup", url: backup, health: sourceHealthFromLegacy(backupStat) }
+  ].filter((source) => source.url));
+  if (recommended?.id === "backup") return { url: backup, lineKey: "backup" };
+  if (recommended?.id === "primary") return { url: play, lineKey: "play" };
+  return { url: play || backup, lineKey: play ? "play" : backup ? "backup" : "auto" };
 }
 
 function playbackBusinessError(message, code, status = 400) {
@@ -1387,6 +1485,26 @@ async function writeLocalLedger(movieId, accountId, patch) {
   return fresh.localPurchaseLedger[key];
 }
 
+async function ensurePlaybackSessionCompleteness(session = null) {
+  const normalized = normalizeStoredPlaybackSession(session);
+  if (!normalized || normalized.sources.length < 2) return normalized;
+  const shouldProbe = normalized.sources.some((source) => (
+    source.url
+    && source.protocol !== "progressive"
+    && Number(source.health?.duration || 0) <= 0
+  ));
+  if (!shouldProbe) return normalizeStoredPlaybackSession(normalized);
+
+  const stats = await Promise.all(normalized.sources.map((source) => (
+    source.protocol === "progressive" ? Promise.resolve(null) : statM3u8Quick(source.url)
+  )));
+  const sources = normalized.sources.map((source, index) => ({
+    ...source,
+    health: stats[index] ? sourceHealthFromLegacy(stats[index]) : source.health
+  }));
+  return normalizeStoredPlaybackSession({ ...normalized, sources });
+}
+
 async function finishPlaybackSession(options = {}) {
   const {
     movieId,
@@ -1397,8 +1515,19 @@ async function finishPlaybackSession(options = {}) {
     cacheKey = `${account?.id || "default"}:${movieId}`,
     session: suppliedSession = null
   } = options;
-  const session = suppliedSession || legacyDetailToPlaybackSession(detail, {}, account, { movieId, movieTitle, acquisition });
-  const summary = playbackSessionSummary(session, detail);
+  const normalizedDetail = normalizeFullDetail(detail) || {};
+  const constructed = legacyDetailToPlaybackSession(normalizedDetail, {}, account, { movieId, movieTitle, acquisition });
+  const mergedSources = suppliedSession
+    ? [...(suppliedSession.sources || []), ...constructed.sources.filter((candidate) => (
+      !(suppliedSession.sources || []).some((source) => source.id === candidate.id)
+    ))]
+    : constructed.sources;
+  const baseSession = suppliedSession
+    ? normalizeStoredPlaybackSession({ ...suppliedSession, sources: mergedSources })
+    : constructed;
+  const session = await ensurePlaybackSessionCompleteness(baseSession);
+  if (!session) throw new Error("播放会话缺少有效线路");
+  const summary = playbackSessionSummary(session, normalizedDetail);
   const fresh = await getStateInternal();
   fresh.selectedFullAccountId = account?.id || fresh.selectedFullAccountId;
   fresh.screening = mergeScreeningSession(fresh.screening, session);
@@ -1406,10 +1535,10 @@ async function finishPlaybackSession(options = {}) {
   fresh.fullDetailCache = {
     ...(fresh.fullDetailCache || {}),
     [cacheKey]: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       cachedAt: Date.now(),
       expiresAt: Date.parse(session.expiresAt || "") || Date.now() + 10 * 60 * 1000,
-      detail,
+      detail: normalizedDetail,
       summary: { ...summary, session },
       account: account ? publicAccount(account) : null
     }
@@ -1420,8 +1549,8 @@ async function finishPlaybackSession(options = {}) {
   return {
     ok: true,
     session,
-    detail,
-    data: detail,
+    detail: normalizedDetail,
+    data: normalizedDetail,
     summary,
     account: account ? publicAccount(account) : null,
     state: sanitizeState(fresh)

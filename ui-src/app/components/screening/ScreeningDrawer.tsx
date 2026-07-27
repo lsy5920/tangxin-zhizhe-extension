@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Clock3, Copy, Download, ExternalLink, Film, Footprints, Route, Save } from "lucide-react";
 import type { BridgeState, DownloadTask } from "../../types";
 import type { PlaybackSession } from "../../playback/types";
-import { maskUrl } from "../../helpers";
+import { formatDuration, maskUrl } from "../../helpers";
 
 type Tab = "sources" | "download" | "history";
 
@@ -48,11 +48,14 @@ export function ScreeningDrawer({ state, session, history, onSelectHistory, onAc
         {tab === "sources" && (
           <div className="space-y-2">
             {!session?.sources.length && <p className="rounded-xl bg-slate-50 p-4 text-center text-[11px] text-slate-400">检票后在这里查看完整线路</p>}
-            {session?.sources.map((source) => (
+            {session?.sources.map((source) => {
+              const completenessRecommended = source.id === session.decision.recommendedSourceId
+                && session.decision.reasonCodes.includes("longer-playlist-duration");
+              return (
               <article key={source.id} className="rounded-2xl border border-slate-100 bg-slate-50/65 p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0"><strong className="block text-[12px] text-slate-800">{source.label}</strong><span className="mt-0.5 block truncate font-mono text-[9px] text-slate-400">{maskUrl(source.url)}</span></div>
-                  <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-bold ${healthTone(source.health.state)}`}>{source.health.state === "healthy" ? "健康" : source.health.state === "failed" ? "异常" : source.health.state === "degraded" ? "降级" : "待验证"}</span>
+                  <div className="min-w-0"><strong className="block text-[12px] text-slate-800">{source.label}{completenessRecommended && <span className="ml-1.5 rounded-full bg-fuchsia-100 px-1.5 py-0.5 text-[8px] text-fuchsia-600">完整版优先</span>}</strong><span className="mt-0.5 block truncate font-mono text-[9px] text-slate-400">{maskUrl(source.url)}</span></div>
+                  <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-bold ${healthTone(source.health.state)}`}>{source.health.state === "healthy" ? "健康" : source.health.state === "failed" ? "异常" : source.health.state === "degraded" ? "降级" : "待验证"}{Number(source.health.duration || 0) > 0 ? ` · ${formatDuration(source.health.duration)}` : ""}</span>
                 </div>
                 <div className="mt-2 grid grid-cols-3 gap-1.5">
                   <button type="button" onClick={() => onAction(source.id === "backup" ? "copy-backup-link" : "copy-play-link", { url: source.url, label: `${source.label}完整链接` })} className="min-h-10 rounded-xl bg-white text-[10px] font-bold text-violet-600 shadow-sm"><Copy size={12} className="mr-1 inline" />复制</button>
@@ -60,7 +63,8 @@ export function ScreeningDrawer({ state, session, history, onSelectHistory, onAc
                   <button type="button" onClick={() => onAction("download-full-video", { movieId: session.movieId, lineKey: source.id === "backup" ? "backup" : "play", url: source.url })} className="min-h-10 rounded-xl bg-violet-600 text-[10px] font-bold text-white shadow-sm"><Download size={12} className="mr-1 inline" />下载</button>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         )}
 
