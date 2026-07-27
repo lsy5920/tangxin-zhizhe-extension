@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.0.3",
-  "build": "2026-07-27-1230",
-  "releasedAt": "2026-07-27 12:30",
+  "version": "5.0.4",
+  "build": "2026-07-27-1251",
+  "releasedAt": "2026-07-27 12:51",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-27-1251",
+      "type": "修复",
+      "title": "Vlog 原生播放器切换完整线路",
+      "detail": "完整检票结果现在会回填固定 /vlog/ 路由的活动 Vue 卡片，并调用复用中的 ArtPlayer/Hls changeSources，将网站原生试看 Blob 切换到完整主线；保留播放/暂停状态和已有进度。升级下载不再依赖缺少 chrome.downloads 的离屏页，后台直接以 saveAs=true 提交已校验 CRX 字节。",
+      "releasedAt": "2026-07-27 12:51"
+    },
     {
       "id": "2026-07-27-1230",
       "type": "修复",
@@ -151,11 +158,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 604228,
-  "packageSha256": "83dcfa082da2decac407d25682670b3d5056fa2c033e22f035b9009b281b2695",
+  "packageSize": 605465,
+  "packageSha256": "046cd61f6c147bed28c789c7b55f714e66bdee284980845eac54b2a720547fd7",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "HEsKKtkF7E4JsI7ZWaaoUMwY2vo1YgoVtMds5o8NR0oqMwEyOrcfBA6a92SQ+StP4fUU/e+xn2jalLYZqkEIHwo6Ms/Dy9LjdYPuT4nMQEjLgsnlwqwTiH87HlKlY7l+KZeujwfN2lavF5TOuhXTKZgGAy2eyRW7fKofIqDd/4y53V5mXfWTwixCx6SjxX5YtLD5mgBff8m3A85dZwNFVn3sK7+SJzaLDnd/5kKL+2AEVhAkOjodCQrr8vTZVr3SqhJrTNNDS9v+2HRjuTG85ilqkgyfS+LgG4q3PPOZv7XOAvrAU2xNeB0IfVArI+SdA5Zh5DgHmnn3Qwj0y1dW8Q=="
+    "value": "PD3iVPszM6gqIblxYpiMpz6l2IMK7JVXqeaWFsMaRRnXnn8PjblOGuWv+V0g62Skj6AjFU9BhqtFY2p532CxIDT1vLcn1GKygOxre+AictinItJfpiuGh2WSUtuSGFLLETvW5AsXSTA/bDFbl/Rx5neOEF4tc7mjXvWrBtrhD9m2Bd+GVqdbj1PsQjjzJ1LvLPoxHrJM/5mBXCZx3zj7tsW8KWCs340cm5IRBj9LHFmkmCaRN6oaCGyqietLLefQxyyQhA5oQjf2PY3MQajYJRt2DtQ9jn+gZkNwsecNHi8ExmiWzWbjkbYTNlydAF6jEGfa6kx0a/WvWa3o99CGbg=="
   }
 }

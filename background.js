@@ -80,7 +80,7 @@ let updateVerificationKeyPromise = null;
 const localPurchaseLocks = new Set();
 let latestPlaybackRequest = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-27-1230";
+const LOCAL_UPDATE_BUILD = "2026-07-27-1251";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -3369,26 +3369,23 @@ async function performRepositoryArchiveDownload(meta = {}) {
       const verifiedPackage = await fetchAndVerifyRepositoryPackage(url, manifest);
       const { bytes, packageProbe } = verifiedPackage;
       Object.assign(attemptRecord, { ok: true, phase: "validated", packageProbe });
-      // MV3 Service Worker 不能创建 Blob URL；交给离屏文档从同一份已验证字节创建 Blob，
-      // 并等待 downloads API 真正出现任务。用户主动更新默认拉起保存对话框。
-      await ensureOffscreenDocument();
-      const submitted = await chrome.runtime.sendMessage({
-        type: "offscreenSaveVerifiedPackage",
-        base64: toBase64(bytes),
-        expectedSize: bytes.length,
+      // downloads API 可以直接接收 data URL；字节来自刚刚完成全部校验的内存，
+      // 不会再次访问远程镜像，因此既不依赖离屏页，也没有 TOCTOU 替换窗口。
+      if (!chrome.downloads?.download) throw new Error("当前浏览器不支持扩展下载 API");
+      const verifiedDataUrl = `data:application/x-chrome-extension;base64,${toBase64(bytes)}`;
+      const downloadId = await chrome.downloads.download({
+        url: verifiedDataUrl,
         filename,
-        saveAs: meta.saveAs !== false
+        // 用户主动点击更新时必须拉起保存对话框，不能只在后台静默创建编号。
+        saveAs: meta.saveAs !== false,
+        conflictAction: "uniquify"
       });
-      if (!submitted?.ok || !Number.isInteger(submitted.downloadId) || submitted.downloadId <= 0) {
-        throw new Error(submitted?.error || "浏览器没有创建 CRX 下载任务");
-      }
-      const downloadId = submitted.downloadId;
+      if (!Number.isInteger(downloadId) || downloadId <= 0) throw new Error("浏览器未返回有效下载编号");
       const result = {
         ok: true,
         downloadId,
-        downloadState: submitted.state || "in_progress",
-        downloadDanger: submitted.danger || "safe",
-        saveVia: submitted.saveVia || "offscreen-blob",
+        downloadState: "submitted",
+        saveVia: "background-data-url",
         filename,
         url,
         displayUrl,

@@ -68,6 +68,7 @@
     activePointerAt: 0,
     activeVlogRequestKey: "",
     activeVlogRetryAt: 0,
+    nativeVlogAppliedKey: "",
     contextTrackerInstalled: false,
     lastMessage: "糖心志者播放资源监听已安装"
   };
@@ -237,6 +238,7 @@
       fullplay.activePointerAt = 0;
       fullplay.activeVlogRequestKey = "";
       fullplay.activeVlogRetryAt = 0;
+      fullplay.nativeVlogAppliedKey = "";
     }
     fullplay.pageKey = nextKey;
     fullplay.pageMovieId = nextMovieId;
@@ -739,6 +741,177 @@
     }
   }
 
+  function firstPlayableValue(...values) {
+    for (const value of values) {
+      const text = String(value ?? "").trim();
+      if (text && !/^(?:null|undefined|false|none|nil|0|n|no|暂无|无|未购买|未解锁)$/i.test(text)) return text;
+    }
+    return "";
+  }
+
+  function activeVlogNodes(movieId) {
+    if (!/^\/vlog\/?$/i.test(String(location.pathname || ""))) return null;
+    const id = String(movieId || "").trim();
+    if (!id) return null;
+    try {
+      const listVm = document.querySelector(".vlog-list")?.__vue__;
+      if (!listVm) return null;
+      const swiper = listVm.swiper;
+      const activeIndex = Number.isInteger(Number(swiper?.activeIndex)) ? Number(swiper.activeIndex) : Number(listVm.activeIndex || 0);
+      const realIndex = Number.isInteger(Number(swiper?.realIndex)) ? Number(swiper.realIndex) : Number(listVm.realIndex ?? activeIndex);
+      const indexedSlide = swiper?.slides?.[realIndex];
+      const activeSlide = indexedSlide instanceof Element
+        ? indexedSlide
+        : document.querySelector(".swiper-slide-active") || document.querySelector(".swiper-slide[aria-hidden='false']");
+      const detailEntries = Array.from(document.querySelectorAll(".short-video-detail")).map((element) => ({
+        element,
+        vm: element.__vue__
+      }));
+      const matchingDetail = detailEntries.find((entry) => movieIdFromVueValue(entry.vm?.r || entry.vm?.$options?.propsData?.r) === id);
+      const activeDetail = detailEntries.find((entry) => entry.vm?.$options?.propsData?.isActive === true) || matchingDetail;
+      const detailVm = matchingDetail?.vm || activeDetail?.vm || activeSlide?.querySelector(".short-video-detail")?.__vue__ || null;
+      const poolPlayers = Array.isArray(listVm.$refs?.poolPlayers) ? listVm.$refs.poolPlayers : [];
+      const playerVm = poolPlayers.find((player) => String(player?.currentMovieId || player?.movieId || "") === id)
+        || poolPlayers[Number(listVm.activePoolIndex)]
+        || detailVm?.player
+        || null;
+      const renderSlides = Array.isArray(listVm.renderData?.slides) ? listVm.renderData.slides : [];
+      const virtualSlides = Array.isArray(swiper?.virtual?.slides) ? swiper.virtual.slides : [];
+      const candidates = [renderSlides[realIndex], virtualSlides[activeIndex], detailVm?.r, listVm.playerInfo];
+      const currentData = candidates.find((item) => movieIdFromVueValue(item) === id) || null;
+      return { listVm, swiper, activeIndex, realIndex, activeSlide, detailVm, playerVm, currentData };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * 主动完整检票错过网站首个 /movie/detail 请求时，不能只更新插件自己的会话；
+   * 还要把同一份完整详情写回当前 Vlog 的 Vue 数据，并让复用中的 ArtPlayer/Hls
+   * 重新载入完整主线。这样网站原生播放器的试看 Blob 才会切到完整时长。
+   */
+  function applyNativeVlogDetail(movieId, payload, context, reason = "active-vlog") {
+    if (!payload || !context || !/^\/vlog\/?$/i.test(String(location.pathname || ""))) return false;
+    const id = String(movieId || "").trim();
+    const fullDetail = payload.data || payload.detail || {};
+    const summary = payload.summary || {};
+    const nodes = activeVlogNodes(id);
+    if (!nodes) return false;
+    const current = nodes.currentData || {};
+    if (String(current.id || id) !== id) return false;
+    const playLink = firstPlayableValue(
+      fullDetail.play_link,
+      fullDetail.playLink,
+      summary.playLink,
+      fullDetail.play_url,
+      fullDetail.playUrl,
+      current.play_link
+    );
+    const backupLink = firstPlayableValue(
+      fullDetail.backup_link,
+      fullDetail.backupLink,
+      summary.backupLink,
+      fullDetail.backup_url,
+      fullDetail.backupUrl,
+      current.backup_link
+    );
+    if (!playLink && !backupLink) return false;
+    const effectivePlayLink = playLink || backupLink;
+    const sourceKey = `${context.contextKey}:${normalizeUrl(effectivePlayLink)}`;
+    if (fullplay.nativeVlogAppliedKey === sourceKey) return true;
+    const merged = {
+      ...current,
+      ...fullDetail,
+      id,
+      play_link: effectivePlayLink,
+      backup_link: backupLink || current.backup_link || ""
+    };
+    if (Array.isArray(fullDetail.lines) && fullDetail.lines.length) merged.lines = fullDetail.lines;
+    else if (!Array.isArray(merged.lines) || !merged.lines.length) {
+      merged.lines = [
+        { id: "1", name: "完整主线", link: effectivePlayLink },
+        ...(backupLink ? [{ id: "2", name: "完整备用线", link: backupLink }] : [])
+      ];
+    }
+    // 完整线路已经由账号/Worker 验证通过；同步放行站点自己的 VIP/试看遮罩。
+    merged.has_buy = merged.has_buy || "y";
+    merged.is_buy = merged.is_buy || "y";
+    merged.buyed = merged.buyed || "y";
+    if (merged.layer_type === "money") merged.layer_type = "normal";
+    merged.play_tips = "";
+
+    const setReactive = (owner, target, key, value) => {
+      try {
+        if (typeof owner?.$set === "function") owner.$set(target, key, value);
+        else target[key] = value;
+      } catch (_) {
+        try { target[key] = value; } catch (_) {}
+      }
+    };
+    const list = nodes.listVm;
+    if (Array.isArray(list.renderData?.slides) && nodes.realIndex >= 0) setReactive(list, list.renderData.slides, nodes.realIndex, merged);
+    if (Array.isArray(nodes.swiper?.virtual?.slides) && nodes.activeIndex >= 0) setReactive(list, nodes.swiper.virtual.slides, nodes.activeIndex, merged);
+    if (String(list.playerInfo?.id || "") === id) setReactive(list, list, "playerInfo", merged);
+    try { list.initLines?.(merged); } catch (_) {}
+    try { nodes.detailVm?.initLines?.(merged); } catch (_) {}
+
+    const player = nodes.playerVm;
+    const video = player?.player?.video;
+    const previousTime = Number(video?.currentTime);
+    const wasPlaying = Boolean(video && !video.paused && !video.ended);
+    const currentSource = normalizeUrl(player?.currentSrcValue || player?.player?.url || video?.currentSrc || video?.src || "");
+    const nextSource = normalizeUrl(effectivePlayLink);
+    const sameSource = currentSource && nextSource && currentSource === nextSource;
+    const restorePlayback = () => {
+      // 线路切换期间用户可能已经刷到下一条；旧视频的 loadedmetadata/计时回调
+      // 不得把进度或暂停状态写回新活动卡片。
+      if (fullplay.pageKey !== context.pageKey
+        || fullplay.pageEpoch !== context.pageEpoch
+        || fullplay.pageMovieId !== id
+        || activeVlogMovieId() !== id
+        || String(player?.currentMovieId || "") !== id) return;
+      if (!video) return;
+      if (Number.isFinite(previousTime) && previousTime > 0 && Number.isFinite(video.duration) && video.duration > previousTime) {
+        try { video.currentTime = previousTime; } catch (_) {}
+      }
+      if (!wasPlaying) {
+        try { video.pause(); } catch (_) {}
+      }
+    };
+    let applied = sameSource;
+    if (player && typeof player.changeSources === "function" && !sameSource) {
+      try {
+        if (video?.addEventListener) video.addEventListener("loadedmetadata", restorePlayback, { once: true });
+        player.changeSources(merged, { autoplay: wasPlaying });
+        window.setTimeout(restorePlayback, 1_500);
+        applied = true;
+      } catch (error) {
+        recordError(error, { movieId: id, nativeVlog: true, reason });
+      }
+    } else if (!player && typeof list.insertPlayer === "function" && nodes.activeSlide) {
+      try {
+        list.insertPlayer(merged, nodes.activeSlide);
+        applied = true;
+      } catch (error) {
+        recordError(error, { movieId: id, nativeVlog: true, reason });
+      }
+    }
+    if (!applied) return false;
+    fullplay.nativeVlogAppliedKey = sourceKey;
+    emit("fullplay-native-vlog", {
+      movieId: id,
+      pageKey: context.pageKey,
+      pageEpoch: context.pageEpoch,
+      contextKey: context.contextKey,
+      source: effectivePlayLink,
+      backup: backupLink,
+      reason,
+      duration: merged.duration_time || merged.duration || summary.fullStat?.duration || ""
+    });
+    setMessage(`网站 Vlog 播放器已切换完整线路：${id}`, "ok");
+    return true;
+  }
+
   function ensureActiveVlogDetail(reason = "active-vlog") {
     if (!/^\/vlog\/?$/i.test(String(location.pathname || ""))) return null;
     const movieId = activeVlogMovieId();
@@ -756,8 +929,9 @@
     fullplay.activeVlogRequestKey = key;
     const promise = requestFullDetail(movieId, activeVlogDetailSnapshot(movieId), context);
     promise.then(
-      () => {
+      (payload) => {
         if (fullplay.pageKey === context.pageKey && fullplay.pageEpoch === context.pageEpoch && fullplay.pageMovieId === movieId) {
+          try { applyNativeVlogDetail(movieId, payload, context, reason); } catch (error) { recordError(error, { movieId, nativeVlog: true }); }
           setMessage(`Vlog 当前视频已完成完整线路检票：${movieId}`, "ok");
           emit("fullplay-status", { message: `Vlog 当前视频 ${movieId} 已完成完整线路检票`, movieId, reason, background: true });
         }
@@ -912,6 +1086,11 @@
     });
     if (fullDetail?.play_link) emit("media", { via: "fullplay.detail", url: fullDetail.play_link, category: classifyUrl(fullDetail.play_link) });
     if (fullDetail?.backup_link) emit("media", { via: "fullplay.backup", url: fullDetail.backup_link, category: classifyUrl(fullDetail.backup_link) });
+    if (/^\/vlog\/?$/i.test(String(location.pathname || ""))) {
+      try { applyNativeVlogDetail(movieId, { ...payload, data: fullDetail, detail: fullDetail, summary }, context, "detail-intercept"); } catch (error) {
+        recordError(error, { movieId, nativeVlog: true, reason: "detail-intercept" });
+      }
+    }
     return merged;
   }
 

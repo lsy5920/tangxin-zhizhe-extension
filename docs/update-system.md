@@ -30,7 +30,7 @@
    - CRX3 内嵌公钥、`crx_id` 与正式扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` 一致；
    - CRX3 自身 RSA 签名有效。
 
-6. 校验成功后，把同一份已验证内存字节交给离屏页生成短生命周期 Blob URL，再调用 `chrome.downloads.download({ saveAs: true })` 拉起浏览器保存对话框。离屏页会确认下载编号对应的任务真实存在，并在完成或中断后才释放 Blob；浏览器不会重新访问远程镜像，因此没有“探测时是安全文件、实际下载时被替换”的竞态窗口。
+6. 校验成功后，把同一份已验证内存字节编码为 `data:` 下载源，再调用后台 `chrome.downloads.download({ saveAs: true })` 拉起浏览器保存对话框。浏览器不会重新访问远程镜像，因此没有“探测时是安全文件、实际下载时被替换”的竞态窗口；不支持 `downloads` API 的浏览器会明确报错，不会伪造成功编号。
 7. 没有通过签名的清单时拒绝下载；远程版本低于本地版本或构建时拒绝降级。
 
 ## 并发与持久化
@@ -63,7 +63,7 @@
 
 开发源码允许先提升 `manifest.json`、`package.json`、前端常量和后台本地构建号，而 `update.json` 与 `releases/` 继续保留上一个已签名版本。`npm run check` 的源码门禁会分别校验两组数据：源码内部必须一致，现有签名清单自身也必须完整；它不会把未签名源码伪装成已经发布。
 
-只有 `npm run release` 会要求源码版本、`update.json`、`latest.json` 和 CRX 完全一致，并使用固定私钥重新签名。当前源码与签名发布均为 `5.0.3 / 2026-07-27-1230`，继续使用 4.0.0 启用的固定私钥，扩展 ID 保持为 `ddefadnhgebdclpkabeobjidjllkdkhm`。
+只有 `npm run release` 会要求源码版本、`update.json`、`latest.json` 和 CRX 完全一致，并使用固定私钥重新签名。当前源码与签名发布均为 `5.0.4 / 2026-07-27-1251`，继续使用 4.0.0 启用的固定私钥，扩展 ID 保持为 `ddefadnhgebdclpkabeobjidjllkdkhm`。
 
 ## 4.0.0 签名身份轮换
 
@@ -71,8 +71,8 @@
 
 ## 模块边界
 
-- `background.js`：签名清单验证、多源比较、防回退、完整 CRX3 验证、状态串行写入和离屏下载提交。
-- `offscreen_downloader.js`：把已验证 CRX 字节转换为 Blob，拉起浏览器保存对话框并确认下载任务已创建；同时承载视频分片合并下载。
+- `background.js`：签名清单验证、多源比较、防回退、完整 CRX3 验证、状态串行写入和已校验字节下载提交。
+- `offscreen_downloader.js`：承载视频分片合并下载；CRX 更新不依赖离屏页，兼容缺少 `downloads` 的离屏实现。
 - `content.js`：发布真实检测/下载阶段，设置消息超时，转发明确的忽略与下载动作。
 - `ui-src/app/update/helpers.ts`：把后台阶段归一为用户状态，不使用固定计时器伪造进度。
 - `ui-src/app/update/UpdateProgress.tsx`：升级中心和更新弹层共用的阶段组件。
