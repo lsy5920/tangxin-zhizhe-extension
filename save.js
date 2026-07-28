@@ -78,6 +78,7 @@ async function completeSave(confirmation) {
   if (response?.ok === false) throw new Error(response.error || "保存状态确认失败");
   claim = null;
   saveButton.disabled = true;
+  saveButton.textContent = "保存完成";
   confirmButton.hidden = true;
   title.textContent = "已经稳稳保存好啦";
   message.textContent = "文件已写入设备，保存票也已安全核销。CRX 下载后仍需在扩展管理页手动安装。";

@@ -94,7 +94,7 @@ export function WorkspaceShell({
             </div>
           </div>
 
-          <nav className="mt-4 space-y-1.5" aria-label="桌面端页面导航">
+          <nav className="txzz-sidebar-nav mt-4 space-y-1.5" aria-label="桌面端页面导航">
             {NAVIGATION_ITEMS.map((item) => {
               const active = page === item.id;
               const hasBadge = item.id === "downloads" && viewModel.activeDownloads > 0;
@@ -108,12 +108,12 @@ export function WorkspaceShell({
                   aria-label={`前往${item.label}`}
                   className={`txzz-sidebar-nav-item relative flex min-h-12 w-full items-center gap-3 rounded-2xl px-3 text-left text-[13px] font-semibold transition ${active ? "is-active text-brand-700" : "text-slate-500 hover:text-slate-800"}`}
                 >
-                  <span className={`flex h-9 w-9 items-center justify-center rounded-[0.9rem] transition ${active ? "bg-brand-500 text-white shadow-[0_6px_16px_rgba(239,92,130,0.25)]" : "bg-white/75 text-slate-400"}`}>
+                  <span className={`txzz-sidebar-nav-icon flex h-9 w-9 items-center justify-center rounded-[0.9rem] transition ${active ? "bg-brand-500 text-white shadow-[0_6px_16px_rgba(239,92,130,0.25)]" : "bg-white/75 text-slate-400"}`}>
                     <item.icon size={17} strokeWidth={active ? 2.35 : 2} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{item.label}</span>
-                    <span className="mt-0.5 block truncate text-[10px] font-medium opacity-65">{item.subtitle}</span>
+                    <span className="txzz-sidebar-nav-subtitle mt-0.5 block truncate text-[10px] font-medium opacity-65">{item.subtitle}</span>
                   </span>
                   {hasBadge && <span className="rounded-full bg-info-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{viewModel.activeDownloads}</span>}
                   {hasUpdateDot && <span className="h-2.5 w-2.5 rounded-full bg-warning-500 ring-4 ring-warning-100 animate-pulse" />}
@@ -122,7 +122,7 @@ export function WorkspaceShell({
             })}
           </nav>
 
-          <div className="mt-auto space-y-2.5 pt-4">
+          <div className="txzz-sidebar-footer mt-auto space-y-2.5 pt-4">
             <button
               type="button"
               onClick={onOpenAccounts}
@@ -140,7 +140,7 @@ export function WorkspaceShell({
             <button type="button" onClick={onClose} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl text-[11px] font-semibold text-slate-400 transition hover:bg-white/65 hover:text-slate-700" title="关闭面板（Esc）" aria-label="关闭面板">
               <X size={14} /> 收起工作台
             </button>
-            <p className="text-center text-[9px] font-medium tracking-[0.08em] text-slate-400">{APP_VERSION_LABEL} · CANDY DESK</p>
+            <p className="txzz-sidebar-version text-center text-[9px] font-medium tracking-[0.08em] text-slate-400">{APP_VERSION_LABEL} · CANDY DESK</p>
           </div>
         </aside>
 

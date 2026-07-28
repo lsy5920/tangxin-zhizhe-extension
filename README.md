@@ -8,7 +8,7 @@
 
 插件默认只显示左上角短时流程气泡和右下角「糖糖」伙伴入口，不遮挡网站主体。点击伙伴后展开糖果手帐工作台：桌面端使用浅色手帐侧栏与独立工作区，移动端使用全屏面板和安全区底栏；今日总览、账号小屋、放映室、下载收纳篮和照料中心保持统一信息层级与操作反馈。
 
-当前源码版本为 `5.1.1`（构建 `2026-07-28-0118`）；正式 CRX 发布时继续使用 4.0.0 已启用并妥善保留的私钥，扩展 ID 固定为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 及 5.x 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
+当前源码版本为 `5.1.2`（构建 `2026-07-28-0950`）；正式 CRX 发布时继续使用 4.0.0 已启用并妥善保留的私钥，扩展 ID 固定为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 及 5.x 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
 
 ## 环境要求
 
@@ -22,6 +22,8 @@
 - HLS 播放内核：hls.js `1.6.16`（负责 HLS/m3u8 解析和播放）
 - 旧实验播放器：v3.0.0 起已清理 XGPlayer / xgplayer-hls 实验链路，当前构建只保留 ArtPlayer + hls.js，减少依赖冲突和构建风险
 - 构建工具：Vite `8.1.4`，@vitejs/plugin-react `6.0.3`，Tailwind CSS `4.3.2`，@tailwindcss/vite `4.3.2`，TypeScript `7.0.2`
+- 测试工具：Vitest `3.2.7`；发布前固定运行全部纯核心与打包器回归测试
+- CRX3 打包：仓库内置确定性 ZIP + RSA-SHA256 打包器，只使用 Node.js `crypto` / `zlib`，不再依赖 `crx`、`archiver` 或旧版 `glob`
 - 依赖自检：`scripts/check-deps.mjs` 会在构建前检查 Vite、hls.js、ArtPlayer 的关键入口文件
 - 远程服务：Cloudflare Worker
 - 云端数据库：Supabase
@@ -74,6 +76,7 @@ tangxin-zhizhe-extension/
 ├── scripts/
 │   ├── check-deps.mjs         # 构建前依赖完整性自检和 node_modules 损坏自动修复脚本
 │   ├── check-release.mjs      # 深度发布门禁：清单签名、CRX3 签名、ZIP/CRC32 和运行时文件逐字节核对
+│   ├── crx3-pack.mjs          # 可审计的确定性 ZIP + CRX3 RSA 打包器，无第三方归档依赖
 │   ├── release-config.mjs     # 打包与门禁共用的正式 ID、公开公钥、镜像和运行时文件清单
 │   └── pack-crx.mjs           # 固定私钥打包 CRX3，计算哈希并签署外置 update.json
 ├── docs/
@@ -545,8 +548,8 @@ npm run release
 
 | 组件 | 版本 |
 | --- | --- |
-| 糖心志者源码 | `5.1.1`，构建 `2026-07-28-0118` |
-| 待发布签名 CRX | `5.1.1`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
+| 糖心志者源码 | `5.1.2`，构建 `2026-07-28-0950` |
+| 正式签名 CRX | `5.1.2`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
 | Manifest | `3` |
 | ArtPlayer 播放器内核 | `5.4.0` |
 | hls.js HLS 播放内核 | `1.6.16` |
@@ -556,6 +559,12 @@ npm run release
 | Wrangler 推荐版本 | `4.110.0` |
 
 ## 更新日志
+
+[2026-07-28 09:50] 【修复】升级到 `5.1.2`（构建 `2026-07-28-0950`）：修复系统全屏 Esc 退出竞态和全屏按钮持焦点时快捷键失效；全屏事务只在浏览器确认退出后恢复内嵌布局，退出失败会保留全屏壳并允许重试，L 锁屏、播放器设置 Esc 与 CSS 沉浸兜底均完成回归。
+
+[2026-07-28 09:50] 【体验】弹窗和下载规划器移到 ShadowRoot 顶层 Portal，修复 inert 连带禁用、Esc 后焦点不恢复与 Toast 遮挡播放器；统一 44×44 触控热区、动态视口、安全区和 844×390 矮横屏布局，并把 CRX 安全保存成功按钮明确为“保存完成”。
+
+[2026-07-28 09:50] 【安全】发布链路移除带来高危 `archiver/glob/minimatch` 传递依赖的 `crx@5.0.1`，改用仓库内可审计、可复现的 ZIP + CRX3 RSA 打包器；Vitest 升级到 `3.2.7`，新增 CRX3 身份、签名、篡改拒绝、路径穿越和大小写冲突测试，`npm audit` 降为 0 项。
 
 [2026-07-27 19:25] 【重构】升级到 `5.1.0`（构建 `2026-07-27-1925`）：Vlog 当前卡片改为活动 DOM、播放器 ID、Vue `isActive` 与 Swiper 索引交叉锁定，旧 ID → 空值 → 新 ID 的换片窗口不再允许旧请求写回；网站播放器、插件播放器、复制和下载统一使用 v2 推荐线路，并新增电影票 HUD 与手动重新同步。
 

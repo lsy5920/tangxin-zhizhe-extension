@@ -77,7 +77,7 @@ export function PlayerOverlays({
       )}
 
       {hasUrl && paused && !buffering && !error && !locked && (
-        <div className="pointer-events-none absolute inset-0 z-[15] flex items-center justify-center">
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
           <button
             type="button"
             onClick={(event) => { event.preventDefault(); event.stopPropagation(); onPlay(); }}
@@ -92,7 +92,7 @@ export function PlayerOverlays({
       )}
 
       {hasUrl && error && paused && !buffering && !locked && (
-        <div className="pointer-events-none absolute inset-0 z-[16] flex items-center justify-center p-4" role="alert">
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4" role="alert">
           <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-rose-300/15 bg-black/82 p-4 text-center text-white shadow-2xl backdrop-blur-md">
             <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-amber-300/12 text-amber-200"><Activity size={19} /></span>
             <p className="mt-2 text-[12px] font-semibold">播放暂时中断</p>

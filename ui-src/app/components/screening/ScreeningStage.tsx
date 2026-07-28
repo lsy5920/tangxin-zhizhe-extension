@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { PlayerContextMenu, PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerMorePanelKey } from "../player/PlayerChrome";
 import { PlayerGestureHudOverlay, PlayerGestureSurface, type GestureHudState } from "../player/PlayerGestureSystem";
+import { isBrowserFullscreen } from "../player/browserFullscreen";
 import { usePlaybackController } from "../../playback/usePlaybackController";
 import { useFullscreenController } from "../../playback/useFullscreenController";
 import type { PlaybackSession } from "../../playback/types";
@@ -94,10 +95,48 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
-      const interactive = event.composedPath().some((node) => node instanceof HTMLElement
+      const key = event.key.toLowerCase();
+      const root = fullscreen.shellRef.current?.getRootNode();
+      // 顶层业务弹窗拥有全部键盘输入；播放器不能隔着弹窗响应快捷键。
+      if (root instanceof ShadowRoot && root.querySelector('[data-txzz-modal-sheet="true"]')) return;
+      const eventPath = event.composedPath();
+      const shortcutInput = eventPath.some((node) => node instanceof HTMLElement
+        && node.matches("input,textarea,select,[role='slider'],[contenteditable='true']"));
+      if (key === "escape") {
+        if (moreOpen) {
+          event.preventDefault();
+          event.stopPropagation();
+          setMoreOpen(false);
+          revealControls(true);
+          return;
+        }
+        if (fullscreen.active || isBrowserFullscreen()) {
+          // 必须先于 interactive 判断：点击全屏按钮后焦点仍在 button 上，旧逻辑会
+          // 把 Esc 当成“交互控件输入”跳过，随后工作台处理器误关面板并拆掉全屏壳。
+          event.preventDefault();
+          event.stopPropagation();
+          if (locked) setLocked(false);
+          else void fullscreen.exit();
+          revealControls(true);
+          return;
+        }
+      }
+      if (key === "l" && fullscreen.active && !moreOpen && !shortcutInput) {
+        // 全屏按钮点击后仍持有焦点，锁屏快捷键仍应可用；文本弹窗已在上方提前排除。
+        event.preventDefault();
+        setLocked((value) => !value);
+        revealControls(true);
+        return;
+      }
+      if (key === "f" && !locked && !moreOpen && !shortcutInput) {
+        event.preventDefault();
+        void fullscreen.toggle();
+        revealControls(true);
+        return;
+      }
+      const interactive = eventPath.some((node) => node instanceof HTMLElement
         && node.matches("button,input,textarea,select,[role='slider'],[contenteditable='true']"));
       if (interactive || (locked && event.key.toLowerCase() !== "l")) return;
-      const key = event.key.toLowerCase();
       if (key === " " || key === "k") {
         event.preventDefault();
         void player.togglePlay();
@@ -117,19 +156,6 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
       } else if (key === "m") {
         event.preventDefault();
         player.setVolume(player.preferences.volume || 0.8, !player.preferences.muted);
-      } else if (key === "f") {
-        event.preventDefault();
-        void fullscreen.toggle();
-      } else if (key === "l" && fullscreen.active) {
-        event.preventDefault();
-        setLocked((value) => !value);
-      } else if (key === "escape" && moreOpen) {
-        event.preventDefault();
-        setMoreOpen(false);
-      } else if (key === "escape" && fullscreen.active) {
-        event.preventDefault();
-        if (locked) setLocked(false);
-        else void fullscreen.exit();
       }
       revealControls();
     };

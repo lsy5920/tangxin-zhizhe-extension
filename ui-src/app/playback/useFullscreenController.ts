@@ -8,6 +8,7 @@ import {
   prepareFullscreenChrome,
   restoreFullscreenChrome
 } from "../components/player/browserFullscreen";
+import { decideFullscreenChange, type FullscreenTransition } from "./fullscreenTransitionCore";
 import type { PlayerFillMode, PlayerOrientationMode } from "./preferences";
 
 type ScreenOrientationWithLock = ScreenOrientation & {
@@ -43,12 +44,20 @@ export function useFullscreenController(options: {
   videoGetterRef.current = options.video;
   const shellRef = useRef<HTMLDivElement | null>(null);
   const generationRef = useRef(0);
+  const transitionRef = useRef<FullscreenTransition>("idle");
+  const activeRef = useRef(false);
+  const immersiveFallbackRef = useRef(false);
+  const desiredActiveRef = useRef(false);
+  const exitPromiseRef = useRef<Promise<void> | null>(null);
   const [active, setActive] = useState(false);
   const [immersiveFallback, setImmersiveFallback] = useState(false);
   const [diagnostic, setDiagnostic] = useState("普通放映");
 
-  const cleanup = useCallback(() => {
-    generationRef.current += 1;
+  const commitCleanup = useCallback(() => {
+    transitionRef.current = "idle";
+    desiredActiveRef.current = false;
+    activeRef.current = false;
+    immersiveFallbackRef.current = false;
     setActive(false);
     setImmersiveFallback(false);
     setDiagnostic("普通放映");
@@ -57,46 +66,112 @@ export function useFullscreenController(options: {
     applyAdaptiveVideoLayout(videoGetterRef.current(), fillMode);
   }, [fillMode]);
 
+  const cleanup = useCallback(() => {
+    // 外部退出或组件卸载会取消所有尚未完成的进入/退出回调，防止旧事务重新写回。
+    generationRef.current += 1;
+    commitCleanup();
+  }, [commitCleanup]);
+
   const exit = useCallback(async () => {
+    if (exitPromiseRef.current) return exitPromiseRef.current;
     const generation = generationRef.current + 1;
     generationRef.current = generation;
-    try { await exitBrowserFullscreen(); } finally {
-      if (generation === generationRef.current) cleanup();
-    }
-  }, [cleanup]);
+    desiredActiveRef.current = false;
+    transitionRef.current = "exiting";
+    setDiagnostic("正在退出全屏");
+
+    let operation: Promise<void>;
+    operation = (async () => {
+      const exited = await exitBrowserFullscreen();
+      if (generation !== generationRef.current) return;
+      if (exited || !isBrowserFullscreen()) {
+        commitCleanup();
+        return;
+      }
+
+      // 浏览器拒绝或尚未完成退出时绝不能先恢复内嵌布局，否则会在系统全屏层里
+      // 留下只有几十像素高的播放器。保留全屏壳，让用户可再次点击或按 Esc 重试。
+      transitionRef.current = "idle";
+      activeRef.current = true;
+      immersiveFallbackRef.current = false;
+      setActive(true);
+      setImmersiveFallback(false);
+      setDiagnostic("浏览器仍在全屏，请再按 Esc 或点击返回");
+      prepareFullscreenChrome(getPluginHost());
+      applyAdaptiveVideoLayout(videoGetterRef.current(), fillMode);
+    })().finally(() => {
+      if (exitPromiseRef.current === operation) exitPromiseRef.current = null;
+    });
+    exitPromiseRef.current = operation;
+    return operation;
+  }, [commitCleanup, fillMode]);
 
   const enter = useCallback(async () => {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
+    desiredActiveRef.current = true;
+    transitionRef.current = "entering";
     const host = getPluginHost();
     prepareFullscreenChrome(host);
+    activeRef.current = true;
+    immersiveFallbackRef.current = false;
     setActive(true);
+    setImmersiveFallback(false);
     setDiagnostic("正在请求浏览器全屏");
     applyAdaptiveVideoLayout(videoGetterRef.current(), fillMode);
-    const result = await enterPlayerBrowserFullscreen({
-      playerRoot: shellRef.current,
-      video: videoGetterRef.current(),
-      pluginHost: host
-    });
-    if (generation !== generationRef.current) return;
-    setImmersiveFallback(!result.real);
-    const orientation = await requestOrientation(orientationMode, videoGetterRef.current());
-    if (generation !== generationRef.current) return;
-    setDiagnostic(`${result.message} · ${orientation}`);
-    window.requestAnimationFrame(() => applyAdaptiveVideoLayout(videoGetterRef.current(), fillMode));
+    try {
+      const result = await enterPlayerBrowserFullscreen({
+        playerRoot: shellRef.current,
+        video: videoGetterRef.current(),
+        pluginHost: host
+      });
+      if (generation !== generationRef.current) {
+        // 快速“进入→退出”时，旧 requestFullscreen 仍可能晚到；只清理由本控制器
+        // 发起且用户已明确取消的迟到全屏，避免留下浏览器全屏孤儿层。
+        if (result.real && !desiredActiveRef.current) void exitBrowserFullscreen();
+        return;
+      }
+      immersiveFallbackRef.current = !result.real;
+      setImmersiveFallback(!result.real);
+      const orientation = await requestOrientation(orientationMode, videoGetterRef.current());
+      if (generation !== generationRef.current) return;
+      transitionRef.current = "idle";
+      setDiagnostic(`${result.message} · ${orientation}`);
+      window.requestAnimationFrame(() => applyAdaptiveVideoLayout(videoGetterRef.current(), fillMode));
+    } catch (error) {
+      if (generation !== generationRef.current) return;
+      // 异常也保持页面内铺满，用户仍能通过返回按钮恢复，不能留下黑屏宿主。
+      transitionRef.current = "idle";
+      immersiveFallbackRef.current = true;
+      setImmersiveFallback(true);
+      setDiagnostic(error instanceof Error
+        ? `浏览器全屏异常：${error.message} · 已使用页面内铺满`
+        : "浏览器全屏异常 · 已使用页面内铺满");
+    }
   }, [fillMode, orientationMode]);
 
   const toggle = useCallback(async () => {
-    if (active || isBrowserFullscreen()) await exit();
+    if (activeRef.current || isBrowserFullscreen()) await exit();
     else await enter();
-  }, [active, enter, exit]);
+  }, [enter, exit]);
 
   useEffect(() => {
     const sync = () => {
-      if (isBrowserFullscreen()) {
+      const browserActive = isBrowserFullscreen();
+      const decision = decideFullscreenChange({
+        browserActive,
+        controllerActive: activeRef.current,
+        fallbackActive: immersiveFallbackRef.current,
+        transition: transitionRef.current
+      });
+      if (decision === "activate") {
+        activeRef.current = true;
+        immersiveFallbackRef.current = false;
         setActive(true);
+        setImmersiveFallback(false);
+        prepareFullscreenChrome(getPluginHost());
         applyAdaptiveVideoLayout(videoGetterRef.current(), fillMode);
-      } else if (!immersiveFallback) {
+      } else if (decision === "cleanup") {
         cleanup();
       }
     };
@@ -106,7 +181,7 @@ export function useFullscreenController(options: {
       document.removeEventListener("fullscreenchange", sync);
       document.removeEventListener("webkitfullscreenchange", sync as EventListener);
     };
-  }, [cleanup, fillMode, immersiveFallback]);
+  }, [cleanup, fillMode]);
 
   useEffect(() => {
     if (active) applyAdaptiveVideoLayout(videoGetterRef.current(), fillMode);

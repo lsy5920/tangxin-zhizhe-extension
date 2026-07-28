@@ -93,7 +93,7 @@ let updateVerificationKeyPromise = null;
 const localPurchaseLocks = new Set();
 let latestPlaybackRequest = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-28-0118";
+const LOCAL_UPDATE_BUILD = "2026-07-28-0950";
 
 const DEFAULT_STATE = {
   role: "guest",

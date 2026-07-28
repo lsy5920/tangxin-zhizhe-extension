@@ -17,7 +17,6 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
 import {
   EXPECTED_EXTENSION_ID,
   RELEASE_INCLUDE_PATHS,
@@ -28,9 +27,7 @@ import {
   UPDATE_SIGNATURE_ALGORITHM,
   updateManifestSigningText
 } from "./release-config.mjs";
-
-const require = createRequire(import.meta.url);
-const ChromeExtension = require("crx");
+import { packCrx3Directory } from "./crx3-pack.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -186,9 +183,7 @@ async function packCrx() {
   prepareStage();
 
   ensureDir(RELEASE_DIR);
-  const crx = new ChromeExtension({ privateKey });
-  await crx.load(STAGE_DIR);
-  const crxBuffer = await crx.pack();
+  const crxBuffer = packCrx3Directory(STAGE_DIR, privateKey);
   const sha256 = crypto.createHash("sha256").update(crxBuffer).digest("hex");
   const signedUpdateManifest = signUpdateManifest(updateManifest, privateKey, {
     extensionId,

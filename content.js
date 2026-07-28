@@ -1710,7 +1710,7 @@
       announcedDownloadStages.add(key);
       const count = task.total ? ` ${task.current || 0}/${task.total}` : "";
       const detail = task.stage === "error"
-        ? `${task.movieId || ""} ${task.error || "????"}`
+        ? `${task.movieId || ""} ${task.error || "未知错误"}`
         : `${task.movieId || ""}${count} ${task.filename || ""}`.trim();
       emitFlow(downloadStageLabel(task.stage), detail, task.stage === "error" ? "error" : task.stage === "complete" ? "ok" : "info");
     }

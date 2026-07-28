@@ -68,7 +68,7 @@
 
 开发源码允许先提升 `manifest.json`、`package.json`、前端常量和后台本地构建号，而 `update.json` 与 `releases/` 继续保留上一个已签名版本。`npm run check` 的源码门禁会分别校验两组数据：源码内部必须一致，现有签名清单自身也必须完整；它不会把未签名源码伪装成已经发布。
 
-只有 `npm run release` 会要求源码版本、`update.json`、`latest.json` 和 CRX 完全一致，并使用固定私钥重新签名。当前目标源码为 `5.1.1 / 2026-07-28-0118`，继续使用 4.0.0 启用的固定私钥，扩展 ID 保持为 `ddefadnhgebdclpkabeobjidjllkdkhm`。
+只有 `npm run release` 会要求源码版本、`update.json`、`latest.json` 和 CRX 完全一致，并使用固定私钥重新签名。当前目标源码为 `5.1.2 / 2026-07-28-0950`，继续使用 4.0.0 启用的固定私钥，扩展 ID 保持为 `ddefadnhgebdclpkabeobjidjllkdkhm`。
 
 ## 4.0.0 签名身份轮换
 
@@ -85,7 +85,8 @@
 - `ui-src/app/update/UpdateCenter.tsx`：完整版本、缓存、镜像、验证结果、逐源错误和安装边界。
 - `ui-src/app/update/UpdateModal.tsx`：新版本提醒与关键动作；关闭、稍后处理和忽略此版本语义分离。
 - `scripts/release-config.mjs`：打包和发布门禁共用的正式身份、公开公钥与运行时文件清单。
-- `scripts/pack-crx.mjs`：使用固定私钥打包 CRX3，计算大小/哈希并签署外置 `update.json`。
+- `scripts/crx3-pack.mjs`：使用 Node.js `crypto` / `zlib` 构造确定性 ZIP、CRX3 `signed_header_data` 和 RSA proof；拒绝目录穿越、大小写冲突、符号链接和 ZIP64，不依赖第三方归档库。
+- `scripts/pack-crx.mjs`：调用内置 CRX3 打包器和固定私钥，计算大小/哈希并签署外置 `update.json`。
 - `scripts/check-release.mjs`：源码模式分别校验开发版本与现有签名发布的一致性；完整模式验证两者已对齐，再验证清单签名、CRX3 包签名、ZIP 中央目录/CRC32，并逐字节核对 CRX 内全部运行时文件。
 
 ## 防止哈希自引用
@@ -107,3 +108,5 @@
 - `submitted` 只表示已把验证后的文件交给浏览器下载，不代表浏览器已下载完成，更不代表新版本已经安装。
 
 [2026-07-27 19:25] 升级系统提升到 v8：CRX 改为 OPFS + 扩展安全保存页交付，移除 runtime Base64 和页面内容脚本大包通道；新增单标签一次性令牌、写盘后核销、Android 显式确认与关闭后重试。
+[2026-07-28 09:50] 扩展 5.1.2 将安全保存成功动作明确显示为“保存完成”；OPFS、一次性令牌、CRX3/SHA-256 复核和 Android Blob 兜底语义保持不变。
+[2026-07-28 09:50] 发布工具移除 `crx/archiver` 依赖，改为确定性内置 CRX3 打包器；新增 RSA proof、`crx_id`、篡改拒绝、路径穿越和大小写冲突测试，完整发布门禁继续逐文件核对 ZIP 与工作区。

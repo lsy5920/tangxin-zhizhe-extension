@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -21,6 +22,7 @@ type ScrollLockSnapshot = {
 let documentScrollLockCount = 0;
 let documentScrollLockSnapshot: ScrollLockSnapshot | null = null;
 const modalStack: HTMLElement[] = [];
+const modalRegisteredRoots = new WeakMap<HTMLElement, Node>();
 
 function acquireDocumentScrollLock() {
   if (typeof document === "undefined" || !document.documentElement || !document.body) return () => undefined;
@@ -65,20 +67,30 @@ export function useDocumentScrollLock(active: boolean) {
 }
 
 function registerModal(element: HTMLElement) {
+  const root = element.getRootNode();
+  modalRegisteredRoots.set(element, root);
   if (!modalStack.includes(element)) modalStack.push(element);
-  syncModalAccessibility(element.getRootNode());
+  syncModalAccessibility(root);
 }
 
 function unregisterModal(element: HTMLElement, registeredRoot: Node = element.getRootNode()) {
+  // React 清理 layout effect 时，Portal 节点可能已经从 ShadowRoot 断开。
+  // 注册顺序比 isConnected/getRootNode() 更稳定，可确保关闭后恢复原触发按钮的焦点。
+  const topBeforeRemoval = [...modalStack]
+    .reverse()
+    .find((item) => modalRegisteredRoots.get(item) === registeredRoot) || null;
+  const wasTop = topBeforeRemoval === element;
   const index = modalStack.indexOf(element);
   if (index >= 0) modalStack.splice(index, 1);
+  modalRegisteredRoots.delete(element);
   // React 卸载时节点可能已经脱离 ShadowRoot；必须使用注册阶段保存的根节点恢复底层工作台。
   syncModalAccessibility(registeredRoot);
+  return wasTop;
 }
 
 function topModalFor(root: Node) {
   return modalStack
-    .filter((item) => item.isConnected && item.getRootNode() === root)
+    .filter((item) => item.isConnected && modalRegisteredRoots.get(item) === root)
     .reduce<HTMLElement | null>((top, item) => {
       if (!top) return item;
       return top.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING ? item : top;
@@ -179,10 +191,9 @@ export function useModalFocusTrap<TDialog extends HTMLElement, TInitial extends 
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => {
-      const wasTop = topModalFor(root) === dialog;
       window.clearTimeout(focusTimer);
       window.removeEventListener("keydown", handleKeyDown, true);
-      unregisterModal(dialog, root);
+      const wasTop = unregisterModal(dialog, root);
       if (!wasTop) return;
       window.setTimeout(() => {
         const remainingTop = topModalFor(root);
@@ -195,6 +206,17 @@ export function useModalFocusTrap<TDialog extends HTMLElement, TInitial extends 
       }, 0);
     };
   }, [active]);
+}
+
+/**
+ * 将业务弹层放到工作台的 ShadowRoot 直属层。工作台进入 inert 时，
+ * 弹层若仍是其后代，浏览器会把弹层一起禁用，造成“看得见但点不到”。
+ */
+export function portalIntoPluginUi(node: ReactNode) {
+  const portalRoot = typeof document === "undefined"
+    ? null
+    : document.getElementById("txzz-candy-ui-root")?.shadowRoot;
+  return portalRoot ? createPortal(node, portalRoot) : node;
 }
 
 /** 页面统一宽度、内边距和纵向节奏，桌面端充分利用工作台宽度。 */
@@ -597,10 +619,9 @@ export function ModalSheet({
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => {
-      const wasTop = topModalFor(root) === dialog;
       window.clearTimeout(focusTimer);
       window.removeEventListener("keydown", handleKeyDown, true);
-      unregisterModal(dialog, root);
+      const wasTop = unregisterModal(dialog, root);
       if (!wasTop) return;
       window.setTimeout(() => {
         const remainingTop = topModalFor(root);
@@ -615,7 +636,7 @@ export function ModalSheet({
   }, [open]);
 
   if (!open) return null;
-  return (
+  const layer = (
     <div
       className="txzz-modal-layer txzz-candy-interactive fixed inset-0 z-[60] flex min-h-0 items-end justify-center overflow-hidden bg-slate-950/50 backdrop-blur-[7px] sm:items-center"
       onClick={(event) => {
@@ -644,6 +665,7 @@ export function ModalSheet({
       </div>
     </div>
   );
+  return portalIntoPluginUi(layer);
 }
 
 const QUICK_ACTION_TONE: Record<string, { icon: string; card: string }> = {

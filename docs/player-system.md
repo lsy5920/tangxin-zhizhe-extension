@@ -1,6 +1,6 @@
 # 沉浸糖果影院播放系统 5.1
 
-本文档描述扩展 5.1.1 的播放架构、Vlog 当前卡片锁定、状态边界、线路策略、播放模式、持久化规则和验收标准。页面只负责展示统一 ViewModel，不直接持有 ArtPlayer、Hls、计时器或购买流程。
+本文档描述扩展 5.1.2 的播放架构、Vlog 当前卡片锁定、状态边界、线路策略、播放模式、持久化规则和验收标准。页面只负责展示统一 ViewModel，不直接持有 ArtPlayer、Hls、计时器或购买流程。
 
 ## 端到端边界
 
@@ -20,7 +20,8 @@
 | `playback/sourcePolicy.ts` | 线路淘汰、评分、推荐和单次自动切线 |
 | `playback/mediaKernel.ts` | ArtPlayer/hls.js 适配器；提供加载、播放、暂停、定位、清晰度和销毁 |
 | `playback/usePlaybackController.ts` | 会话编排、8 秒起播保护、HLS 恢复、Wake Lock、Media Session 和续播写入 |
-| `playback/useFullscreenController.ts` | 浏览器全屏、沉浸兜底、方向锁和退出清理 |
+| `playback/useFullscreenController.ts` | 浏览器全屏事务、沉浸兜底、方向锁和确认式退出清理 |
+| `playback/fullscreenTransitionCore.ts` | entering/exiting/fullscreenchange 竞态的纯决策规则 |
 | `playback/preferences.ts` | 音量、倍速、亮度、填充、比例、方向和快进步长 |
 | `playback/resumeStore.ts` | 30 天断点续播规则 |
 | `playback/migration.ts` | 旧 `fullDetails` 到 `screening.history` 的一次性转换 |
@@ -86,7 +87,7 @@ idle → resolving → ready → loading → paused → playing
 | 工具 | 截图、画中画、复制、打开、下载、诊断 | 浏览器拒绝工具能力时不误报为媒体错误 |
 | 输入 | 键盘、触摸横滑/竖滑、三区双击、长按、桌面右键 | 锁屏后停止画面手势，只保留解锁入口 |
 | 系统 | Wake Lock、Media Session、三档播放模式 | 平台不支持或拒绝时静默降级；用户模式优先 |
-| 全屏 | 浏览器全屏、CSS 沉浸兜底、方向锁、安全区 | 真实全屏失败时主舞台铺满视口；退出清除宿主类和强制样式 |
+| 全屏 | 浏览器全屏、CSS 沉浸兜底、方向锁、安全区 | 只在浏览器确认退出后恢复内嵌布局；退出失败保留全屏壳并允许重试 |
 | 可访问性 | 播放器可聚焦、ARIA 进度条、菜单焦点循环、Esc、减少动态效果 | 隐藏控件不进入 Tab；右键菜单 Esc 可关闭 |
 
 ## 本地购买防重复语义
@@ -116,7 +117,7 @@ idle → resolving → ready → loading → paused → playing
 
 除播放故障场景外，预览桥还会确定性驱动下载规划器、暂停/继续/取消和云端/本地购买对账，按钮点击后必须真实改变 ViewModel，不能只显示操作提示。
 
-38 项 Vitest 覆盖 reducer 代次隔离、旧数据迁移、相对时长完整线路选择、线路评分、8 秒起播判定、HLS 恢复条件、单次自动切线、续播阈值、30 天过期、Byte Range、防旧尝试事件污染、持久任务恢复、隔离世界权威上下文与离屏暂停/恢复/取消。发布前还必须通过 TypeScript、生产构建、CRX3 内容/签名门禁和浏览器控制台检查。
+46 项 Vitest 覆盖 reducer 代次隔离、旧数据迁移、相对时长完整线路选择、线路评分、8 秒起播判定、HLS 恢复条件、单次自动切线、续播阈值、30 天过期、Byte Range、防旧尝试事件污染、持久任务恢复、隔离世界权威上下文、离屏暂停/恢复/取消、全屏事务时序和 CRX3 打包签名。发布前还必须通过 TypeScript、生产构建、CRX3 内容/签名门禁和浏览器控制台检查。
 
 ## 视觉与响应式验收
 
@@ -134,3 +135,4 @@ idle → resolving → ready → loading → paused → playing
 [2026-07-27 13:15] 扩展 5.0.5 的 Vlog 原生回填优先采用插件媒体探测后真正推荐的完整线路，而不是未经比较的原始 `play_link`；所有嵌套候选统一规范为网站原生播放器需要的 `line.link`，推荐线路缺失时插入首位，避免短主线再次覆盖较长备用线。
 [2026-07-27 19:25] 扩展 5.1.0 增加 Vlog 多证据当前卡片锁定、稳定 ID/换片代次、电影票 HUD、同会话 URL 指纹重载、按线路恢复计数、单次 `ready`、Wake Lock 竞态保护和省流/均衡/高清三档模式。
 [2026-07-28 01:18] 扩展 5.1.1 修复主世界与隔离世界的 Vlog 当前卡片判定冲突；真实 CDP 测试确认首屏请求 `active:true`、完整线路回填成功，并且快速换片期间的旧响应仅标记 stale，不覆盖新卡片也不显示误导性错误。
+[2026-07-28 09:50] 扩展 5.1.2 修复系统全屏 Esc 与按钮焦点竞态：进入/退出使用独立事务，`fullscreenchange` 不再提前清理；退出 API 失败时保留全屏壳，L 锁屏、设置菜单 Esc、真实全屏和 CSS 兜底均通过回归。

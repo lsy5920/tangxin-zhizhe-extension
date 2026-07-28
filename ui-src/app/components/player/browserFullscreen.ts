@@ -81,25 +81,65 @@ export async function requestElementFullscreen(element: HTMLElement): Promise<vo
   throw new Error("当前环境不支持 Fullscreen API");
 }
 
-/** 退出全屏（网站通用写法）。 */
-export async function exitBrowserFullscreen(): Promise<void> {
+function waitForBrowserFullscreenState(active: boolean, timeoutMs = 700): Promise<boolean> {
+  if (isBrowserFullscreen() === active) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (matched: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      document.removeEventListener("fullscreenchange", sync);
+      document.removeEventListener("webkitfullscreenchange", sync as EventListener);
+      resolve(matched);
+    };
+    const sync = () => {
+      if (isBrowserFullscreen() === active) finish(true);
+    };
+    // Fullscreen API 的 Promise 与 fullscreenchange 的先后顺序并不统一；
+    // 必须以浏览器实际状态为准，不能在请求刚返回时就拆掉全屏壳。
+    const timer = window.setTimeout(() => finish(isBrowserFullscreen() === active), timeoutMs);
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("webkitfullscreenchange", sync as EventListener);
+  });
+}
+
+/**
+ * 退出全屏（网站通用写法）。
+ *
+ * 返回值表示浏览器是否已经确认离开系统全屏。调用方只有在 true 时才可
+ * 恢复内嵌布局；否则必须保留全屏壳，避免出现“浏览器仍全屏、播放器已缩回”的错位。
+ */
+export async function exitBrowserFullscreen(): Promise<boolean> {
   const doc = document as FsDoc;
-  if (!getFullscreenElement()) return;
+  if (!getFullscreenElement()) return true;
+  let requested = false;
   if (typeof document.exitFullscreen === "function") {
     try {
       await document.exitFullscreen();
-      return;
+      requested = true;
     } catch {
       // 继续尝试前缀
     }
   }
-  if (typeof doc.webkitExitFullscreen === "function") {
-    await Promise.resolve(doc.webkitExitFullscreen());
-    return;
+  if (!requested && typeof doc.webkitExitFullscreen === "function") {
+    try {
+      await Promise.resolve(doc.webkitExitFullscreen());
+      requested = true;
+    } catch {
+      // 继续尝试旧版前缀。
+    }
   }
-  if (typeof doc.msExitFullscreen === "function") {
-    await Promise.resolve(doc.msExitFullscreen());
+  if (!requested && typeof doc.msExitFullscreen === "function") {
+    try {
+      await Promise.resolve(doc.msExitFullscreen());
+      requested = true;
+    } catch {
+      // 最终由实际 fullscreenElement 状态决定是否退出成功。
+    }
   }
+  if (!requested) return !isBrowserFullscreen();
+  return waitForBrowserFullscreenState(false);
 }
 
 export type EnterFullscreenResult = {
@@ -203,7 +243,7 @@ export function restoreFullscreenChrome(host: HTMLElement | null) {
   host.style.pointerEvents = "none";
   host.style.position = "fixed";
   host.style.width = "100vw";
-  host.style.height = "100vh";
+  host.style.height = globalThis.CSS?.supports?.("height", "100dvh") ? "100dvh" : "100vh";
   host.style.inset = "0";
   host.style.zIndex = "2147483647";
 }

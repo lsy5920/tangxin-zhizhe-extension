@@ -57,7 +57,8 @@ function createHost() {
     inset: "0",
     zIndex: "2147483647",
     width: "100vw",
-    height: "100vh",
+    // 动态视口避免手机地址栏/软键盘变化时产生双滚动；旧浏览器保留 vh 回退。
+    height: globalThis.CSS?.supports?.("height", "100dvh") ? "100dvh" : "100vh",
     background: "transparent",
     pointerEvents: "none"
   });

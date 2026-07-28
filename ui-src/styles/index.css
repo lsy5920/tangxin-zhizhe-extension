@@ -9,6 +9,8 @@
   display: block;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   pointer-events: none;
   color-scheme: light;
   --radius: 1rem;
@@ -21,6 +23,8 @@
 #txzz-candy-ui {
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   pointer-events: none;
   /*
    * 宿主网站会在手机端把 html 根字号缩到约 8px，影子界面的 rem 也会随之缩小。
@@ -58,8 +62,23 @@
 .txzz-candy-app {
   width: 100%;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
   pointer-events: none;
   font-family: inherit;
+}
+
+/* 手机地址栏收缩和软键盘弹出时，外壳只占用当前可见视口。 */
+.txzz-app-panel-overlay {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.txzz-app-panel-frame {
+  max-height: 100dvh;
 }
 
 /* 糖果手帐外壳：暖白纸张、低对比圆点和轻量彩色光斑共同建立品牌氛围。 */
@@ -426,12 +445,14 @@
 
 .txzz-app-toast {
   animation: txzz-toast-in 0.18s ease-out;
+  /* 状态提示可能与播放器底部控件重叠；文本区不拦截播放操作，仅保留关闭按钮可点。 */
+  pointer-events: none;
   /* 以 visualViewport 中心定位，并使用传统 transform，兼容地址栏收缩、页面缩放和 Android Edge。 */
   left: var(--txzz-vcenter-x, 50%) !important;
   transform: translateX(-50%);
   width: min(calc(var(--txzz-vvw, 100vw) - 24px), 416px) !important;
   min-height: 44px;
-  bottom: calc(76px + env(safe-area-inset-bottom)) !important;
+  bottom: calc(max(4.65rem, calc(4rem + env(safe-area-inset-bottom))) + 8px) !important;
   padding: 10px 12px !important;
   gap: 8px !important;
   align-items: center !important;
@@ -445,6 +466,7 @@
 .txzz-app-toast-close {
   min-width: 32px;
   min-height: 32px;
+  pointer-events: auto;
 }
 
 @media (min-width: 640px) {
@@ -506,6 +528,10 @@
     min-height: 44px;
   }
 
+  .txzz-page button[aria-label]:not(.txzz-player-control-button) {
+    min-width: 44px;
+  }
+
   /* 顶部与浮层小图标同样提供完整触控区，避免只能点中图标本身。 */
   .txzz-app-header button:not(.hidden),
   .txzz-app-toast button,
@@ -518,11 +544,26 @@
     justify-content: center;
   }
 
-  /* 非全屏播放器在手机面板内也保持至少 36px 的可点击控制尺寸。 */
+  /* 视觉图标保持紧凑，但触控热区不小于 44px，避免竖屏误触。 */
   .txzz-player-control-panel .txzz-player-control-button {
-    min-width: 36px !important;
-    min-height: 36px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
   }
+
+  .txzz-app-mobile-nav {
+    min-height: max(4.65rem, calc(4rem + env(safe-area-inset-bottom))) !important;
+  }
+}
+
+.txzz-download-planner-layer {
+  padding-top: env(safe-area-inset-top) !important;
+  padding-right: env(safe-area-inset-right) !important;
+  padding-left: env(safe-area-inset-left) !important;
+}
+
+.txzz-download-planner-dialog {
+  padding-bottom: max(1.25rem, calc(env(safe-area-inset-bottom) + 0.75rem)) !important;
+  overscroll-behavior: contain;
 }
 
 @media (max-width: 359px) {
@@ -1338,8 +1379,8 @@
 }
 
 .txzz-player-control-panel--compact .txzz-player-control-button {
-  min-height: 36px !important;
-  min-width: 36px !important;
+  min-height: 44px !important;
+  min-width: 44px !important;
   border-radius: 10px !important;
   padding-left: 6px !important;
   padding-right: 6px !important;
@@ -1503,6 +1544,64 @@
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
+  /* 横屏矮屏显式收紧桌面侧栏，避免 flex 在空间不足时随机压扁品牌和导航。 */
+  .txzz-app-panel-overlay {
+    padding: 4px !important;
+  }
+
+  .txzz-app-panel-frame {
+    height: calc(100dvh - 8px) !important;
+    max-height: calc(100dvh - 8px) !important;
+    border-radius: 1.35rem !important;
+  }
+
+  .txzz-app-sidebar {
+    padding: 8px 10px !important;
+  }
+
+  .txzz-sidebar-brand,
+  .txzz-sidebar-status,
+  .txzz-sidebar-version {
+    display: none !important;
+  }
+
+  .txzz-sidebar-nav {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    margin-top: 0 !important;
+  }
+
+  .txzz-sidebar-nav > * + * {
+    margin-top: 0 !important;
+  }
+
+  .txzz-sidebar-nav-item {
+    min-height: 44px !important;
+    gap: 8px !important;
+    padding-inline: 8px !important;
+  }
+
+  .txzz-sidebar-nav-icon {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .txzz-sidebar-nav-subtitle {
+    display: none !important;
+  }
+
+  .txzz-sidebar-footer {
+    padding-top: 4px !important;
+  }
+
+  .txzz-app-header {
+    min-height: 56px !important;
+    padding-top: max(4px, env(safe-area-inset-top)) !important;
+  }
+
   .txzz-player-menu-sheet {
     max-height: min(18rem, calc(100cqh - 0.75rem));
   }
@@ -1527,8 +1626,8 @@
   }
 
   .txzz-player-control-button {
-    min-width: 2.25rem !important;
-    min-height: 2.25rem !important;
+    min-width: 2.75rem !important;
+    min-height: 2.75rem !important;
     padding-left: 0.4rem !important;
     padding-right: 0.4rem !important;
   }

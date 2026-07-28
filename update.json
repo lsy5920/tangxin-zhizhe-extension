@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.1.1",
-  "build": "2026-07-28-0118",
-  "releasedAt": "2026-07-28 01:18",
+  "version": "5.1.2",
+  "build": "2026-07-28-0950",
+  "releasedAt": "2026-07-28 09:50",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-28-0950",
+      "type": "修复",
+      "title": "全屏退出一致性与移动端交互收口",
+      "detail": "修复全屏按钮持有焦点时 Esc 被交互控件过滤、工作台误恢复为内嵌布局而浏览器仍停留在系统全屏的问题。全屏控制现在按 entering/exiting 事务等待浏览器真实状态，退出失败会保留完整全屏壳并允许重试；同步修复弹窗 Portal/inert、焦点恢复、Toast 点击穿透、播放器开映层级、手机安全区和横屏矮屏布局，并明确安全保存完成状态。发布链路移除存在高危传递依赖的 crx/archiver，改为仓库内可审计的确定性 ZIP + CRX3 RSA 打包器；Vitest 更新到 3.2.7，npm audit 为 0。",
+      "releasedAt": "2026-07-28 09:50"
+    },
     {
       "id": "2026-07-28-0118",
       "type": "修复",
@@ -179,11 +186,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 656871,
-  "packageSha256": "f8d0d97a85d5a490abf4ea78aca725f4ce3a5ac0cf500f02ca409eacf5cb3aad",
+  "packageSize": 567666,
+  "packageSha256": "8e9f4c69ef1354842d17e3ca4c00dbcde753c45e52c206cbae82bf77a240b422",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "SJqlKVb2Ye5+y5pccULzsIAEu0fuj0qqAB0KXNXSDmcfALIhjHyP4ChICQKNAXZvqtXHLQQYfHv1Mdmtfnq0FT+CqzSgELecQPe1n8wcwDM39ZBjfnl0cPSscxdhHRkRE/5PjVysXAWefFUNsOa4zYRTCnjPQEFP4BrzgiUcrr6OwPu+KcE4anuYULQmsDFs2NIuagefuHbXPzJmKeMnfIPDy7uxjWKqVi/BR6kVdoEMeg80mlIBLySM5DVbJH5ow1uqOdd34s4HnjgPCZUPrOVbHbTUVnkGG1rj3O67+o+0K9GmVeq3ynE5h3aUF6FVt2S24NcD4PStH9+XsVOcvw=="
+    "value": "pxFUMHCjV4/t6ps5/UR756FcteaDE0Q+xmdywGmKz27W6HbbG9YJ5cv6QaJXXtoFJwT+WtxOmgftjBNsulFqPff4Up1wxjpbwBUEWBnfVWPnikVsisiHKCWq0PhLK6Zpe3CVH/LgCAAo786jdGUmOkyGSeFEDH763Oh9W9BSxKV0yMg9+3Pb0S1UxQcEilYET1FiCiZ5al2Lhoud/0XlVjUOXHD+dX2gxwXXmHfXmcI+iBCoHesJ4+Z+BQHHlG08OT7KyLZPN2VRvMqnWHUKgtjzrRXWJ87apEdgQAFg4ZiQQjmtHw3m3TX4C4xSDpxtFNUFt/BGn7ClTzueTjcNFw=="
   }
 }

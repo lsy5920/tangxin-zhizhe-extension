@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Clock3, Database, Download, Film, Gauge, HardDrive, X } from "lucide-react";
 import type { DownloadPlannerState } from "../../types";
-import { SoftButton, useModalFocusTrap } from "../ui/primitives";
+import { portalIntoPluginUi, SoftButton, useModalFocusTrap } from "../ui/primitives";
 
 type Props = {
   planner?: DownloadPlannerState | null;
@@ -56,9 +56,9 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
     qualityHeight
   });
 
-  return (
-    <div className="fixed inset-0 z-[2147483646] grid place-items-end bg-slate-950/45 p-0 backdrop-blur-sm sm:place-items-center sm:p-5" role="presentation">
-      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="txzz-download-planner-title" data-txzz-modal-sheet="true" className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border border-white/80 bg-[#fffafd] p-5 shadow-2xl sm:max-w-2xl sm:rounded-[2rem] sm:p-7">
+  const layer = (
+    <div className="txzz-download-planner-layer txzz-candy-interactive fixed inset-0 z-[2147483646] grid place-items-end bg-slate-950/45 p-0 backdrop-blur-sm sm:place-items-center sm:p-5" role="presentation">
+      <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="txzz-download-planner-title" data-txzz-modal-sheet="true" className="txzz-download-planner-dialog max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border border-white/80 bg-[#fffafd] p-5 shadow-2xl sm:max-w-2xl sm:rounded-[2rem] sm:p-7">
         <header className="flex items-start gap-3">
           <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-pink-400 to-violet-500 text-white shadow-lg"><Film size={22} /></div>
           <div className="min-w-0 flex-1">
@@ -66,7 +66,7 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
             <h2 id="txzz-download-planner-title" className="mt-1 truncate text-xl font-black text-slate-800">{planner.movieTitle || `视频 ${planner.movieId}`}</h2>
             <p className="mt-1 text-xs leading-5 text-slate-500">确认线路、画质与容器；空间不足或清单不安全时不会启动。</p>
           </div>
-          <button ref={closeButtonRef} type="button" onClick={closePlanner} className="grid size-10 place-items-center rounded-2xl bg-white text-slate-500 shadow-sm" aria-label="关闭下载规划"><X size={18} /></button>
+          <button ref={closeButtonRef} type="button" onClick={closePlanner} className="grid size-11 place-items-center rounded-2xl bg-white text-slate-500 shadow-sm" aria-label="关闭下载规划"><X size={18} /></button>
         </header>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -121,4 +121,5 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
       </section>
     </div>
   );
+  return portalIntoPluginUi(layer);
 }
