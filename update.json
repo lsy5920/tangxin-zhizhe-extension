@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.1.2",
-  "build": "2026-07-28-0950",
-  "releasedAt": "2026-07-28 09:50",
+  "version": "5.1.3",
+  "build": "2026-07-28-2227",
+  "releasedAt": "2026-07-28 22:27",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-28-2227",
+      "type": "体验",
+      "title": "移除网站左上角播放状态标签",
+      "detail": "移除悬浮伙伴旁的流程气泡和 Vlog 当前卡片电影票 HUD，播放资源捕获、当前卡片锁定及完整线路校验继续在后台工作；升级后还会主动清理页面中可能残留的旧 HUD，不再遮挡网站视频内容。",
+      "releasedAt": "2026-07-28 22:27"
+    },
     {
       "id": "2026-07-28-0950",
       "type": "修复",
@@ -186,11 +193,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 567666,
-  "packageSha256": "8e9f4c69ef1354842d17e3ca4c00dbcde753c45e52c206cbae82bf77a240b422",
+  "packageSize": 565570,
+  "packageSha256": "c6825fecad6b06303218618fde4a6fd8815119fbd19a288dfb914d867ea362c8",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "pxFUMHCjV4/t6ps5/UR756FcteaDE0Q+xmdywGmKz27W6HbbG9YJ5cv6QaJXXtoFJwT+WtxOmgftjBNsulFqPff4Up1wxjpbwBUEWBnfVWPnikVsisiHKCWq0PhLK6Zpe3CVH/LgCAAo786jdGUmOkyGSeFEDH763Oh9W9BSxKV0yMg9+3Pb0S1UxQcEilYET1FiCiZ5al2Lhoud/0XlVjUOXHD+dX2gxwXXmHfXmcI+iBCoHesJ4+Z+BQHHlG08OT7KyLZPN2VRvMqnWHUKgtjzrRXWJ87apEdgQAFg4ZiQQjmtHw3m3TX4C4xSDpxtFNUFt/BGn7ClTzueTjcNFw=="
+    "value": "dw8PjW0HKSdIUTlNkN/YM5W8aQqOfWKi78HpcTpAZDCVVTNUH66Ehvl23FRV1GZ5y5nvKfNx3lZUeChELZEiShByYlzf+lnzSFazmn2KzUATYTQpMDMff73jw1iErDTmek39EYeZPxUa2O+baQrww+soYTSkmR8Qnsgz89Zm2PcA3Vd+2pNat0aywN8xwrlWE6+LiKVLXuARwbws7/vYG0nQXNqmdqRtNqgZrSvPnvTVeB5Q8CrV1SmOVrjim2/6dQKZDzrYzhkq5+3mNQEQTNuLbV8IEURJ4R6LHrkiNUYQTGl0jfJTZUKIMtNcZbjnqTDAdETOBHFdyrR8BQVTIw=="
   }
 }

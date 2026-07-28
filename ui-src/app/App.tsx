@@ -86,7 +86,6 @@ export default function App() {
     setBallPos,
     saveBallPosition
   } = useUiPreferences();
-  const [showFlow, setShowFlow] = useState(false);
   const [hiddenUpdateBannerId, setHiddenUpdateBannerId] = useState("");
   const [bridgeState, setBridgeState] = useState<BridgeState>({});
   const [accountsIntent, setAccountsIntent] = useState<AccountsPageIntent>({});
@@ -101,7 +100,6 @@ export default function App() {
   const panelRef = useRef<HTMLDivElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const lastToastKey = useRef("");
-  const lastFlowBarKey = useRef("");
   const toastStartedAt = useRef(Date.now());
   const showUpdateModalRef = useRef(false);
 
@@ -169,24 +167,7 @@ export default function App() {
   useEffect(() => {
     // 面板关闭时立即清空操作提示，避免自动关闭计时器卸载后在下次打开时恢复为常驻提示。
     if (!open) setToast(null);
-    else setShowFlow(false);
   }, [open]);
-
-  useEffect(() => {
-    if (open) return;
-    const flow = bridgeState.flow || [];
-    const latest = flow[flow.length - 1];
-    const text = flowItemText(latest);
-    const key = `${latest?.ts || ""}|${latest?.level || ""}|${text}`;
-    if (!text || key === lastFlowBarKey.current) return;
-    lastFlowBarKey.current = key;
-    const occurredAt = Date.parse(latest?.ts || "");
-    // 只展示当前会话中新产生的状态，历史记录和关闭面板前的旧提示不再恢复。
-    if (Number.isFinite(occurredAt) && occurredAt < toastStartedAt.current) return;
-    setShowFlow(true);
-    const timer = window.setTimeout(() => setShowFlow(false), latest?.level === "error" ? 5200 : 3600);
-    return () => window.clearTimeout(timer);
-  }, [bridgeState.flow, open]);
 
   useEffect(() => {
     const flow = bridgeState.flow || [];
@@ -237,7 +218,6 @@ export default function App() {
   };
   const closePanel = () => {
     disableHostPlaybackFullscreenMode();
-    setShowFlow(false);
     setOpen(false);
     action("close");
   };
@@ -333,11 +313,7 @@ export default function App() {
           position={ballPos}
           activeDownloads={workspace.activeDownloads}
           updateAvailable={updateAvailable}
-          showNotice={showFlow}
-          noticeText={workspace.flow.text}
-          noticeTone={workspace.flow.tone}
           launcherRef={launcherRef}
-          onHideNotice={() => setShowFlow(false)}
           onPointerDown={onBallPointerDown}
           onPointerMove={onBallPointerMove}
           onPointerUp={onBallPointerUp}

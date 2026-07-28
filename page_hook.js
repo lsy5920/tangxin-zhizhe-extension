@@ -77,7 +77,6 @@
     contextTrackerInstalled: false,
     contextPollTimer: 0,
     contextInitialTimer: 0,
-    vlogHudTimer: 0,
     lastMessage: "糖心志者播放资源监听已安装"
   };
 
@@ -102,54 +101,8 @@
     window.postMessage({ source: SOURCE, kind, payload: { ts: now(), ...payload } }, "*");
   }
 
-  function formatHudDuration(value) {
-    const seconds = Number(value || 0);
-    if (!Number.isFinite(seconds) || seconds <= 0) return "时长待校准";
-    const minutes = Math.floor(seconds / 60);
-    const remain = Math.floor(seconds % 60);
-    return `${minutes}分${String(remain).padStart(2, "0")}秒`;
-  }
-
-  /** 网站 Vlog 页的轻量电影票 HUD，只展示当前稳定卡片，不读取或暴露账号凭据。 */
-  function renderVlogTicket(info = {}) {
-    if (!/^\/vlog(?:\/|$)/i.test(String(location.pathname || ""))) {
-      document.getElementById("txzz-vlog-ticket-host")?.remove();
-      return;
-    }
-    let host = document.getElementById("txzz-vlog-ticket-host");
-    if (!host) {
-      host = document.createElement("div");
-      host.id = "txzz-vlog-ticket-host";
-      host.style.cssText = "position:fixed;left:max(10px,env(safe-area-inset-left));top:max(10px,env(safe-area-inset-top));z-index:2147483645;pointer-events:auto;font-family:system-ui,-apple-system,'Microsoft YaHei',sans-serif";
-      const root = host.attachShadow({ mode: "open" });
-      root.innerHTML = `<style>
-        .ticket{min-width:190px;max-width:min(290px,calc(100vw - 20px));padding:10px 12px;border:1px solid rgba(255,255,255,.82);border-radius:18px;background:linear-gradient(135deg,rgba(255,240,248,.96),rgba(238,232,255,.96));box-shadow:0 12px 34px rgba(76,45,110,.22);color:#55415f;transition:.22s ease;backdrop-filter:blur(14px)}
-        .ticket[data-compact='1']{min-width:0;max-width:175px;padding:7px 10px;opacity:.72;transform:scale(.94);transform-origin:left top}.ticket[data-compact='1'] .detail,.ticket[data-compact='1'] button{display:none}
-        .top{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800}.dot{width:8px;height:8px;border-radius:99px;background:#a77af3;box-shadow:0 0 0 4px rgba(167,122,243,.14)}
-        .id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status{margin-left:auto;color:#8b5cd6}.detail{margin-top:6px;font-size:10px;line-height:1.5;color:#796b80;word-break:break-all}
-        button{margin-top:7px;width:100%;min-height:32px;border:0;border-radius:11px;background:#8e66dc;color:white;font-size:10px;font-weight:800;cursor:pointer}button:focus-visible{outline:2px solid #fff;box-shadow:0 0 0 4px #8e66dc}
-      </style><section class="ticket" role="status" aria-live="polite"><div class="top"><span class="dot"></span><span class="id"></span><span class="status"></span></div><div class="detail"></div><button type="button">重新同步当前卡片</button></section>`;
-      root.querySelector("button")?.addEventListener("click", (event) => {
-        event.stopPropagation();
-        renderVlogTicket({ movieId: fullplay.pageMovieId, status: "重新检票", detail: "正在核对当前活动卡片与完整线路" });
-        ensureActiveVlogDetail("manual-ticket")?.catch((error) => {
-          renderVlogTicket({ movieId: fullplay.pageMovieId, status: "同步失败", detail: error?.message || String(error) });
-        });
-      });
-      root.querySelector(".ticket")?.addEventListener("mouseenter", (event) => { event.currentTarget.dataset.compact = "0"; });
-      document.documentElement.appendChild(host);
-    }
-    const root = host.shadowRoot;
-    const ticket = root?.querySelector(".ticket");
-    const movieId = String(info.movieId || fullplay.pageMovieId || "");
-    if (root?.querySelector(".id")) root.querySelector(".id").textContent = movieId ? `糖果检票 · ${movieId}` : "糖果检票 · 等待卡片";
-    if (root?.querySelector(".status")) root.querySelector(".status").textContent = String(info.status || "核对中");
-    const duration = info.duration ? ` · ${formatHudDuration(info.duration)}` : "";
-    if (root?.querySelector(".detail")) root.querySelector(".detail").textContent = `${String(info.detail || "正在确认当前活动视频")}${duration}`;
-    if (ticket) ticket.dataset.compact = "0";
-    if (fullplay.vlogHudTimer) window.clearTimeout(fullplay.vlogHudTimer);
-    fullplay.vlogHudTimer = window.setTimeout(() => { if (ticket) ticket.dataset.compact = "1"; }, 3_200);
-  }
+  // 当前卡片核对继续在后台执行；只清理旧版本可能遗留的电影票宿主，不再创建页面标签。
+  document.getElementById("txzz-vlog-ticket-host")?.remove();
 
   function norm(value) {
     return String(value || "").toLowerCase();
@@ -339,11 +292,6 @@
     if (changed) {
       rejectStalePending(`page context changed: ${reason}`);
     }
-    if (isVlog) renderVlogTicket({
-      movieId: fullplay.pageMovieId,
-      status: fullplay.pageTransitioning ? "换片中" : "已锁定",
-      detail: fullplay.pageTransitioning ? "等待活动卡片稳定" : `代次 ${fullplay.pageEpoch}`
-    });
     return {
       pageKey: fullplay.pageKey,
       pageEpoch: fullplay.pageEpoch,
@@ -492,7 +440,6 @@
     window.addEventListener("pagehide", () => {
       if (fullplay.contextInitialTimer) window.clearTimeout(fullplay.contextInitialTimer);
       if (fullplay.contextPollTimer) window.clearInterval(fullplay.contextPollTimer);
-      if (fullplay.vlogHudTimer) window.clearTimeout(fullplay.vlogHudTimer);
     }, { once: true });
   }
 
@@ -1045,12 +992,6 @@
     }
     if (!applied) return false;
     fullplay.nativeVlogAppliedKey = sourceKey;
-    renderVlogTicket({
-      movieId: id,
-      status: "完整线路",
-      detail: `${recommendedSource?.label || "推荐线路"} · ${reason}`,
-      duration: probedDuration
-    });
     emit("fullplay-native-vlog", {
       movieId: id,
       pageKey: context.pageKey,
@@ -1090,8 +1031,6 @@
           if (applied) {
             setMessage(`Vlog 当前视频已完成完整线路检票：${movieId}`, "ok");
             emit("fullplay-status", { message: `Vlog 当前视频 ${movieId} 已完成完整线路检票`, movieId, reason, background: true });
-          } else {
-            renderVlogTicket({ movieId, status: "线路已获取", detail: "等待网站当前播放器稳定后回填" });
           }
         }
       },

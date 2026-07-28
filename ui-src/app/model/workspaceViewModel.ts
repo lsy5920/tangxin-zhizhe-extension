@@ -1,16 +1,10 @@
 import type { BridgeState, DownloadTask } from "../types";
-import { flowItemText } from "../helpers";
 import { buildUpdateViewModel } from "../update/helpers";
 
 export type NoticeTone = "success" | "warning" | "danger" | "info";
 
 export type WorkspaceViewModel = {
   activeDownloads: number;
-  flow: {
-    text: string;
-    level: string;
-    tone: NoticeTone;
-  };
   remote: {
     connected: boolean;
     tone: NoticeTone;
@@ -30,13 +24,6 @@ function isActiveDownload(task: DownloadTask | null | undefined) {
   return Boolean(task && ACTIVE_DOWNLOAD_STAGES.has(String(task.stage || "")));
 }
 
-function noticeTone(level?: string): NoticeTone {
-  if (level === "ok") return "success";
-  if (level === "error") return "danger";
-  if (level === "running") return "warning";
-  return "info";
-}
-
 function updateBadgeLabel(status: ReturnType<typeof buildUpdateViewModel>["status"]) {
   if (status === "idle") return "检查更新";
   if (status === "available") return "发现新版本";
@@ -52,7 +39,6 @@ function updateBadgeLabel(status: ReturnType<typeof buildUpdateViewModel>["statu
  * 壳层不再理解下载阶段、远端连接条件或升级状态机，业务规则只在这里维护。
  */
 export function buildWorkspaceViewModel(state: BridgeState): WorkspaceViewModel {
-  const latestFlow = (state.flow || []).at(-1);
   const update = buildUpdateViewModel(state);
   const remoteConnected = Boolean(state.remote?.lastSyncAt && !state.remote?.lastError);
   const remoteTone: NoticeTone = state.remote?.lastError
@@ -63,11 +49,6 @@ export function buildWorkspaceViewModel(state: BridgeState): WorkspaceViewModel 
 
   return {
     activeDownloads: Object.values(state.downloadTasks || {}).filter(isActiveDownload).length,
-    flow: {
-      text: flowItemText(latestFlow),
-      level: latestFlow?.level || "info",
-      tone: noticeTone(latestFlow?.level)
-    },
     remote: {
       connected: remoteConnected,
       tone: remoteTone,

@@ -1,6 +1,6 @@
 # 沉浸糖果影院播放系统 5.1
 
-本文档描述扩展 5.1.2 的播放架构、Vlog 当前卡片锁定、状态边界、线路策略、播放模式、持久化规则和验收标准。页面只负责展示统一 ViewModel，不直接持有 ArtPlayer、Hls、计时器或购买流程。
+本文档描述扩展 5.1.3 的播放架构、Vlog 当前卡片锁定、状态边界、线路策略、播放模式、持久化规则和验收标准。页面只负责展示统一 ViewModel，不直接持有 ArtPlayer、Hls、计时器或购买流程。
 
 ## 端到端边界
 
@@ -62,7 +62,7 @@ idle → resolving → ready → loading → paused → playing
 - 旧 ID → 空值 → 新 ID 的空窗只进入 `transitioning`，保留最后一个稳定非空 ID，但不会把空值当成旧请求的通配符。
 - 每次稳定换片递增页面代次；旧代次的 Worker 响应、原生播放器回填、下载和复制动作都不得写入当前卡片。
 - Vue 2 `__vue__` 只对页面主世界可见；`page_hook` 在初始、ID、`transitioning`、epoch 变化时发布带单调 `contextRevision` 的权威快照。`content.js` 不再二次读取 Vue，只校验当前 URL、movieId、epoch 和 revision。
-- 网站播放器、插件播放器、复制链接和下载统一消费 `session.decision.recommendedSourceId`。电影票 HUD 显示编号、标题、推荐线路、探测时长和锁定状态，并提供“重新同步当前卡片”。
+- 网站播放器、插件播放器、复制链接和下载统一消费 `session.decision.recommendedSourceId`。当前卡片核对、线路探测和失配诊断仅在后台及插件工作台内维护，不再向网站左上角注入电影票 HUD。
 
 ## 省流 / 均衡 / 高清模式
 
@@ -136,3 +136,4 @@ idle → resolving → ready → loading → paused → playing
 [2026-07-27 19:25] 扩展 5.1.0 增加 Vlog 多证据当前卡片锁定、稳定 ID/换片代次、电影票 HUD、同会话 URL 指纹重载、按线路恢复计数、单次 `ready`、Wake Lock 竞态保护和省流/均衡/高清三档模式。
 [2026-07-28 01:18] 扩展 5.1.1 修复主世界与隔离世界的 Vlog 当前卡片判定冲突；真实 CDP 测试确认首屏请求 `active:true`、完整线路回填成功，并且快速换片期间的旧响应仅标记 stale，不覆盖新卡片也不显示误导性错误。
 [2026-07-28 09:50] 扩展 5.1.2 修复系统全屏 Esc 与按钮焦点竞态：进入/退出使用独立事务，`fullscreenchange` 不再提前清理；退出 API 失败时保留全屏壳，L 锁屏、设置菜单 Esc、真实全屏和 CSS 兜底均通过回归。
+[2026-07-28 22:27] 扩展 5.1.3 移除网站左上角的流程气泡和 Vlog 当前卡片电影票 HUD；资源监听、稳定 ID、页面代次与完整线路核对继续在后台执行。
