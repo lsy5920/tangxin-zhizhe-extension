@@ -20,10 +20,11 @@ function acquisitionLabel(mode?: PlaybackSession["acquisition"]["mode"]) {
 
 export function ScreeningSidebar({ session, request, onRefresh, libraryEntry, onToggleFavorite, onToggleWatchLater }: Props) {
   const resolving = request.phase === "resolving";
-  const purchased = session?.acquisition.mode === "purchased";
+  const acquisition = session?.acquisition;
+  const purchased = acquisition?.mode === "purchased";
   const steps = [
     { label: "识别本场影片", detail: session?.movieId ? `编号 ${session.movieId}` : "等待详情页", done: Boolean(session?.movieId), active: resolving && !session },
-    { label: "轮换可用账号", detail: session ? `已尝试 ${session.acquisition.attempts || 1} 个账号` : "检查直链优先", done: Boolean(session), active: resolving },
+    { label: "轮换可用账号", detail: session ? `已尝试 ${acquisition?.attempts || 1} 个账号` : "检查直链优先", done: Boolean(session), active: resolving },
     { label: purchased ? "安全核对金币" : "跳过金币购买", detail: purchased ? "账本已 resolved" : session ? "已有直链，禁止扣费" : "仅在全部锁定后进行", done: Boolean(session), active: false },
     { label: "送达放映线路", detail: session ? `${session.sources.length} 条可用线路` : "检票后可开映", done: Boolean(session?.sources.length), active: false }
   ];
@@ -41,7 +42,7 @@ export function ScreeningSidebar({ session, request, onRefresh, libraryEntry, on
           </div>
         </div>
         <div className="relative mt-3 flex flex-wrap gap-1.5">
-          <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-fuchsia-600"><Ticket size={10} className="mr-1 inline" />{session ? acquisitionLabel(session.acquisition.mode) : "等待电影票"}</span>
+          <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-fuchsia-600"><Ticket size={10} className="mr-1 inline" />{session ? acquisitionLabel(acquisition?.mode) : "等待电影票"}</span>
           {session?.account?.label && <span className="max-w-full truncate rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-violet-600"><UserRound size={10} className="mr-1 inline" />{session.account.label}</span>}
           {purchased && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-600"><Coins size={10} className="mr-1 inline" />幂等解锁</span>}
         </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeScreeningSession, playbackSessionFromLegacy, reconcileScreeningState, screeningStateFromLegacy } from "./migration";
+import { mergeScreeningSession, normalizePlaybackSession, playbackSessionFromLegacy, reconcileScreeningState, screeningStateFromLegacy } from "./migration";
 import type { PlaybackSession } from "./types";
 
 describe("5.0 放映历史迁移", () => {
@@ -62,5 +62,17 @@ describe("5.0 放映历史迁移", () => {
     }]);
     expect(repaired.activeSession?.sources[0].url).toBe("https://media.example/35778.m3u8");
     expect(repaired.history).toHaveLength(1);
+  });
+
+  it("补齐旧会话缺失的 acquisition 与 decision 契约", () => {
+    const normalized = normalizePlaybackSession({
+      id: "partial",
+      movieId: "9527",
+      title: "旧缓存会话",
+      phase: "ready",
+      sources: []
+    } as unknown as PlaybackSession);
+    expect(normalized?.acquisition).toMatchObject({ mode: "direct", attempts: 1 });
+    expect(normalized?.decision).toMatchObject({ recommendedSourceId: "", failoverAllowed: false });
   });
 });

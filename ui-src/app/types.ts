@@ -79,6 +79,10 @@ export type RepositoryUpdateState = {
   reminderDismissed?: boolean;
   status?: string;
   compareHint?: string;
+  updateManifest?: {
+    version?: string;
+    build?: string;
+  };
   probe?: {
     totalCount?: number;
     okCount?: number;

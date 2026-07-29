@@ -14,8 +14,7 @@ export default defineConfig({
     emptyOutDir: true,
     cssCodeSplit: false,
     lib: {
-      // 使用 import.meta.url 后，Vite 的 native/runner 配置加载器都可直接启动，
-      // 不再依赖为 CommonJS 模拟的 __dirname，也减少本地预览的临时构建等待。
+      // 用 import.meta.url 定位入口，避免配置加载方式切换时依赖 CommonJS __dirname。
       entry: fileURLToPath(new URL("./ui-src/main.tsx", import.meta.url)),
       name: "TxzzCandyUi",
       formats: ["iife"],

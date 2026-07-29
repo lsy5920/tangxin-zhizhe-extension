@@ -1,7 +1,10 @@
+import type { PlayerGestureLayout } from "./gestureLayout";
+
 export type PlayerFillMode = "contain" | "cover" | "fill";
 export type PlayerFitMode = "auto" | "wide" | "vertical";
 export type PlayerOrientationMode = "auto" | "landscape" | "portrait";
 export type PlaybackNetworkMode = "data-saver" | "balanced" | "high-quality";
+export type { PlayerGestureLayout } from "./gestureLayout";
 
 export type PlaybackPreferences = {
   volume: number;
@@ -13,6 +16,7 @@ export type PlaybackPreferences = {
   orientationMode: PlayerOrientationMode;
   seekStep: number;
   networkMode: PlaybackNetworkMode;
+  gestureLayout: PlayerGestureLayout;
 };
 
 const KEY = "txzz-playback-v2-preferences";
@@ -26,7 +30,8 @@ export const defaultPlaybackPreferences: PlaybackPreferences = {
   fitMode: "auto",
   orientationMode: "auto",
   seekStep: 10,
-  networkMode: "balanced"
+  networkMode: "balanced",
+  gestureLayout: "standard"
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -45,7 +50,8 @@ export function normalizePlaybackPreferences(value: Partial<PlaybackPreferences>
     seekStep: [5, 10, 30, 60].includes(Number(value.seekStep)) ? Number(value.seekStep) : 10,
     networkMode: value.networkMode === "data-saver" || value.networkMode === "high-quality"
       ? value.networkMode
-      : "balanced"
+      : "balanced",
+    gestureLayout: value.gestureLayout === "mirrored" ? "mirrored" : "standard"
   };
 }
 

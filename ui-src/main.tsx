@@ -137,7 +137,7 @@ function createHost() {
   }
 
   // 正式扩展页面可能在首帧尚未完成 chrome-extension:// 样式加载；内联同源构建样式
-  // 作为确定性副本，确保 CRX、解压加载和本地预览使用完全相同的 UI 元素与断点。
+  // 作为确定性副本，确保 CRX 与开发者模式解压加载使用完全相同的 UI 元素与断点。
   if (!shadow.getElementById(APP_STYLE_ID)) {
     const style = document.createElement("style");
     style.id = APP_STYLE_ID;

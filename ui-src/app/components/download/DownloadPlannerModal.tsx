@@ -80,13 +80,13 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <label className="rounded-2xl bg-violet-50 p-3 text-xs font-bold text-slate-600">
             <span className="mb-2 flex items-center gap-2 text-violet-600"><Gauge size={14} />片源线路</span>
-            <select value={sourceId} onChange={(event) => setSourceId(event.target.value)} className="min-h-11 w-full rounded-xl border border-violet-100 bg-white px-3 text-slate-700">
+            <select id="txzz-download-source" name="txzz-download-source" value={sourceId} onChange={(event) => setSourceId(event.target.value)} className="min-h-11 w-full rounded-xl border border-violet-100 bg-white px-3 text-slate-700">
               {(planner.sources || []).map((source) => <option key={source.id} value={source.id}>{source.label || source.id}</option>)}
             </select>
           </label>
           <label className="rounded-2xl bg-sky-50 p-3 text-xs font-bold text-slate-600">
             <span className="mb-2 flex items-center gap-2 text-sky-600"><Database size={14} />下载模式</span>
-            <select value={networkMode} onChange={(event) => setNetworkMode(event.target.value)} className="min-h-11 w-full rounded-xl border border-sky-100 bg-white px-3 text-slate-700">
+            <select id="txzz-download-network-mode" name="txzz-download-network-mode" value={networkMode} onChange={(event) => setNetworkMode(event.target.value)} className="min-h-11 w-full rounded-xl border border-sky-100 bg-white px-3 text-slate-700">
               <option value="data-saver">省流 · 最高 720P / 2.5 Mbps</option>
               <option value="balanced">均衡 · 按设备尺寸</option>
               <option value="high-quality">高清 · 设备最高档</option>
@@ -94,20 +94,20 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
           </label>
           <label className="rounded-2xl bg-pink-50 p-3 text-xs font-bold text-slate-600">
             <span className="mb-2 flex items-center gap-2 text-pink-600"><Film size={14} />清晰度</span>
-            <select value={qualityHeight} onChange={(event) => setQualityHeight(Number(event.target.value))} className="min-h-11 w-full rounded-xl border border-pink-100 bg-white px-3 text-slate-700">
+            <select id="txzz-download-quality" name="txzz-download-quality" value={qualityHeight} onChange={(event) => setQualityHeight(Number(event.target.value))} className="min-h-11 w-full rounded-xl border border-pink-100 bg-white px-3 text-slate-700">
               <option value={0}>按模式自动选择</option>
               {variants.map((variant) => <option key={variant.id || variant.height} value={variant.height || 0}>{variant.height ? `${variant.height}P` : variant.id}</option>)}
             </select>
           </label>
           <label className="rounded-2xl bg-amber-50 p-3 text-xs font-bold text-slate-600">
             <span className="mb-2 flex items-center gap-2 text-amber-600"><HardDrive size={14} />输出容器</span>
-            <select value={container} onChange={(event) => setContainer(event.target.value)} className="min-h-11 w-full rounded-xl border border-amber-100 bg-white px-3 text-slate-700">
+            <select id="txzz-download-container" name="txzz-download-container" value={container} onChange={(event) => setContainer(event.target.value)} className="min-h-11 w-full rounded-xl border border-amber-100 bg-white px-3 text-slate-700">
               {(plan.compatibleContainers || ["mp4"]).map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}
             </select>
           </label>
           <label className="rounded-2xl bg-fuchsia-50 p-3 text-xs font-bold text-slate-600">
             <span className="mb-2 flex items-center gap-2 text-fuchsia-600"><ListOrdered size={14} />队列优先级</span>
-            <select value={priority} onChange={(event) => setPriority(event.target.value)} className="min-h-11 w-full rounded-xl border border-fuchsia-100 bg-white px-3 text-slate-700">
+            <select id="txzz-download-priority" name="txzz-download-priority" value={priority} onChange={(event) => setPriority(event.target.value)} className="min-h-11 w-full rounded-xl border border-fuchsia-100 bg-white px-3 text-slate-700">
               <option value="high">高 · 优先开始</option><option value="normal">普通 · 默认</option><option value="low">低 · 空闲时开始</option>
             </select>
           </label>
@@ -117,7 +117,7 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
               <button type="button" aria-pressed={scheduleMode === "now"} onClick={() => setScheduleMode("now")} className={`min-h-11 rounded-xl border text-[11px] ${scheduleMode === "now" ? "border-emerald-300 bg-emerald-500 text-white" : "border-emerald-100 bg-white text-emerald-700"}`}>尽快开始</button>
               <button type="button" aria-pressed={scheduleMode === "scheduled"} onClick={() => setScheduleMode("scheduled")} className={`min-h-11 rounded-xl border text-[11px] ${scheduleMode === "scheduled" ? "border-emerald-300 bg-emerald-500 text-white" : "border-emerald-100 bg-white text-emerald-700"}`}>指定时间</button>
             </div>
-            {scheduleMode === "scheduled" && <input type="datetime-local" value={scheduledAt} min={new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setScheduledAt(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-emerald-100 bg-white px-3 text-[11px] text-slate-700" />}
+            {scheduleMode === "scheduled" && <input id="txzz-download-scheduled-at" name="txzz-download-scheduled-at" aria-label="指定下载开始时间" type="datetime-local" value={scheduledAt} min={new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setScheduledAt(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-emerald-100 bg-white px-3 text-[11px] text-slate-700" />}
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { PlayerContextMenu, PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerMorePanelKey } from "../player/PlayerChrome";
 import { PlayerGestureHudOverlay, PlayerGestureSurface, type GestureHudState } from "../player/PlayerGestureSystem";
 import { isBrowserFullscreen } from "../player/browserFullscreen";
@@ -7,6 +7,7 @@ import { useFullscreenController } from "../../playback/useFullscreenController"
 import type { PlaybackSession } from "../../playback/types";
 import type { PlaybackBookmark } from "../../types";
 import { formatDuration } from "../../helpers";
+import { resolveStageMediaOrientation } from "../../playback/stageLayout";
 
 export type PlaybackBookmarkCommand = {
   nonce: number;
@@ -50,7 +51,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
   const [controlsFocused, setControlsFocused] = useState(false);
   const [locked, setLocked] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [morePanel, setMorePanel] = useState<PlayerMorePanelKey>("line");
+  const [morePanel, setMorePanel] = useState<PlayerMorePanelKey>("source");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [gestureHud, setGestureHud] = useState<GestureHudState>({ kind: "", text: "" });
   const [holdHint, setHoldHint] = useState("");
@@ -59,21 +60,35 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
   const stageRef = useRef<HTMLDivElement>(null);
   const controlsTimerRef = useRef<number>();
   const hudTimerRef = useRef<number>();
+  const progressPreviewClearTimerRef = useRef<number>();
+  const progressPreviewSeekAtRef = useRef(0);
+  const progressPreviewStartTimeRef = useRef(0);
   const previousRateRef = useRef(1);
   const playedRecordedRef = useRef(false);
   const endedRecordedRef = useRef(false);
   const [loopStart, setLoopStart] = useState<number | null>(null);
   const [loopRange, setLoopRange] = useState<{ start: number; end: number } | null>(null);
   const activeSource = player.activeSource;
+  const mediaSessionKey = `${session.id}:${session.movieId}:${session.revision || 0}:${activeSource?.id || ""}:${activeSource?.url || ""}`;
   const hasUrl = Boolean(activeSource?.url);
   const paused = player.stats.paused;
   const buffering = player.runtime.phase === "buffering" || player.runtime.phase === "switching" || player.runtime.phase === "loading";
   const error = player.runtime.phase === "error" ? player.runtime.error : "";
 
   const video = player.video();
-  const detectedFit = Number(video?.videoHeight || 0) > Number(video?.videoWidth || 0) ? "vertical" : "wide";
-  const fit = player.preferences.fitMode === "auto" ? detectedFit : player.preferences.fitMode;
-  const stageAspect = fit === "vertical" ? "9 / 16" : "16 / 9";
+  const automaticStageLayout = resolveStageMediaOrientation(
+    "auto",
+    Number(video?.videoWidth || 0),
+    Number(video?.videoHeight || 0),
+    activeSource?.media?.variants || []
+  );
+  const stageLayout = resolveStageMediaOrientation(
+    player.preferences.fitMode,
+    Number(video?.videoWidth || 0),
+    Number(video?.videoHeight || 0),
+    activeSource?.media?.variants || []
+  );
+  const detectedFit = automaticStageLayout.orientation === "portrait" ? "vertical" : "wide";
   const qualityLabel = player.qualities.find((item) => item.level === player.qualityLevel)?.label || "自动";
   const previewOptions = useMemo(() => session.sources.map((source) => ({
     key: source.id,
@@ -98,6 +113,17 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fullscreen.active, locked, moreOpen, controlsFocused, player.runtime.phase]);
+
+  useEffect(() => {
+    // 切换会话、线路或 URL 后立即清理旧进度点预览，迟到定时器不得覆盖新媒体。
+    setDragging(false);
+    setPreviewTime(null);
+    progressPreviewSeekAtRef.current = 0;
+    if (progressPreviewClearTimerRef.current) window.clearTimeout(progressPreviewClearTimerRef.current);
+    return () => {
+      if (progressPreviewClearTimerRef.current) window.clearTimeout(progressPreviewClearTimerRef.current);
+    };
+  }, [mediaSessionKey]);
 
   useEffect(() => {
     if (!fullscreen.active && locked) setLocked(false);
@@ -229,22 +255,44 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
   const cycleOrientation = () => player.setOrientationMode(cycle(["auto", "landscape", "portrait"] as const, player.preferences.orientationMode));
 
   const seekFromRatio = (ratio: number) => Math.max(0, Math.min(player.stats.duration, player.stats.duration * ratio));
+  const seekProgressPreviewFrame = (target: number, force = false) => {
+    const now = Date.now();
+    if (!force && now - progressPreviewSeekAtRef.current < 110) return;
+    progressPreviewSeekAtRef.current = now;
+    // 使用主 video 定位目标帧：不增加第二媒体内核，同时把网络 seek 限制在约 9 次/秒。
+    player.seekTo(target);
+  };
   const onSeekStart = (ratio: number, _event: ReactPointerEvent<HTMLDivElement>) => {
+    if (progressPreviewClearTimerRef.current) window.clearTimeout(progressPreviewClearTimerRef.current);
+    progressPreviewStartTimeRef.current = player.stats.currentTime;
+    progressPreviewSeekAtRef.current = 0;
+    const target = seekFromRatio(ratio);
     setDragging(true);
-    setPreviewTime(seekFromRatio(ratio));
+    setPreviewTime(target);
+    seekProgressPreviewFrame(target, true);
   };
   const onSeekMove = (ratio: number) => {
-    if (dragging) setPreviewTime(seekFromRatio(ratio));
+    if (!dragging) return;
+    const target = seekFromRatio(ratio);
+    setPreviewTime(target);
+    seekProgressPreviewFrame(target);
   };
   const onSeekEnd = (ratio: number) => {
-    player.seekTo(seekFromRatio(ratio));
+    const target = seekFromRatio(ratio);
+    seekProgressPreviewFrame(target, true);
+    setDragging(false);
+    setPreviewTime(target);
+    progressPreviewClearTimerRef.current = window.setTimeout(() => setPreviewTime(null), 420);
+  };
+  const onSeekCancel = () => {
+    if (dragging) player.seekTo(progressPreviewStartTimeRef.current);
     setDragging(false);
     setPreviewTime(null);
+    if (progressPreviewClearTimerRef.current) window.clearTimeout(progressPreviewClearTimerRef.current);
   };
 
   const copyCurrentLink = () => onAction("copy-play-link", { url: activeSource?.url || "", label: `${activeSource?.label || "当前线路"}完整链接` });
   const openCurrentLink = () => onAction("open-playback-url", { url: activeSource?.url || "", label: activeSource?.label || "当前线路" });
-  const downloadCurrent = () => onAction("plan-full-video-download", { movieId: session.movieId, sourceId: activeSource?.id || "" });
   const savePointBookmark = () => {
     if (!player.stats.duration || player.stats.currentTime < 0) {
       showHud({ kind: "seek-scrub", text: "影片就绪后才能保存书签" }, 1300);
@@ -307,16 +355,16 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
     });
   };
 
-  const shellStyle = fullscreen.active
-    ? ({ background: "#000" } as CSSProperties)
-    : ({ aspectRatio: stageAspect } as CSSProperties);
+  const shellStyle = fullscreen.active ? { background: "#000" } : undefined;
 
   return (
     <div
       ref={fullscreen.shellRef}
-      className={`txzz-player-shell txzz-candy-interactive select-none overflow-hidden bg-black ${fullscreen.active ? "txzz-player-fullscreen-shell txzz-fullscreen-active fixed inset-0 z-[2147483647] rounded-none" : "relative rounded-[1.35rem] shadow-2xl shadow-violet-950/20 ring-1 ring-black/25"}`}
+      className={`txzz-player-shell txzz-player-shell--${stageLayout.orientation} txzz-candy-interactive select-none overflow-hidden bg-black ${fullscreen.active ? "txzz-player-fullscreen-shell txzz-fullscreen-active fixed inset-0 z-[2147483647] rounded-none" : "relative rounded-[1.35rem] shadow-2xl shadow-violet-950/20 ring-1 ring-black/25"}`}
       style={shellStyle}
       data-playback-phase={player.runtime.phase}
+      data-stage-orientation={stageLayout.orientation}
+      data-stage-evidence={stageLayout.source}
       tabIndex={0}
       aria-label={`糖果影院播放器：${session.title}`}
       onPointerDownCapture={(event) => {
@@ -342,6 +390,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           aria-hidden
         />
         <PlayerGestureSurface
+          sessionKey={mediaSessionKey}
           enabled={hasUrl}
           locked={locked}
           controlsVisible={controlsVisible}
@@ -352,12 +401,14 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           currentTime={player.stats.currentTime}
           duration={player.stats.duration}
           playing={!paused}
+          gestureLayout={player.preferences.gestureLayout}
           holdRate={3}
           onShowHud={showHud}
           onToggleControls={(show) => show ? revealControls(true) : setControlsVisible(false)}
           onTogglePlay={() => void player.togglePlay()}
           onSeekBy={player.seekBy}
           onSeekTo={player.seekTo}
+          onSeekPreview={player.seekTo}
           onVolume={player.setVolume}
           onBrightness={player.setBrightness}
           onHoldRateStart={(rate) => {
@@ -372,7 +423,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           onLockHint={() => setHoldHint("控制已锁定，点右下角糖果锁解开")}
           onContextMenu={(position) => { setMoreOpen(false); setContextMenu(position); }}
         />
-        <PlayerGestureHudOverlay hud={gestureHud} holdHint={holdHint} />
+        <PlayerGestureHudOverlay hud={gestureHud} holdHint={holdHint} previewVideo={video} />
         <PlayerContextMenu
           open={Boolean(contextMenu)}
           x={contextMenu?.x || 0}
@@ -432,6 +483,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           progressPercent={percent(player.stats.currentTime, player.stats.duration)}
           markers={bookmarks.map((bookmark) => ({ id: bookmark.id, time: bookmark.startSeconds, label: bookmark.label }))}
           progressPreviewTime={previewTime}
+          previewVideo={video}
           isDraggingProgress={dragging}
           volume={player.preferences.volume}
           muted={player.preferences.muted}
@@ -454,18 +506,15 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           seekStepOptions={[5, 10, 30, 60]}
           qualities={player.qualities}
           qualityLevel={player.qualityLevel}
-          canBackup={Boolean(alternateSource)}
-          isBackupActive={activeSource?.id === "backup"}
-          hasMovieId={Boolean(session.movieId)}
           fitMode={player.preferences.fitMode}
-          fillMode={player.preferences.fillMode}
           orientationMode={player.preferences.orientationMode}
           orientationRequested={fullscreen.active}
           networkMode={player.preferences.networkMode}
+          gestureLayout={player.preferences.gestureLayout}
           onSeekStart={onSeekStart}
           onSeekMove={onSeekMove}
           onSeekEnd={onSeekEnd}
-          onSeekCancel={() => { setDragging(false); setPreviewTime(null); }}
+          onSeekCancel={onSeekCancel}
           onKeyboardSeek={player.seekBy}
           onMarkerSelect={(_id, time) => player.seekTo(time)}
           onTogglePlay={() => void player.togglePlay()}
@@ -486,17 +535,14 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           onCycleFit={cycleFit}
           onCycleFill={cycleFill}
           onCycleOrientation={cycleOrientation}
-          onSwitchBackup={() => { if (alternateSource) void player.switchSource(alternateSource.id); }}
           onScreenshot={() => void player.screenshot(`${session.title || "糖果影院截图"}.png`)?.catch(() => {})}
           onReload={() => void player.reload()}
           onPip={() => player.togglePip()}
           onRecenter={() => { player.setFitMode("auto"); player.setFillMode("contain"); }}
-          onCopyLink={copyCurrentLink}
-          onOpenLink={openCurrentLink}
-          onDownload={downloadCurrent}
           onCopyDiagnostic={() => onAction("copy-playback-health-report", { movieId: session.movieId })}
           onBrightnessChange={player.setBrightness}
           onSetNetworkMode={player.setNetworkMode}
+          onSetGestureLayout={player.setGestureLayout}
           onFocusWithinChange={setControlsFocused}
         />
       </div>

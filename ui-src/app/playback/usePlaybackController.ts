@@ -411,6 +411,7 @@ export function usePlaybackController(session: PlaybackSession | null) {
     setOrientationMode: (orientationMode: PlaybackPreferences["orientationMode"]) => updatePreferences({ orientationMode }),
     setSeekStep: (seekStep: number) => updatePreferences({ seekStep }),
     setNetworkMode: (networkMode: PlaybackPreferences["networkMode"]) => updatePreferences({ networkMode }),
+    setGestureLayout: (gestureLayout: PlaybackPreferences["gestureLayout"]) => updatePreferences({ gestureLayout }),
     screenshot: (name: string) => kernelRef.current?.screenshot(name),
     togglePip: () => kernelRef.current?.togglePip()
   };

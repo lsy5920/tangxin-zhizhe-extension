@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.2.1",
-  "build": "2026-07-29-1929",
-  "releasedAt": "2026-07-29 19:29",
+  "version": "5.2.2",
+  "build": "2026-07-29-2030",
+  "releasedAt": "2026-07-29 20:30",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -16,10 +16,17 @@
   ],
   "changelog": [
     {
+      "id": "2026-07-29-2030",
+      "type": "修复",
+      "title": "竖屏影院、手势帧预览与更新/下载可靠性",
+      "detail": "9:16 视频改用动态视口预算舞台，播放器设置精简为片源、观看、工具三类。新增可持久化标准/镜像双击与长按布局，横向滑动继续固定左划回退、右划前进；横滑和直接拖动进度条都复用同一主 video 解码输出，进度条小画面会跟随进度点并位于其上方。修复旧会话缺少 acquisition 时下载规划读取 mode 崩溃，覆盖升级后旧成功缓存造成同版本误报，以及 Service Worker 校验远程构建号时读取未定义 parseBuildStamp 导致更新检查失败的问题。删除本地模拟预览页，界面验收统一使用完整 CDP Chrome 中实际安装的生产扩展。",
+      "releasedAt": "2026-07-29 20:30"
+    },
+    {
       "id": "2026-07-29-1929",
       "type": "修复",
-      "title": "Shadow DOM 样式与本地预览完全一致",
-      "detail": "修复 Tailwind 4 注册型自定义属性在 Chrome Shadow DOM 中未生效，导致正式扩展批量丢失边框、横线、渐变、阴影、位移和部分动画的问题。影子树现在显式初始化完整属性基线并校验样式节点完整性；同构建号的残缺 ShadowRoot 会自动重建。本地 preview 默认加载正式 dist 产物，runtime=source 则提供无需反复构建的 Vite HMR 快速开发路径。",
+      "title": "Shadow DOM 生产样式完整性",
+      "detail": "修复 Tailwind 4 注册型自定义属性在 Chrome Shadow DOM 中未生效，导致正式扩展批量丢失边框、横线、渐变、阴影、位移和部分动画的问题。影子树显式初始化完整属性基线并校验样式节点完整性；同构建号的残缺 ShadowRoot 会自动重建。",
       "releasedAt": "2026-07-29 19:29"
     },
     {
@@ -207,11 +214,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 590903,
-  "packageSha256": "0ce47e887a59d3aea949b27ce2de897b66087eca894c8f8c3d21c71ce6c294cb",
+  "packageSize": 594657,
+  "packageSha256": "a0d1ce76ff471b3043a2eb0ee96dbf86d6f94455a9c83e445592d71dd461b059",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "iGzkhuT6pbql4llXztyWWaUT51061+eodBSpPESfDKJ8OvD8fUwbywrWEo8+PLL5hhRevtkR5bIGUeLqhO/ZFLn2YMgM3WPZjHskvAHyTD9BxL+4xYAtXB+QFsClLkgHFQ1BeDAKWkDDGf+PNH0VF6XlxQQbZPveJE+e6rbNdhd7K9N1gel3ZkPzHTvHwDTDZoxGy33gPZJtL8iqON19cgjRId9JKMuaLokwkIwk1cANHjd3VaEUatKWcjy3qe4hW3voHHl7UC1M+t1vGqlRNioURb4UzgdrkYC3GFvgEFKJu9WV4y1PQ0mUOmzABGrTARJrcVM0qOF1627CIB4SFQ=="
+    "value": "LP/V2sv8Ss0zwOQfEYfksm53SbBMmmNwDfklFzaZI3tE653+q9idbH6Sq9h5Bj0TjpR+l79plAAogziTWIYmc2TkxUSC1nfZxu7gcSYRbDhIqwNYq6lkENql6fW6+izgDHwH1xZ7ydOSTZahhQCCEEWsmzl4cjrSz1GXXHAFMYXT7YKZoxtutcnRCWedfj4+H2jNM67qGomii0+UdGocZlYZya/psuYVDYpXrjGbhgqQNzf0nkU/yrhdgF2OFvWwYSb1nfy69IDMxp9wd5zA+QMaFHLnlgilpdPYQJ471RH6BngdhIslotnLgl/1P1C+iR/oPcOtfmUleNzhzjFLIA=="
   }
 }

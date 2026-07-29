@@ -55,7 +55,7 @@ export function UpdateModal({ state, open, onClose, onDismiss, onOpenSettings, o
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="text-[16px] font-semibold text-slate-900">{vm.statusLabel}</h4>
-              <Pill className={tone.badge}>升级系统 v7</Pill>
+              <Pill className={tone.badge}>升级系统 v8</Pill>
             </div>
             <p className="mt-1 text-[12px] leading-[1.55] text-slate-500">{vm.statusHint}</p>
           </div>

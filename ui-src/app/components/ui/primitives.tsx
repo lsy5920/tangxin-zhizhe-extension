@@ -71,6 +71,12 @@ function registerModal(element: HTMLElement) {
   const root = element.getRootNode();
   modalRegisteredRoots.set(element, root);
   if (!modalStack.includes(element)) modalStack.push(element);
+  const active = root instanceof ShadowRoot ? root.activeElement : document.activeElement;
+  if (active instanceof HTMLElement && !element.contains(active)) {
+    // 必须先把焦点移入新顶层弹窗，再把底层工作台设为 inert/aria-hidden；
+    // 反过来会触发 Chrome 的“隐藏元素仍包含焦点”警告，并让读屏焦点短暂丢失。
+    focusWithoutScroll(element);
+  }
   syncModalAccessibility(root);
 }
 

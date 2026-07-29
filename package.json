@@ -1,12 +1,9 @@
 {
   "name": "tangxin-zhizhe-extension",
   "private": true,
-  "version": "5.2.1",
+  "version": "5.2.2",
   "type": "module",
   "scripts": {
-    "dev": "vite --configLoader native --host 127.0.0.1",
-    "dev:ui": "vite --configLoader native --host 127.0.0.1 --open /preview.html?runtime=source",
-    "preview:dist": "vite --configLoader native --host 127.0.0.1 --open /preview.html?runtime=production",
     "deps:check": "node scripts/check-deps.mjs",
     "deps:repair": "node scripts/check-deps.mjs --repair",
     "prebuild": "node scripts/check-deps.mjs",

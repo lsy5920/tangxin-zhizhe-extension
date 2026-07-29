@@ -71,7 +71,7 @@ export function UpdateCenter({ state, onAction }: Props) {
     <SectionCard
       title="升级中心"
       icon={Rocket}
-      hint="升级系统 v7 · 签名清单、完整包大小与 SHA-256、正式扩展 ID、CRX3 包签名"
+      hint="升级系统 v8 · 本地版本指纹、签名清单、完整包 SHA-256、正式扩展 ID 与 CRX3 包签名"
       action={<Pill className={tone.badge}>{vm.statusLabel}</Pill>}
     >
       <div className="space-y-4">

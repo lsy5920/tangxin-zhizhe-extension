@@ -8,6 +8,7 @@ export const RELEASE_INCLUDE_PATHS = [
   "background.js",
   "state_mutation_core.js",
   "experience_core.js",
+  "update_core.js",
   "page_context_core.js",
   "download_core.js",
   "content.js",

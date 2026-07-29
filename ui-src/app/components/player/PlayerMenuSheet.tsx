@@ -2,11 +2,7 @@ import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type React
 import {
   Activity,
   Check,
-  Copy,
-  Download,
-  ExternalLink,
   Film,
-  Keyboard,
   Layers,
   PictureInPicture2,
   Ratio,
@@ -15,16 +11,15 @@ import {
   RefreshCw,
   Route,
   SkipForward,
-  SlidersHorizontal,
   Sun,
   Volume2,
-  VolumeX,
   Wrench,
   X
 } from "lucide-react";
 import { CtrlButton, CtrlChip } from "./PlayerControls";
+import type { PlayerGestureLayout } from "../../playback/gestureLayout";
 
-export type PlayerMorePanelKey = "line" | "display" | "sound" | "tools";
+export type PlayerMorePanelKey = "source" | "view" | "tools";
 
 export type PlayerPreviewOption = {
   key: string;
@@ -57,13 +52,11 @@ export type PlayerMenuSheetProps = {
   fitLabel: string;
   orientationLabel: string;
   fullscreenDiagnosticLabel: string;
-  canBackup: boolean;
-  isBackupActive: boolean;
-  hasMovieId: boolean;
   fitMode: "auto" | "wide" | "vertical";
   orientationMode: "auto" | "landscape" | "portrait";
   orientationRequested: boolean;
   networkMode: "data-saver" | "balanced" | "high-quality";
+  gestureLayout: PlayerGestureLayout;
   onClose: () => void;
   onSetPanel: (panel: PlayerMorePanelKey) => void;
   onSelectPreview: (key: string) => void;
@@ -73,19 +66,15 @@ export type PlayerMenuSheetProps = {
   onCycleFit: () => void;
   onCycleFill: () => void;
   onCycleOrientation: () => void;
-  onToggleMute: () => void;
   onVolumeChange: (volume: number) => void;
   onBrightnessChange: (value: number) => void;
   onScreenshot: () => void;
   onReload: () => void;
   onPip: () => void;
   onRecenter: () => void;
-  onCopyLink: () => void;
-  onOpenLink: () => void;
-  onDownload: () => void;
   onDiagnostic: () => void;
-  onSwitchBackup: () => void;
   onSetNetworkMode: (mode: "data-saver" | "balanced" | "high-quality") => void;
+  onSetGestureLayout: (layout: PlayerGestureLayout) => void;
 };
 
 function MenuSection({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
@@ -105,12 +94,12 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
     open, panel, disabled, fullscreen, muted, volume, rate, seekStep, brightness,
     rateOptions, seekStepOptions, qualities, qualityLevel, qualityLabel,
     previewOptions, activePreviewKey, previewSourceLabel, playerStatus, currentLineLabel,
-    fillLabel, fitLabel, orientationLabel, fullscreenDiagnosticLabel, canBackup,
-    isBackupActive, hasMovieId, fitMode, orientationMode, orientationRequested, networkMode,
+    fillLabel, fitLabel, orientationLabel, fullscreenDiagnosticLabel,
+    fitMode, orientationMode, orientationRequested, networkMode, gestureLayout,
     onClose, onSetPanel, onSelectPreview, onSetQuality, onSetRate, onSetSeekStep,
-    onCycleFit, onCycleFill, onCycleOrientation, onToggleMute, onVolumeChange,
-    onBrightnessChange, onScreenshot, onReload, onPip, onRecenter, onCopyLink,
-    onOpenLink, onDownload, onDiagnostic, onSwitchBackup, onSetNetworkMode
+    onCycleFit, onCycleFill, onCycleOrientation, onVolumeChange,
+    onBrightnessChange, onScreenshot, onReload, onPip, onRecenter,
+    onDiagnostic, onSetNetworkMode, onSetGestureLayout
   } = props;
 
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -138,10 +127,12 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
 
   if (!open) return null;
   const volumePercent = muted ? 0 : Math.round(volume * 100);
+  const qualityOptions = Array.from(new Map(
+    qualities.filter((item) => item.level >= 0).map((item) => [item.level, item])
+  ).values());
   const tabs = [
-    { key: "line" as const, label: "播放", icon: Route },
-    { key: "display" as const, label: "画面", icon: Ratio },
-    { key: "sound" as const, label: "音频", icon: muted ? VolumeX : Volume2 },
+    { key: "source" as const, label: "片源", icon: Route },
+    { key: "view" as const, label: "观看", icon: Ratio },
     { key: "tools" as const, label: "工具", icon: Wrench }
   ];
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -194,7 +185,7 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
         </CtrlButton>
       </header>
 
-      <div className="grid grid-cols-4 gap-1.5 border-b border-white/8 bg-black/15 p-2" role="tablist" aria-label="播放器设置分类">
+      <div className="txzz-player-menu-tabs grid gap-1.5 border-b border-white/8 bg-black/15 p-2" role="tablist" aria-label="播放器设置分类">
         {tabs.map((item) => {
           const Icon = item.icon;
           const active = panel === item.key;
@@ -239,9 +230,9 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
       </div>
 
       <div id={`txzz-player-panel-${panel}`} role="tabpanel" aria-labelledby={`txzz-player-tab-${panel}`} className="txzz-player-menu-body space-y-2.5 overflow-y-auto p-2.5">
-        {panel === "line" && (
+        {panel === "source" && (
           <>
-            <MenuSection title="糖果网络模式" hint="用户选择优先；均衡按画面尺寸自动选档，省流限制 720P / 2.5 Mbps。">
+            <MenuSection title="播放策略" hint="均衡模式按带宽和播放器尺寸选档；用户明确选择始终优先。">
               <div className="grid grid-cols-3 gap-1.5">
                 {([
                   ["data-saver", "省流", "720P 上限"],
@@ -255,8 +246,8 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
               </div>
             </MenuSection>
 
-            <MenuSection title="播放线路" hint="播放开始后锁定当前源，只有连续失败才自动切换备用线路。">
-              <div className="grid grid-cols-3 gap-1.5">
+            <MenuSection title="播放线路" hint="手动换线立即生效；自动切线只尝试本场尚未使用的健康线路。">
+              <div className="txzz-player-line-grid grid gap-1.5">
                 {previewOptions.map((item) => (
                   <CtrlChip
                     key={item.key}
@@ -278,10 +269,10 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
               </p>
             </MenuSection>
 
-            <MenuSection title="HLS 清晰度" hint={qualities.length ? "自动模式根据带宽动态选档，也可固定到指定档位。" : "当前线路未提供可切换的 HLS 档位。"}>
-              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+            <MenuSection title="清晰度" hint={qualityOptions.length ? "自动模式根据网络和缓冲动态选档，也可临时固定清晰度。" : "当前线路没有可切换的 HLS 档位。"}>
+              <div className="txzz-player-quality-grid grid gap-1.5">
                 <CtrlChip active={qualityLevel < 0} disabled={disabled} onClick={() => onSetQuality(-1)} title="自动清晰度">自动</CtrlChip>
-                {qualities.map((item) => (
+                {qualityOptions.map((item) => (
                   <CtrlChip key={item.level} active={qualityLevel === item.level} onClick={() => onSetQuality(item.level)} title={`固定清晰度 ${item.label}`}>
                     {item.label}
                   </CtrlChip>
@@ -291,9 +282,17 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
           </>
         )}
 
-        {panel === "display" && (
+        {panel === "view" && (
           <>
-            <MenuSection title="播放节奏" hint="倍速与跳转步长会同步到主控、键盘和画面手势。">
+            <MenuSection title="播放习惯" hint="主控制栏负责快速操作；这里用于精确设置倍速与跳转步长。">
+              <div className="mb-2 grid grid-cols-2 gap-1.5">
+                <CtrlChip active={gestureLayout === "standard"} onClick={() => onSetGestureLayout("standard")} title="标准手势：左侧快退，右侧快进">
+                  左退 · 右进
+                </CtrlChip>
+                <CtrlChip active={gestureLayout === "mirrored"} onClick={() => onSetGestureLayout("mirrored")} title="镜像手势：左侧快进，右侧快退">
+                  左进 · 右退
+                </CtrlChip>
+              </div>
               <div className="grid grid-cols-5 gap-1.5">
                 {rateOptions.map((item) => (
                   <CtrlChip key={item} active={rate === item} onClick={() => onSetRate(item)} title={`播放倍速 ${item}x`}>{item}x</CtrlChip>
@@ -308,7 +307,7 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
               </div>
             </MenuSection>
 
-            <MenuSection title="画面布局" hint="原比例最稳；裁满会裁切边缘，铺满可能产生轻微变形。">
+            <MenuSection title="画面布局" hint="竖屏片源会自动使用受视口约束的影院画布，不再把页面无限撑高。">
               <div className="grid grid-cols-3 gap-1.5">
                 <CtrlChip active={fitMode !== "auto"} onClick={onCycleFit} disabled={disabled} title={`切换画面比例，当前${fitLabel}`}>
                   {fitMode === "vertical" ? <RectangleVertical size={12} /> : fitMode === "wide" ? <RectangleHorizontal size={12} /> : <Ratio size={12} />} {fitLabel}
@@ -322,73 +321,53 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
               </div>
             </MenuSection>
 
-            <MenuSection title="画面亮度" hint="亮度通过独立遮罩调节，不修改 video 滤镜，兼容 Android 与 Kiwi。">
-              <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-300/15 text-amber-200"><Sun size={15} /></span>
-                <input
-                  aria-label="画面亮度"
-                  type="range"
-                  min={60}
-                  max={140}
-                  step={5}
-                  value={brightness}
-                  onChange={(event) => onBrightnessChange(Number(event.target.value))}
-                  className="txzz-player-range min-w-0 flex-1 accent-amber-300"
-                />
-                <span className="w-11 text-right text-[11px] font-semibold tabular-nums text-white">{brightness}%</span>
-              </div>
-            </MenuSection>
-          </>
-        )}
+            <div className="txzz-player-menu-dual grid gap-2.5">
+              <MenuSection title="画面亮度" hint="使用独立遮罩，兼容 Android / Kiwi。">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-300/15 text-amber-200"><Sun size={15} /></span>
+                  <input
+                    aria-label="画面亮度"
+                    type="range"
+                    min={60}
+                    max={140}
+                    step={5}
+                    value={brightness}
+                    onChange={(event) => onBrightnessChange(Number(event.target.value))}
+                    className="txzz-player-range min-w-0 flex-1 accent-amber-300"
+                  />
+                  <span className="w-11 text-right text-[11px] font-semibold tabular-nums text-white">{brightness}%</span>
+                </div>
+              </MenuSection>
 
-        {panel === "sound" && (
-          <>
-            <MenuSection title="音量与静音" hint="音量偏好会保存在本机，并同步响应键盘、滚轮和画面手势。">
-              <div className="flex items-center gap-3">
-                <CtrlButton title={muted ? "取消静音" : "静音"} size="md" active={muted} accent={muted ? "rose" : "none"} onClick={onToggleMute} disabled={disabled}>
-                  {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-                </CtrlButton>
-                <input
-                  aria-label="播放音量"
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={volumePercent}
-                  onChange={(event) => onVolumeChange(Number(event.target.value) / 100)}
-                  className="txzz-player-range min-w-0 flex-1 accent-sky-400"
-                />
-                <span className="w-11 text-right text-[11px] font-semibold tabular-nums text-white">{volumePercent}%</span>
+              <MenuSection title="播放音量" hint="静音保留在主控制栏，避免重复按钮。">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-300/15 text-sky-200"><Volume2 size={15} /></span>
+                  <input
+                    aria-label="播放音量"
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={volumePercent}
+                    onChange={(event) => onVolumeChange(Number(event.target.value) / 100)}
+                    className="txzz-player-range min-w-0 flex-1 accent-sky-400"
+                  />
+                  <span className="w-11 text-right text-[11px] font-semibold tabular-nums text-white">{volumePercent}%</span>
+                </div>
+              </MenuSection>
               </div>
-            </MenuSection>
-
-            <MenuSection title="快捷操作" hint="播放器获得焦点或插件面板打开时可用。">
-              <div className="grid gap-2 text-[10px] leading-relaxed text-white/60 sm:grid-cols-2">
-                <p className="rounded-xl bg-white/6 p-2.5"><Keyboard size={13} className="mb-1 text-sky-300" />空格/K 播放 · ←/→ 跳转 · ↑/↓ 音量 · M 静音 · F 全屏 · L 锁屏</p>
-                <p className="rounded-xl bg-white/6 p-2.5"><SlidersHorizontal size={13} className="mb-1 text-emerald-300" />横滑进度 · 左侧竖滑亮度 · 右侧竖滑音量 · 滚轮音量 · Shift+滚轮亮度</p>
-              </div>
-            </MenuSection>
           </>
         )}
 
         {panel === "tools" && (
           <>
-            <MenuSection title="播放工具" hint="高频播放能力保留在主控，其余工具集中在这里。">
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+            <MenuSection title="播放工具" hint="片源链接和下载统一在下方片源抽屉处理，避免同一动作出现多次。">
+              <div className="txzz-player-tool-grid grid gap-1.5">
                 <ToolButton icon={RefreshCw} label="重载" hint="重建当前播放源" onClick={onReload} disabled={disabled} />
                 <ToolButton icon={PictureInPicture2} label="画中画" hint="悬浮到其他页面" onClick={onPip} disabled={disabled} />
                 <ToolButton icon={Film} label="截图" hint="保存当前画面" onClick={onScreenshot} disabled={disabled} />
                 <ToolButton icon={Ratio} label="全屏校准" hint={fullscreen ? "重新测量居中" : "进入全屏后可用"} onClick={onRecenter} disabled={disabled || !fullscreen} />
-                <ToolButton icon={Route} label="备用线路" hint={isBackupActive ? "当前已是备用" : "切换播放源"} onClick={onSwitchBackup} disabled={!canBackup || isBackupActive} active={isBackupActive} />
                 <ToolButton icon={Activity} label="诊断" hint="页内查看报告" onClick={onDiagnostic} disabled={disabled} />
-              </div>
-            </MenuSection>
-
-            <MenuSection title="链接与下载" hint="复制和打开均使用补全域名后的完整播放地址。">
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                <ToolButton icon={Copy} label="复制链接" hint="完整播放地址" onClick={onCopyLink} disabled={disabled} />
-                <ToolButton icon={ExternalLink} label="新窗口打开" hint="直接验证线路" onClick={onOpenLink} disabled={disabled} />
-                <ToolButton icon={Download} label="下载视频" hint="创建后台任务" onClick={onDownload} disabled={!hasMovieId} />
               </div>
             </MenuSection>
           </>
@@ -396,7 +375,7 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
       </div>
 
       <footer className="border-t border-white/8 bg-black/18 px-3 py-2 text-[10px] text-white/48">
-        <p className="truncate">{currentLineLabel} · {networkMode === "data-saver" ? "省流" : networkMode === "high-quality" ? "高清" : "均衡"} · {rate}x · {muted ? "静音" : `${volumePercent}%`} · {fillLabel} · {orientationLabel}</p>
+        <p className="truncate">{currentLineLabel} · {networkMode === "data-saver" ? "省流" : networkMode === "high-quality" ? "高清" : "均衡"} · {rate}x · {gestureLayout === "mirrored" ? "左进右退" : "左退右进"} · {fillLabel}</p>
         {fullscreen && <p className="mt-0.5 truncate text-sky-200/70">{fullscreenDiagnosticLabel}</p>}
       </footer>
     </div>

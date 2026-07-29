@@ -9,6 +9,7 @@ import { DownloadsPage } from "./components/DownloadsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
 import { UpdateModal } from "./update/UpdateModal";
+import { isUpdateAvailableForCurrentBuild } from "./update/helpers";
 import { flowItemText } from "./helpers";
 import { useDocumentScrollLock } from "./components/ui/primitives";
 import { FloatingCompanion } from "./components/layout/FloatingCompanion";
@@ -187,7 +188,7 @@ export default function App() {
   useEffect(() => {
     const remote = bridgeState.repositoryUpdate?.remote;
     const updateId = String(remote?.id || [remote?.version, remote?.build].filter(Boolean).join("|"));
-    if (!bridgeState.repositoryUpdate?.updateAvailable || bridgeState.repositoryUpdate?.shouldNotify === false || !updateId || dismissedUpdateId === updateId) return;
+    if (!isUpdateAvailableForCurrentBuild(bridgeState.repositoryUpdate) || bridgeState.repositoryUpdate?.shouldNotify === false || !updateId || dismissedUpdateId === updateId) return;
     let timer = 0;
     const tryOpenUpdate = () => {
       if (showUpdateModalRef.current) return;

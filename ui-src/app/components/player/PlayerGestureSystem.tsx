@@ -1,6 +1,8 @@
-import { useEffect, useRef, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { ChevronLeft, ChevronRight, Lock, Pause, Play, Sun, Unlock, Volume2, VolumeX, Zap } from "lucide-react";
 import { formatDuration } from "../../helpers";
+import { gestureHoldAction, gestureSeekDirection, horizontalScrubSeconds, type PlayerGestureLayout } from "../../playback/gestureLayout";
+import { PlayerScrubPreview } from "./PlayerScrubPreview";
 
 /** 手势 HUD 类型：覆盖主流播放器全部视觉反馈。 */
 export type GestureHudKind =
@@ -26,9 +28,15 @@ export type GestureHudState = {
   zone?: "left" | "center" | "right" | "";
   /** 侧边竖条：音量靠右，亮度靠左 */
   sideBar?: "left" | "right" | "";
+  /** HUD 箭头表示真实时间方向；镜像手势下不能再按屏幕左右猜测。 */
+  direction?: "back" | "forward";
+  /** 横滑目标时间；HUD 使用主视频已解码帧生成真实小画面。 */
+  previewTime?: number;
 };
 
 export type GestureSurfaceProps = {
+  /** 会话或媒体代次变化时立即取消旧手势，避免旧长按/横滑作用到新影片。 */
+  sessionKey: string;
   enabled: boolean;
   locked: boolean;
   controlsVisible: boolean;
@@ -39,6 +47,7 @@ export type GestureSurfaceProps = {
   currentTime: number;
   duration: number;
   playing: boolean;
+  gestureLayout: PlayerGestureLayout;
   /** 长按倍速，默认 3 */
   holdRate?: number;
   onShowHud: (hud: GestureHudState, durationMs?: number) => void;
@@ -47,6 +56,7 @@ export type GestureSurfaceProps = {
   onTogglePlay: () => void;
   onSeekBy: (seconds: number) => void;
   onSeekTo: (time: number) => void;
+  onSeekPreview?: (time: number) => void;
   onVolume: (volume: number, muted?: boolean) => void;
   onBrightness: (brightness: number) => void;
   onHoldRateStart: (rate: number) => void;
@@ -94,6 +104,7 @@ function zoneOf(x: number, left: number, width: number): "left" | "center" | "ri
  * 覆盖：单击显隐控制、三区双击、长按倍速/快退、横滑进度、左右竖滑音量亮度、滚轮音量、鼠标拖拽调节。
  */
 export function PlayerGestureSurface({
+  sessionKey,
   enabled,
   locked,
   controlsVisible,
@@ -104,6 +115,7 @@ export function PlayerGestureSurface({
   currentTime,
   duration,
   playing,
+  gestureLayout,
   holdRate = 3,
   onShowHud,
   onClearHud,
@@ -111,6 +123,7 @@ export function PlayerGestureSurface({
   onTogglePlay,
   onSeekBy,
   onSeekTo,
+  onSeekPreview,
   onVolume,
   onBrightness,
   onHoldRateStart,
@@ -128,7 +141,13 @@ export function PlayerGestureSurface({
   const controlsVisibleOnDownRef = useRef(controlsVisible);
   // Android Chromium/Edge 会把触摸长按合成为 contextmenu；记录输入来源，避免与长按快退/倍速手势竞争。
   const lastPointerInputRef = useRef<{ type: string; at: number }>({ type: "mouse", at: 0 });
-  const holdRef = useRef<{ delay?: number; interval?: number; active: boolean; side: "left" | "right" | "" }>({ active: false, side: "" });
+  const holdRef = useRef<{
+    delay?: number;
+    interval?: number;
+    active: boolean;
+    side: "left" | "right" | "";
+    action: "" | "rewind" | "rate-forward";
+  }>({ active: false, side: "", action: "" });
   const swipeRef = useRef<SwipeState>({
     active: false,
     mode: "none",
@@ -144,6 +163,7 @@ export function PlayerGestureSurface({
     allowMouseDrag: false
   });
   const cumulativeSeekRef = useRef(0);
+  const previewSeekAtRef = useRef(0);
   const cleanupCallbacksRef = useRef({ onHoldRateEnd, onClearHud });
   cleanupCallbacksRef.current = { onHoldRateEnd, onClearHud };
 
@@ -158,10 +178,10 @@ export function PlayerGestureSurface({
   const stopHold = () => {
     const wasHold = holdRef.current.active;
     clearHoldTimers();
-    if (holdRef.current.active && holdRef.current.side === "right") {
+    if (holdRef.current.active && holdRef.current.action === "rate-forward") {
       onHoldRateEnd();
     }
-    holdRef.current = { active: false, side: "" };
+    holdRef.current = { active: false, side: "", action: "" };
     return wasHold;
   };
 
@@ -198,14 +218,25 @@ export function PlayerGestureSurface({
   useEffect(() => () => {
     // 清理延迟单击、长按和连续快退定时器，避免切线或卸载后继续修改播放器状态。
     if (clickRef.current.timer) window.clearTimeout(clickRef.current.timer);
+    clickRef.current = { count: 0, x: 0, lastDoubleAt: 0, lastDoubleZone: "" };
     clearHoldTimers();
-    if (holdRef.current.active && holdRef.current.side === "right") {
+    if (holdRef.current.active && holdRef.current.action === "rate-forward") {
       cleanupCallbacksRef.current.onHoldRateEnd();
     }
-    holdRef.current = { active: false, side: "" };
-    swipeRef.current.active = false;
+    holdRef.current = { active: false, side: "", action: "" };
+    swipeRef.current = {
+      ...swipeRef.current,
+      active: false,
+      mode: "none",
+      pointerId: -1,
+      seekSeconds: 0,
+      allowMouseDrag: false
+    };
+    cumulativeSeekRef.current = 0;
+    previewSeekAtRef.current = 0;
+    suppressClickRef.current = false;
     cleanupCallbacksRef.current.onClearHud?.();
-  }, []);
+  }, [sessionKey]);
 
   const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
     event.stopPropagation();
@@ -244,13 +275,15 @@ export function PlayerGestureSurface({
           if (!sameZone || zone !== state.lastDoubleZone) cumulativeSeekRef.current = 0;
           cumulativeSeekRef.current += seekStep;
           const totalDelta = cumulativeSeekRef.current;
-          const signed = zone === "left" ? -totalDelta : totalDelta;
-          onSeekBy(zone === "left" ? -seekStep : seekStep);
+          const direction = gestureSeekDirection(zone, gestureLayout);
+          const signed = direction * totalDelta;
+          onSeekBy(direction * seekStep);
           onShowHud({
             kind: zone === "left" ? "double-left" : "double-right",
             text: `${signed >= 0 ? "+" : ""}${signed}s`,
             zone,
-            percent: zone === "left" ? 30 : 70
+            percent: zone === "left" ? 30 : 70,
+            direction: direction < 0 ? "back" : "forward"
           }, 700);
           state.lastDoubleAt = now;
           state.lastDoubleZone = zone;
@@ -293,7 +326,7 @@ export function PlayerGestureSurface({
 
     const side = event.clientX < rect.left + rect.width / 2 ? "left" : "right";
     clearHoldTimers();
-    holdRef.current = { active: false, side };
+    holdRef.current = { active: false, side, action: "" };
     swipeRef.current = {
       active: false,
       mode: "none",
@@ -308,6 +341,7 @@ export function PlayerGestureSurface({
       seekSeconds: 0,
       allowMouseDrag: isMouse || isTouch
     };
+    previewSeekAtRef.current = 0;
 
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -315,21 +349,23 @@ export function PlayerGestureSurface({
       // 忽略
     }
 
-    // 长按：左侧连续快退，右侧临时倍速快进（主流长视频 App 交互）。
+    // 长按动作消费可持久化左右布局：标准为左退右进，镜像为左进右退。
     holdRef.current.delay = window.setTimeout(() => {
       if (swipeRef.current.active) return;
+      const action = gestureHoldAction(side, gestureLayout);
       holdRef.current.active = true;
+      holdRef.current.action = action;
       suppressClickRef.current = true;
-      if (side === "left") {
+      if (action === "rewind") {
         onSeekBy(-seekStep);
-        onShowHud({ kind: "seek-back", text: `长按快退 -${seekStep}s`, zone: "left", percent: 25 }, 900);
+        onShowHud({ kind: "seek-back", text: `长按快退 -${seekStep}s`, zone: side, percent: side === "left" ? 25 : 75, direction: "back" }, 900);
         holdRef.current.interval = window.setInterval(() => {
           onSeekBy(-seekStep);
-          onShowHud({ kind: "seek-back", text: `长按快退 -${seekStep}s`, zone: "left", percent: 25 }, 500);
+          onShowHud({ kind: "seek-back", text: `长按快退 -${seekStep}s`, zone: side, percent: side === "left" ? 25 : 75, direction: "back" }, 500);
         }, 480);
       } else {
         onHoldRateStart(holdRate);
-        onShowHud({ kind: "rate", text: `${holdRate}x 快进中`, percent: 100, zone: "right" }, 1500);
+        onShowHud({ kind: "rate", text: `${holdRate}x 快进中`, percent: 100, zone: side, direction: "forward" }, 1500);
       }
     }, 380);
   };
@@ -350,7 +386,7 @@ export function PlayerGestureSurface({
       const threshold = event.pointerType === "touch" ? 14 : 22;
       if (absX < threshold && absY < threshold) return;
       clearHoldTimers();
-      holdRef.current = { active: false, side: "" };
+      holdRef.current = { active: false, side: "", action: "" };
       swipe.active = true;
       suppressClickRef.current = true;
       if (absX >= absY * 1.05) {
@@ -362,17 +398,23 @@ export function PlayerGestureSurface({
     }
 
     if (swipe.mode === "seek") {
-      // 满宽约对应 90 秒；长视频时按时长再放宽上限。
-      const span = Math.max(90, Math.min(240, duration * 0.12 || 90));
-      const seekSeconds = Math.round((deltaX / Math.max(200, swipe.width)) * span);
+      // 镜像布局不参与横向滑动；左划回退、右划前进的映射保持不变。
+      const seekSeconds = horizontalScrubSeconds(deltaX, swipe.width, duration);
       swipe.seekSeconds = seekSeconds;
       const next = clamp(swipe.startTime + seekSeconds, 0, duration || swipe.startTime + seekSeconds);
+      const now = performance.now();
+      if (onSeekPreview && now - previewSeekAtRef.current >= 110) {
+        previewSeekAtRef.current = now;
+        onSeekPreview(next);
+      }
       onShowHud({
         kind: "seek-scrub",
         // 文案尽量短，避免中央大块遮挡画面
         text: `${seekSeconds >= 0 ? "+" : ""}${seekSeconds}s  ${formatDuration(next)}`,
         percent: duration ? percent(next, duration) : 50,
-        zone: seekSeconds < 0 ? "left" : "right"
+        zone: seekSeconds < 0 ? "left" : "right",
+        direction: seekSeconds < 0 ? "back" : "forward",
+        previewTime: next
       }, 700);
       return;
     }
@@ -491,10 +533,11 @@ export function PlayerGestureSurface({
 type GestureHudOverlayProps = {
   hud: GestureHudState;
   holdHint?: string;
+  previewVideo?: HTMLVideoElement | null;
 };
 
 /** 专业手势 HUD：紧凑中央提示 + 区域闪 + 侧边音量/亮度竖条（避免大块遮挡画面）。 */
-export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProps) {
+export function PlayerGestureHudOverlay({ hud, holdHint, previewVideo }: GestureHudOverlayProps) {
   if (holdHint) {
     return (
       <div className="pointer-events-none absolute inset-0 z-[26] flex items-center justify-center px-4">
@@ -521,6 +564,10 @@ export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProp
   );
   const barPercent = typeof hud.percent === "number" ? clamp(hud.percent, 0, 100) : 0;
   const isSeek = hud.kind === "seek-scrub" || hud.kind === "seek-back" || hud.kind === "seek-forward" || hud.kind === "double-left" || hud.kind === "double-right";
+  const seekBackward = hud.direction === "back"
+    || (!hud.direction && (hud.kind === "seek-back" || hud.kind === "double-left" || (hud.kind === "seek-scrub" && barPercent < 50)));
+  const seekForward = hud.direction === "forward"
+    || (!hud.direction && (hud.kind === "seek-forward" || hud.kind === "double-right" || (hud.kind === "seek-scrub" && barPercent >= 50)));
 
   return (
     <div className="pointer-events-none absolute inset-0 z-[26]">
@@ -555,18 +602,23 @@ export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProp
       {showCenter && (
         <div className="absolute inset-0 flex items-center justify-center px-6">
           {isSeek ? (
-            <div className="txzz-player-gesture-hud flex max-w-[min(14rem,72vw)] items-center gap-2 rounded-2xl bg-black/65 px-3 py-2 text-white shadow-lg ring-1 ring-white/12 backdrop-blur-sm">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12">
-                {(hud.kind === "seek-back" || hud.kind === "double-left" || (hud.kind === "seek-scrub" && barPercent < 50)) && <ChevronLeft size={16} />}
-                {(hud.kind === "seek-forward" || hud.kind === "double-right" || (hud.kind === "seek-scrub" && barPercent >= 50)) && <ChevronRight size={16} />}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[11px] font-semibold leading-tight tracking-wide">{hud.text}</div>
-                {typeof hud.percent === "number" && (
-                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-white/18">
-                    <div className="h-full rounded-full bg-emerald-300 transition-all duration-75" style={{ width: `${barPercent}%` }} />
-                  </div>
-                )}
+            <div className={`txzz-player-gesture-hud flex max-w-[min(14rem,72vw)] gap-2 rounded-2xl bg-black/65 text-white shadow-lg ring-1 ring-white/12 backdrop-blur-sm ${hud.kind === "seek-scrub" ? "flex-col p-2" : "items-center px-3 py-2"}`}>
+              {hud.kind === "seek-scrub" && typeof hud.previewTime === "number" && (
+                <PlayerScrubPreview video={previewVideo} time={hud.previewTime} />
+              )}
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12">
+                  {seekBackward && <ChevronLeft size={16} />}
+                  {seekForward && <ChevronRight size={16} />}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[11px] font-semibold leading-tight tracking-wide">{hud.text}</div>
+                  {typeof hud.percent === "number" && (
+                    <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-white/18">
+                      <div className="h-full rounded-full bg-emerald-300 transition-all duration-75" style={{ width: `${barPercent}%` }} />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ) : (

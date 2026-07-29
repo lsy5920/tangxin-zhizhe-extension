@@ -9,8 +9,9 @@ import type {
 } from "../types";
 import { APP_BUILD, APP_VERSION, APP_VERSION_LABEL } from "../constants";
 import { formatRelativeTime } from "../helpers";
+import { updateCore } from "./updateCore";
 
-/** 升级系统 v7 的界面状态，由后台阶段字段直接推导。 */
+/** 升级系统 v8 的界面状态，由后台阶段字段和本地版本指纹共同推导。 */
 export type UpdateUiStatus =
   | "idle"
   | "checking"
@@ -118,9 +119,20 @@ export function deriveUpdateStatus(update?: RepositoryUpdateState | null): Updat
   if (update.downloadPhase === "submitted") return "submitted";
   if (update.downloadPhase === "failed") return "download-error";
   if (checkFailed || update.ok === false) return "error";
-  if (update.updateAvailable) return "available";
-  if (["cached", "success"].includes(String(update.checkPhase || "")) || update.status === "latest") return "latest";
+  if (isUpdateAvailableForCurrentBuild(update)) return "available";
+  if (["cached", "success"].includes(String(update.checkPhase || "")) || update.status === "latest" || update.ok === true) return "latest";
   return "idle";
+}
+
+/**
+ * 后台是更新判断的权威来源，但界面仍按当前打包常量复核一次。
+ * 这是覆盖升级后的最后一道防线：旧缓存即使残留 updateAvailable=true，
+ * 只要远端 version/build 没有高于当前安装，就不能点亮徽标或自动弹窗。
+ */
+export function isUpdateAvailableForCurrentBuild(update?: RepositoryUpdateState | null) {
+  if (!update?.updateAvailable) return false;
+  const remote = update.updateManifest || update.remote || {};
+  return updateCore.shouldUpdate(remote, APP_VERSION, APP_BUILD);
 }
 
 const STATUS_LABEL: Record<UpdateUiStatus, string> = {
@@ -307,7 +319,7 @@ export function updateAttemptPhaseLabel(phase?: string) {
 
 export function buildUpdateCopyText(vm: UpdateViewModel) {
   return [
-    "糖心志者 · 升级系统 v7 报告",
+    "糖心志者 · 升级系统 v8 报告",
     `状态：${vm.statusLabel}`,
     `检测阶段：${updateCheckPhaseLabel(vm.checkPhase)}（${vm.checkPhase}）`,
     `下载阶段：${updateDownloadPhaseLabel(vm.downloadPhase)}（${vm.downloadPhase}）`,

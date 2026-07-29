@@ -25,4 +25,16 @@ describe("Shadow DOM 样式一致性", () => {
       expect(candyUiStyles).toContain(marker);
     }
   });
+
+  it("为竖屏舞台和三分类设置提供容器级响应规则", () => {
+    expect(candyUiStyles).toMatch(/\.txzz-player-shell--portrait:not\([\s\S]*height:\s*min\(60dvh,\s*40rem\)/);
+    expect(candyUiStyles).toMatch(/\.txzz-player-menu-tabs\s*\{[\s\S]*repeat\(3,/);
+    expect(candyUiStyles).toContain("@container (min-width: 500px)");
+  });
+
+  it("保留跟随进度点的实时小画面及两端收边规则", () => {
+    expect(candyUiStyles).toContain(".txzz-player-progress-preview");
+    expect(candyUiStyles).toContain('.txzz-player-progress-preview[data-align="start"]');
+    expect(candyUiStyles).toContain('.txzz-player-progress-preview[data-align="end"]');
+  });
 });

@@ -1023,6 +1023,28 @@
   max-width: min(16rem, 78vw) !important;
 }
 
+.txzz-player-scrub-preview {
+  width: min(11rem, 64vw);
+  aspect-ratio: 16 / 9;
+}
+
+.txzz-player-progress-preview {
+  transform: translateX(-50%);
+  transform-origin: bottom center;
+  animation: txzz-gesture-pop 0.14s ease-out;
+}
+
+/* 进度条两端改用边缘对齐，小画面仍跟随真实进度点，且不溢出播放器。 */
+.txzz-player-progress-preview[data-align="start"] {
+  transform: translateX(0);
+  transform-origin: bottom left;
+}
+
+.txzz-player-progress-preview[data-align="end"] {
+  transform: translateX(-100%);
+  transform-origin: bottom right;
+}
+
 .txzz-gesture-side-fill {
   width: 100%;
   border-radius: 999px;
@@ -1035,6 +1057,9 @@
   }
   .txzz-gesture-side-bar {
     padding: 8px 8px;
+  }
+  .txzz-player-scrub-preview {
+    width: min(8.5rem, 42vw);
   }
 }
 
@@ -1289,6 +1314,30 @@
   overflow: hidden;
   border-radius: 0.75rem;
   isolation: isolate;
+}
+
+/*
+ * 内嵌舞台使用“可视区预算”而不是直接套用媒体原始比例。
+ * 9:16 片源继续由 video contain 完整显示，但黑色影院画布只占当前视口的合理高度，
+ * 避免桌面宽列把 9:16 外壳撑到一千像素以上，也让首屏始终能看到主控制栏。
+ */
+.txzz-player-shell--landscape:not(.txzz-player-fullscreen-shell) {
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.txzz-player-shell--portrait:not(.txzz-player-fullscreen-shell) {
+  width: 100%;
+  max-width: 100%;
+  height: min(60dvh, 40rem);
+  aspect-ratio: auto;
+}
+
+@media (max-width: 639px) {
+  .txzz-player-shell--portrait:not(.txzz-player-fullscreen-shell) {
+    height: min(50dvh, 30rem);
+  }
 }
 
 .txzz-player-fullscreen-shell {
@@ -1554,11 +1603,13 @@
     font-size: 10px !important;
   }
 
-  /* 横屏播放器区域尽量吃满高度，减少上下黑边失控。 */
+  /* 矮横屏必须把页头、播放器和主控同时纳入一屏预算。 */
   .txzz-player-shell:not(.txzz-player-fullscreen-shell) {
     aspect-ratio: auto !important;
-    min-height: min(56vh, 280px) !important;
-    max-height: min(72vh, 360px) !important;
+    width: 100% !important;
+    height: min(50dvh, 16.5rem) !important;
+    min-height: 0 !important;
+    max-height: min(50dvh, 16.5rem) !important;
   }
 }
 
@@ -1575,7 +1626,7 @@
   backdrop-filter: blur(1px);
 }
 
-/* 四分类播放器设置：随播放器容器高度收缩，任何尺寸下顶部和关闭按钮都不会被裁掉。 */
+/* 三分类播放器设置：随播放器容器高度收缩，任何尺寸下顶部和关闭按钮都不会被裁掉。 */
 .txzz-player-menu-sheet {
   position: absolute;
   right: 0;
@@ -1583,8 +1634,8 @@
   left: 0;
   z-index: 40;
   display: flex;
-  width: min(34rem, 100%);
-  max-height: min(22rem, calc(100cqh - 1rem));
+  width: min(38rem, 100%);
+  max-height: min(26rem, calc(100cqh - 0.5rem));
   min-height: 0;
   margin: 0 auto;
   flex-direction: column;
@@ -1603,6 +1654,39 @@
   flex: 1;
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+
+.txzz-player-menu-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.txzz-player-line-grid,
+.txzz-player-tool-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.txzz-player-quality-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.txzz-player-menu-dual {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* 组件内部按播放器宽度响应，避免宿主桌面很宽、竖屏播放器却很窄时误套桌面列数。 */
+@container (min-width: 500px) {
+  .txzz-player-line-grid,
+  .txzz-player-tool-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .txzz-player-quality-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .txzz-player-menu-dual {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .txzz-player-menu-body::-webkit-scrollbar {
@@ -1639,7 +1723,7 @@
   }
 }
 
-@container (max-height: 320px) {
+@container (max-height: 380px) {
   .txzz-player-menu-sheet > footer {
     display: none;
   }
@@ -1737,7 +1821,7 @@
   }
 
   .txzz-player-menu-sheet {
-    max-height: min(18rem, calc(100cqh - 0.75rem));
+    max-height: calc(100cqh - 0.25rem);
   }
 
   .txzz-player-menu-section {

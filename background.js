@@ -1,11 +1,13 @@
 "use strict";
 
-importScripts("state_mutation_core.js", "experience_core.js");
+importScripts("state_mutation_core.js", "experience_core.js", "update_core.js");
 
 const stateMutationCore = globalThis.TxzzStateMutationCore;
 const experienceCore = globalThis.TxzzExperienceCore;
+const updateCore = globalThis.TxzzUpdateCore;
 if (!stateMutationCore) throw new Error("状态变更核心未加载");
 if (!experienceCore) throw new Error("体验状态核心未加载");
+if (!updateCore) throw new Error("更新决策核心未加载");
 
 const EXPERIENCE_STORAGE_KEY = "txzzExperienceV1";
 const DOWNLOAD_SCHEDULER_ALARM = "txzz-download-scheduler";
@@ -21,8 +23,8 @@ const API_CONFIG = {
 };
 
 const STORAGE_SCHEMA_VERSION = "2026-07-27-screening-v3-completeness";
-// v7：签名清单、完整 CRX3 字节校验、固定扩展身份与串行状态写入。
-const UPDATE_STATE_SCHEMA_VERSION = "2026-07-10-update-system-v7";
+// v8：在 v7 签名信任链上增加本地版本指纹，禁止升级后复用旧的“有更新”缓存。
+const UPDATE_STATE_SCHEMA_VERSION = "2026-07-29-update-system-v8-local-fingerprint";
 const UPDATE_MANIFEST_SCHEMA_VERSION = 3;
 const EXPECTED_EXTENSION_ID = "ddefadnhgebdclpkabeobjidjllkdkhm";
 const UPDATE_SIGNATURE_ALGORITHM = "RSASSA-PKCS1-v1_5-SHA-256";
@@ -59,7 +61,7 @@ const REPOSITORY_CONFIG = {
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   /*
-    更新清单多源策略（升级系统 v7）：
+    更新清单多源策略（升级系统 v8）：
     1) 并发请求全部候选源，不要「第一个成功就返回」——jsDelivr @main 常强缓存旧版。
     2) 在所有成功响应中，按 version → build 取最新；同版本优先 GitHub raw / gitmirror。
     3) 国内 raw.githubusercontent 可能失败，gitmirror / jsDelivr 作兜底。
@@ -108,7 +110,7 @@ let accountPatrolInFlight = null;
 let persistedDownloadsReconciled = false;
 let persistedDownloadRecoveryInFlight = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-29-1929";
+const LOCAL_UPDATE_BUILD = "2026-07-29-2030";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -3300,22 +3302,8 @@ async function openDownloadFolder() {
   }
 }
 
-function parseVersionParts(version = "") {
-  return String(version || "")
-    .split(".")
-    .map((item) => Number.parseInt(item.replace(/[^\d]/g, ""), 10))
-    .map((item) => Number.isFinite(item) ? item : 0);
-}
-
 function compareVersions(a = "", b = "") {
-  const av = parseVersionParts(a);
-  const bv = parseVersionParts(b);
-  const len = Math.max(av.length, bv.length, 3);
-  for (let i = 0; i < len; i += 1) {
-    const diff = (av[i] || 0) - (bv[i] || 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
+  return updateCore.compareVersions(a, b);
 }
 
 function localExtensionVersion() {
@@ -3475,25 +3463,8 @@ function appendUrlCacheBuster(url = "", key = "txzz_download") {
   }
 }
 
-function parseBuildStamp(value = "") {
-  const digits = String(value || "").replace(/[^\d]/g, "");
-  if (digits.length < 12) return null;
-  const compact = digits.slice(0, 12);
-  const year = Number(compact.slice(0, 4));
-  const month = Number(compact.slice(4, 6));
-  const day = Number(compact.slice(6, 8));
-  const hour = Number(compact.slice(8, 10));
-  const minute = Number(compact.slice(10, 12));
-  if (![year, month, day, hour, minute].every(Number.isFinite)) return null;
-  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
-  return Date.UTC(year, month - 1, day, hour, minute);
-}
-
 function compareBuilds(a = "", b = "") {
-  const at = parseBuildStamp(a);
-  const bt = parseBuildStamp(b);
-  if (Number.isFinite(at) && Number.isFinite(bt)) return at - bt;
-  return String(a || "").localeCompare(String(b || ""), "zh-CN", { numeric: true, sensitivity: "base" });
+  return updateCore.compareBuilds(a, b);
 }
 
 function normalizeRemoteUpdateManifest(raw = {}) {
@@ -3890,10 +3861,10 @@ function buildRepositoryUpdateResult(remoteManifest = {}, options = {}) {
     probe,
     updateSystem: {
       schemaVersion: UPDATE_STATE_SCHEMA_VERSION,
-      engine: "upgrade-system-v7",
+      engine: "upgrade-system-v8",
       cacheTtlMs: REPOSITORY_CONFIG.checkIntervalMs,
       ignoredLegacyCache: Boolean(options.ignoredLegacyCache),
-      cachePolicy: "升级系统 v7：自动检测复用短时成功缓存，手动检测实时绕过；相同调用契约跨标签共享任务。",
+      cachePolicy: "升级系统 v8：成功缓存绑定本地版本与构建指纹；自动检测复用同版本短时缓存，手动检测实时绕过。",
       downloadPolicy: "固定公钥验证清单；完整下载同一份 CRX3 后校验大小、SHA-256、扩展 ID 与包签名，再提交该内存字节。",
       packageFormat: REPOSITORY_CONFIG.packageFormat || "crx",
       mirrorCount: (REPOSITORY_CONFIG.updateManifestUrls || []).length
@@ -3954,7 +3925,8 @@ async function fetchOneUpdateManifest(url, timeoutMs = REPOSITORY_CONFIG.timeout
   await verifySignedUpdateManifest(parsed);
   const manifest = normalizeRemoteUpdateManifest(parsed);
   if (!validExtensionVersion(manifest.version)) throw new Error("version 格式无效");
-  if (!Number.isFinite(parseBuildStamp(manifest.build))) throw new Error("build 格式无效");
+  // build 解析由 update_core.js 统一提供，避免 Service Worker 误读取未定义的全局函数。
+  if (!Number.isFinite(updateCore.parseBuildStamp(manifest.build))) throw new Error("build 格式无效");
   if (manifest.packageFormat !== "crx") throw new Error("packageFormat 必须为 crx");
   if (manifest.extensionId !== EXPECTED_EXTENSION_ID) throw new Error("extensionId 与正式扩展不一致");
   if (!Number.isSafeInteger(manifest.packageSize) || manifest.packageSize <= 0 || manifest.packageSize > REPOSITORY_CONFIG.maxPackageBytes) {
@@ -3979,7 +3951,7 @@ async function fetchOneUpdateManifest(url, timeoutMs = REPOSITORY_CONFIG.timeout
 }
 
 /**
- * 升级系统 v7 核心：并发验证全部签名清单源，取 version/build 最新的一份。
+ * 升级系统 v8 核心：并发验证全部签名清单源，取 version/build 最新的一份，并隔离旧本地版本缓存。
  * 彻底解决「jsDelivr 返回 3.5.1、raw 已是 3.5.3，却显示云端旧版」的问题。
  */
 async function fetchRemoteUpdateManifest(options = {}) {
@@ -4045,18 +4017,7 @@ async function fetchRemoteUpdateManifest(options = {}) {
 }
 
 function shouldUpdateByManifest(remote = {}, localVersion = localExtensionVersion(), localBuild = LOCAL_UPDATE_BUILD) {
-  const remoteVersion = String(remote.version || "").trim();
-  const remoteBuild = String(remote.build || "").trim();
-  const localVer = String(localVersion || "").trim();
-  const localBld = String(localBuild || "").trim();
-  if (!remoteVersion) return false;
-  const versionDiff = compareVersions(remoteVersion, localVer);
-  if (versionDiff > 0) return true;
-  if (versionDiff < 0) return false;
-  // 版本号相同：构建号更新则提示升级；构建号为空时只要远程有记录也提示。
-  if (!remoteBuild) return false;
-  if (!localBld) return true;
-  return compareBuilds(remoteBuild, localBld) > 0;
+  return updateCore.shouldUpdate(remote, localVersion, localBuild);
 }
 
 async function readRepositoryUpdateState() {
@@ -4171,7 +4132,7 @@ async function persistRepositoryUpdateError(error, options, context) {
     updateManifest: null,
     updateSystem: {
       schemaVersion: UPDATE_STATE_SCHEMA_VERSION,
-      engine: "upgrade-system-v7",
+      engine: "upgrade-system-v8",
       cacheTtlMs: REPOSITORY_CONFIG.checkIntervalMs,
       ignoredLegacyCache: Boolean(context.ignoredLegacyState),
       cachePolicy: "失败结果不进入成功缓存，可立即实时重试。",
@@ -4204,17 +4165,23 @@ async function performRepositoryUpdateCheck(options = {}) {
   const updateState = context.state;
   const now = Date.now();
   const cacheAgeMs = Math.max(0, now - Number(updateState.lastCheckedAt || 0));
-  const cacheValid = Boolean(
-    !options.force
-    && !options.realtime
-    && updateState.lastUpdateResult?.ok
-    && updateState.lastCheckedAt
-    && cacheAgeMs < REPOSITORY_CONFIG.checkIntervalMs
-  );
+  const currentLocalVersion = localExtensionVersion();
+  const cacheValid = updateCore.canReuseSuccessCache({
+    cachedResult: updateState.lastUpdateResult,
+    lastCheckedAt: updateState.lastCheckedAt,
+    now,
+    ttlMs: REPOSITORY_CONFIG.checkIntervalMs,
+    localVersion: currentLocalVersion,
+    localBuild: LOCAL_UPDATE_BUILD,
+    force: Boolean(options.force),
+    realtime: Boolean(options.realtime)
+  });
   if (cacheValid) {
     const cached = updateState.lastUpdateResult;
+    // 即使存储被旧代码写出矛盾字段，缓存返回前也重新执行一次同源版本决策。
+    const updateAvailable = shouldUpdateByManifest(cached.updateManifest || cached.remote || {}, currentLocalVersion, LOCAL_UPDATE_BUILD);
     const updateId = String(cached.remote?.id || "");
-    const reminderDismissed = Boolean(cached.updateAvailable && updateId && updateState.dismissedId === updateId);
+    const reminderDismissed = Boolean(updateAvailable && updateId && updateState.dismissedId === updateId);
     return {
       ...cached,
       ok: true,
@@ -4224,7 +4191,9 @@ async function performRepositoryUpdateCheck(options = {}) {
       cacheHit: true,
       cacheAgeMs,
       cacheServedAt: nowIso(),
-      shouldNotify: Boolean(cached.updateAvailable && !reminderDismissed),
+      status: updateAvailable ? "available" : "latest",
+      updateAvailable,
+      shouldNotify: Boolean(updateAvailable && !reminderDismissed),
       reminderDismissed,
       updateState
     };
@@ -4276,7 +4245,7 @@ async function performRepositoryUpdateCheck(options = {}) {
 async function checkRepositoryUpdate(options = {}) {
   const contract = options.manifestOnly
     ? "signed-manifest"
-    : (options.force || options.realtime ? "realtime-result" : "automatic-result");
+    : `${options.force || options.realtime ? "realtime-result" : "automatic-result"}:${localExtensionVersion()}/${LOCAL_UPDATE_BUILD}`;
   const existing = repositoryUpdateCheckTasks.get(contract);
   if (existing) return existing;
   const task = performRepositoryUpdateCheck(options);

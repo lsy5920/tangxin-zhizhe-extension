@@ -1,5 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { formatDuration } from "../../helpers";
+import { PlayerScrubPreview } from "./PlayerScrubPreview";
 
 type CtrlButtonProps = {
   title: string;
@@ -102,6 +103,7 @@ type ProgressProps = {
   bufferedPercent: number;
   progressPercent: number;
   previewTime: number | null;
+  previewVideo?: HTMLVideoElement | null;
   dragging: boolean;
   fullscreen: boolean;
   seekStep: number;
@@ -116,12 +118,19 @@ type ProgressProps = {
   onKeyboardSeek: (seconds: number) => void;
 };
 
+export function progressPreviewAlignment(percent: number): "start" | "center" | "end" {
+  if (percent <= 15) return "start";
+  if (percent >= 85) return "end";
+  return "center";
+}
+
 export function PlayerProgressBar({
   duration,
   currentTime,
   bufferedPercent,
   progressPercent,
   previewTime,
+  previewVideo,
   dragging,
   fullscreen,
   seekStep,
@@ -211,12 +220,15 @@ export function PlayerProgressBar({
           dragging ? "h-3.5" : fullscreen ? "h-3 hover:h-3.5" : "h-2.5 hover:h-3"
         }`}
       >
-        {dragging && previewTime !== null && duration > 0 && (
+        {previewTime !== null && duration > 0 && (
           <div
-            className="pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-black/90 px-2.5 py-1 text-[10px] font-semibold text-white shadow-xl ring-1 ring-white/12"
+            className="pointer-events-none absolute bottom-full z-[7] mb-3"
             style={{ left: `${shownPercent}%` }}
           >
-            {formatDuration(previewTime)}
+            <div className="txzz-player-progress-preview" data-align={progressPreviewAlignment(shownPercent)}>
+              <PlayerScrubPreview video={previewVideo} time={previewTime} />
+            </div>
+            <span className="absolute -bottom-2 left-0 h-2 w-px bg-sky-300/90 shadow-[0_0_6px_rgba(125,211,252,.75)]" aria-hidden="true" />
           </div>
         )}
         <div className="absolute inset-y-0 left-0 overflow-hidden rounded-full bg-white/20" style={{ width: `${bufferedPercent}%` }} />

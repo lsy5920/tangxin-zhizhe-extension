@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { CtrlButton, PlayerProgressBar } from "./PlayerControls";
 import { PlayerMenuSheet, type PlayerMorePanelKey, type PlayerPreviewOption } from "./PlayerMenuSheet";
+import type { PlayerGestureLayout } from "../../playback/gestureLayout";
 
 export { PlayerContextMenu, PlayerOverlays, PlayerTopBar } from "./PlayerStatusOverlays";
 export type { PlayerMorePanelKey, PlayerPreviewOption } from "./PlayerMenuSheet";
@@ -33,6 +34,7 @@ export type PlayerControlBarProps = {
   progressPercent: number;
   markers?: Array<{ id: string; time: number; label?: string }>;
   progressPreviewTime: number | null;
+  previewVideo?: HTMLVideoElement | null;
   isDraggingProgress: boolean;
   volume: number;
   muted: boolean;
@@ -55,14 +57,11 @@ export type PlayerControlBarProps = {
   seekStepOptions: number[];
   qualities: { level: number; label: string }[];
   qualityLevel: number;
-  canBackup: boolean;
-  isBackupActive: boolean;
-  hasMovieId: boolean;
   fitMode: "auto" | "wide" | "vertical";
-  fillMode: "contain" | "cover" | "fill";
   orientationMode: "auto" | "landscape" | "portrait";
   orientationRequested: boolean;
   networkMode: "data-saver" | "balanced" | "high-quality";
+  gestureLayout: PlayerGestureLayout;
   onSeekStart: (ratio: number, event: ReactPointerEvent<HTMLDivElement>) => void;
   onSeekMove: (ratio: number) => void;
   onSeekEnd: (ratio: number) => void;
@@ -87,40 +86,37 @@ export type PlayerControlBarProps = {
   onCycleFit: () => void;
   onCycleFill: () => void;
   onCycleOrientation: () => void;
-  onSwitchBackup: () => void;
   onScreenshot: () => void;
   onReload: () => void;
   onPip: () => void;
   onRecenter: () => void;
-  onCopyLink: () => void;
-  onOpenLink: () => void;
-  onDownload: () => void;
   onCopyDiagnostic: () => void;
   onBrightnessChange: (value: number) => void;
   onFocusWithinChange?: (focused: boolean) => void;
   onSetNetworkMode: (mode: "data-saver" | "balanced" | "high-quality") => void;
+  onSetGestureLayout: (layout: PlayerGestureLayout) => void;
   compact?: boolean;
 };
 
 /**
  * 播放器悬浮控制层。
- * 高频动作固定在主控栏，全部低频能力进入四分类设置面板，避免多套弹窗互相覆盖。
+ * 高频动作固定在主控栏，低频能力进入片源、观看、工具三类设置，避免重复入口互相覆盖。
  */
 export function PlayerControlBar(props: PlayerControlBarProps) {
   const {
     visible, locked, disabled, fullscreen, controlsTone, iconSize, buttonSize, compact = false,
-    paused, currentTime, duration, bufferedPercent, progressPercent, markers, progressPreviewTime,
+    paused, currentTime, duration, bufferedPercent, progressPercent, markers, progressPreviewTime, previewVideo,
     isDraggingProgress, volume, muted, rate, seekStep, qualityLabel, fillLabel, fitLabel,
     orientationLabel, brightness, moreOpen, morePanel, previewOptions, activePreviewKey,
     previewSourceLabel, playerStatus, currentLineLabel, fullscreenDiagnosticLabel,
-    rateOptions, seekStepOptions, qualities, qualityLevel, canBackup, isBackupActive,
-    hasMovieId, fitMode, orientationMode, orientationRequested, networkMode, onSeekStart, onSeekMove,
+    rateOptions, seekStepOptions, qualities, qualityLevel,
+    fitMode, orientationMode, orientationRequested, networkMode, gestureLayout, onSeekStart, onSeekMove,
     onSeekEnd, onSeekCancel, onKeyboardSeek, onMarkerSelect, onTogglePlay, onSeekBack, onSeekForward,
     onToggleMore, onCloseMore, onToggleLock, onToggleFullscreen, onToggleMute,
     onVolumeChange, onCycleRate, onSetRate, onSetSeekStep, onSetMorePanel, onSelectPreview,
-    onSetQuality, onCycleFit, onCycleFill, onCycleOrientation, onSwitchBackup, onScreenshot,
-    onReload, onPip, onRecenter, onCopyLink, onOpenLink, onDownload, onCopyDiagnostic,
-    onBrightnessChange, onFocusWithinChange, onSetNetworkMode
+    onSetQuality, onCycleFit, onCycleFill, onCycleOrientation, onScreenshot,
+    onReload, onPip, onRecenter, onCopyDiagnostic,
+    onBrightnessChange, onFocusWithinChange, onSetNetworkMode, onSetGestureLayout
   } = props;
   const volumePercent = muted ? 0 : Math.round(volume * 100);
   const controlsInactive = !visible || locked;
@@ -161,13 +157,11 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
         fitLabel={fitLabel}
         orientationLabel={orientationLabel}
         fullscreenDiagnosticLabel={fullscreenDiagnosticLabel}
-        canBackup={canBackup}
-        isBackupActive={isBackupActive}
-        hasMovieId={hasMovieId}
         fitMode={fitMode}
         orientationMode={orientationMode}
         orientationRequested={orientationRequested}
         networkMode={networkMode}
+        gestureLayout={gestureLayout}
         onClose={onCloseMore}
         onSetPanel={onSetMorePanel}
         onSelectPreview={onSelectPreview}
@@ -177,19 +171,15 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
         onCycleFit={onCycleFit}
         onCycleFill={onCycleFill}
         onCycleOrientation={onCycleOrientation}
-        onToggleMute={onToggleMute}
         onVolumeChange={onVolumeChange}
         onBrightnessChange={onBrightnessChange}
         onScreenshot={onScreenshot}
         onReload={onReload}
         onPip={onPip}
         onRecenter={onRecenter}
-        onCopyLink={onCopyLink}
-        onOpenLink={onOpenLink}
-        onDownload={onDownload}
         onDiagnostic={onCopyDiagnostic}
-        onSwitchBackup={onSwitchBackup}
         onSetNetworkMode={onSetNetworkMode}
+        onSetGestureLayout={onSetGestureLayout}
       />
 
       <PlayerProgressBar
@@ -198,6 +188,7 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
         bufferedPercent={bufferedPercent}
         progressPercent={progressPercent}
         previewTime={progressPreviewTime}
+        previewVideo={previewVideo}
         dragging={isDraggingProgress}
         fullscreen={fullscreen || compact}
         seekStep={seekStep}
