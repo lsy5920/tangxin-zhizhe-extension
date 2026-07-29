@@ -172,6 +172,8 @@
   background: linear-gradient(145deg, #fffefd 0%, #fff0f4 72%, #ffdce7 100%);
   color: #6b4056;
   box-shadow: inset 0 -4px 8px rgba(244, 141, 169, 0.11), 0 8px 20px rgba(158, 81, 111, 0.13);
+  transform-origin: 50% 100%;
+  animation: txzz-companion-breathe 3.6s ease-in-out infinite;
 }
 
 .txzz-brand-companion-eyes {
@@ -196,11 +198,13 @@
 .txzz-brand-companion-ear--left {
   left: 10px;
   transform: rotate(-13deg);
+  animation: txzz-companion-ear-left 5.4s ease-in-out infinite;
 }
 
 .txzz-brand-companion-ear--right {
   right: 10px;
   transform: rotate(13deg);
+  animation: txzz-companion-ear-right 5.4s ease-in-out infinite;
 }
 
 .txzz-brand-companion-cheek {
@@ -227,6 +231,37 @@
   z-index: 3;
   color: #d79635;
   filter: drop-shadow(0 1px 0 #fff);
+  transform-origin: center;
+  animation: txzz-companion-sparkle 2.8s ease-in-out infinite;
+}
+
+/* 插画完全由本地 CSS 绘制；轻量呼吸与闪光让预览和正式扩展共享同一动效。 */
+@keyframes txzz-companion-breathe {
+  0%,
+  100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2px) scale(1.015); }
+}
+
+@keyframes txzz-companion-ear-left {
+  0%,
+  82%,
+  100% { transform: rotate(-13deg); }
+  88% { transform: rotate(-19deg); }
+  94% { transform: rotate(-10deg); }
+}
+
+@keyframes txzz-companion-ear-right {
+  0%,
+  82%,
+  100% { transform: rotate(13deg); }
+  88% { transform: rotate(19deg); }
+  94% { transform: rotate(10deg); }
+}
+
+@keyframes txzz-companion-sparkle {
+  0%,
+  100% { opacity: 0.58; transform: rotate(-8deg) scale(0.82); }
+  45% { opacity: 1; transform: rotate(8deg) scale(1.08); }
 }
 
 .txzz-brand-companion--compact {
@@ -369,6 +404,26 @@
 
 .txzz-page {
   min-height: 100%;
+}
+
+/* 统计卡装饰改为真实 DOM，不再依赖构建器生成 after 工具类。 */
+.txzz-stat-ornament {
+  position: absolute;
+  right: -8px;
+  top: -8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--txzz-stat-accent, #9a88e3);
+  opacity: 0.18;
+  pointer-events: none;
+  animation: txzz-stat-float 4.2s ease-in-out infinite;
+}
+
+@keyframes txzz-stat-float {
+  0%,
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-2px, 2px, 0) scale(1.08); }
 }
 
 /* 宿主站点可能重置 button 外观，这里只恢复浏览器基础行为，具体视觉交给组件。 */
@@ -572,6 +627,13 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .txzz-brand-companion-face,
+  .txzz-brand-companion-ear,
+  .txzz-brand-companion-sparkle,
+  .txzz-stat-ornament {
+    animation: none !important;
   }
 }
 

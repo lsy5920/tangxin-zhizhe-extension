@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   ArrowRight,
+  Bell,
   CheckCircle,
   Cloud,
   Copy,
@@ -12,6 +13,7 @@ import {
   Sparkles,
   TrendingUp,
   Users,
+  X,
   Zap
 } from "lucide-react";
 import type { BridgeState, Page } from "../types";
@@ -24,6 +26,7 @@ import {
   flowItemText,
   formatRelativeTime,
   latestFullDetail,
+  isRunningDownloadTask,
   selectedAccount,
   shortTime
 } from "../helpers";
@@ -60,11 +63,12 @@ export function OverviewPage({ state, onAction, onPage }: Props) {
   const latest = latestFullDetail(state);
   const selected = selectedAccount(state);
   const flow = (state.flow || []).slice(-7).reverse();
-  const currentTask = tasks.find((task) => ["queued", "playlist", "segments", "segment", "ready"].includes(String(task.stage || ""))) || tasks[0];
+  const currentTask = tasks.find(isRunningDownloadTask);
   const nickname = state.session?.nickname || "朋友";
   const remoteReady = Boolean(state.remote?.lastSyncAt && !state.remote?.lastError);
   const healthyCount = [state.displayPatchApplied, state.accountPool?.length, state.session?.hasToken, latest]
     .filter(Boolean).length;
+  const alerts = [...(state.experience?.alerts || [])].filter((item) => !item.readAt).reverse();
 
   const checklist: ChecklistItem[] = [
     {
@@ -146,6 +150,15 @@ export function OverviewPage({ state, onAction, onPage }: Props) {
           { label: stats.running ? "正在收纳" : "一切清爽", value: stats.running, tone: stats.running ? "sky" : "emerald", onClick: () => onPage("downloads") }
         ]}
       />
+
+      <SectionCard title="待处理事项" icon={Bell} hint="下载、空间和账号自动化产生的本地提醒" action={<div className="flex items-center gap-2"><Pill className={alerts.length ? "bg-danger-50 text-danger-600" : "bg-success-50 text-success-600"}>{alerts.length ? `${alerts.length} 条未读` : "全部清爽"}</Pill>{alerts.length > 0 && <SoftButton size="xs" variant="ghost" onClick={() => onAction("clear-experience-alerts")}>全部清除</SoftButton>}</div>}>
+        {alerts.length ? <div className="space-y-2">{alerts.slice(0, 5).map((alert) => (
+          <div key={alert.id} className={`flex items-start gap-3 rounded-xl border p-3 ${alert.level === "error" ? "border-danger-100 bg-danger-50/70" : alert.level === "warning" ? "border-warning-100 bg-warning-50/70" : "border-info-100 bg-info-50/60"}`}>
+            <button type="button" onClick={() => onPage(alert.category === "account" ? "accounts" : alert.category === "download" || alert.category === "storage" ? "downloads" : "overview")} className="min-w-0 flex-1 text-left"><strong className="block text-[11px] text-slate-800">{alert.title}{Number(alert.count || 1) > 1 ? `（${alert.count} 次）` : ""}</strong><span className="mt-1 block break-words text-[10px] leading-5 text-slate-500">{alert.detail}</span></button>
+            <button type="button" onClick={() => onAction("mark-experience-alert", { alertId: alert.id })} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-slate-400 shadow-sm" aria-label={`将“${alert.title}”标为已读`}><X size={13} /></button>
+          </div>
+        ))}</div> : <p className="rounded-xl bg-success-50 px-4 py-5 text-center text-[11px] font-semibold text-success-600">糖糖没有发现需要你处理的事情</p>}
+      </SectionCard>
 
       <div className="grid items-start gap-4 lg:grid-cols-[1.12fr_0.88fr]">
         <div className="space-y-4">

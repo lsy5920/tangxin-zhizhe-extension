@@ -31,6 +31,7 @@ export type PlayerControlBarProps = {
   duration: number;
   bufferedPercent: number;
   progressPercent: number;
+  markers?: Array<{ id: string; time: number; label?: string }>;
   progressPreviewTime: number | null;
   isDraggingProgress: boolean;
   volume: number;
@@ -67,6 +68,7 @@ export type PlayerControlBarProps = {
   onSeekEnd: (ratio: number) => void;
   onSeekCancel: () => void;
   onKeyboardSeek: (seconds: number) => void;
+  onMarkerSelect?: (id: string, time: number) => void;
   onTogglePlay: () => void;
   onSeekBack: () => void;
   onSeekForward: () => void;
@@ -107,13 +109,13 @@ export type PlayerControlBarProps = {
 export function PlayerControlBar(props: PlayerControlBarProps) {
   const {
     visible, locked, disabled, fullscreen, controlsTone, iconSize, buttonSize, compact = false,
-    paused, currentTime, duration, bufferedPercent, progressPercent, progressPreviewTime,
+    paused, currentTime, duration, bufferedPercent, progressPercent, markers, progressPreviewTime,
     isDraggingProgress, volume, muted, rate, seekStep, qualityLabel, fillLabel, fitLabel,
     orientationLabel, brightness, moreOpen, morePanel, previewOptions, activePreviewKey,
     previewSourceLabel, playerStatus, currentLineLabel, fullscreenDiagnosticLabel,
     rateOptions, seekStepOptions, qualities, qualityLevel, canBackup, isBackupActive,
     hasMovieId, fitMode, orientationMode, orientationRequested, networkMode, onSeekStart, onSeekMove,
-    onSeekEnd, onSeekCancel, onKeyboardSeek, onTogglePlay, onSeekBack, onSeekForward,
+    onSeekEnd, onSeekCancel, onKeyboardSeek, onMarkerSelect, onTogglePlay, onSeekBack, onSeekForward,
     onToggleMore, onCloseMore, onToggleLock, onToggleFullscreen, onToggleMute,
     onVolumeChange, onCycleRate, onSetRate, onSetSeekStep, onSetMorePanel, onSelectPreview,
     onSetQuality, onCycleFit, onCycleFill, onCycleOrientation, onSwitchBackup, onScreenshot,
@@ -201,6 +203,8 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
         seekStep={seekStep}
         lineLabel={currentLineLabel}
         qualityLabel={qualityLabel}
+        markers={markers}
+        onMarkerSelect={onMarkerSelect}
         onSeekStart={onSeekStart}
         onSeekMove={onSeekMove}
         onSeekEnd={onSeekEnd}

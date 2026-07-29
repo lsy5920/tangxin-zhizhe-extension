@@ -1,10 +1,14 @@
-import { Check, Clock3, Coins, Film, Route, ShieldCheck, Sparkles, Ticket, UserRound } from "lucide-react";
+import { Check, Clock3, Coins, Film, Heart, ListPlus, Route, ShieldCheck, Sparkles, Ticket, UserRound } from "lucide-react";
 import type { PlaybackSession, ScreeningState } from "../../playback/types";
+import type { LibraryEntry } from "../../types";
 
 type Props = {
   session: PlaybackSession | null;
   request: ScreeningState["request"];
   onRefresh: () => void;
+  libraryEntry?: LibraryEntry | null;
+  onToggleFavorite: () => void;
+  onToggleWatchLater: () => void;
 };
 
 function acquisitionLabel(mode?: PlaybackSession["acquisition"]["mode"]) {
@@ -14,7 +18,7 @@ function acquisitionLabel(mode?: PlaybackSession["acquisition"]["mode"]) {
   return "账号直取";
 }
 
-export function ScreeningSidebar({ session, request, onRefresh }: Props) {
+export function ScreeningSidebar({ session, request, onRefresh, libraryEntry, onToggleFavorite, onToggleWatchLater }: Props) {
   const resolving = request.phase === "resolving";
   const purchased = session?.acquisition.mode === "purchased";
   const steps = [
@@ -41,6 +45,16 @@ export function ScreeningSidebar({ session, request, onRefresh }: Props) {
           {session?.account?.label && <span className="max-w-full truncate rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-violet-600"><UserRound size={10} className="mr-1 inline" />{session.account.label}</span>}
           {purchased && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-600"><Coins size={10} className="mr-1 inline" />幂等解锁</span>}
         </div>
+        {session && (
+          <div className="relative mt-3 grid grid-cols-2 gap-2">
+            <button type="button" aria-pressed={libraryEntry?.favorite === true} onClick={onToggleFavorite} className={`min-h-10 rounded-xl border text-[10px] font-extrabold transition ${libraryEntry?.favorite ? "border-fuchsia-200 bg-fuchsia-500 text-white" : "border-white/80 bg-white/75 text-fuchsia-600 hover:bg-white"}`}>
+              <Heart size={13} className={`mr-1 inline ${libraryEntry?.favorite ? "fill-white" : ""}`} />{libraryEntry?.favorite ? "已收藏" : "收藏影片"}
+            </button>
+            <button type="button" aria-pressed={libraryEntry?.watchLater === true} onClick={onToggleWatchLater} className={`min-h-10 rounded-xl border text-[10px] font-extrabold transition ${libraryEntry?.watchLater ? "border-violet-200 bg-violet-600 text-white" : "border-white/80 bg-white/75 text-violet-600 hover:bg-white"}`}>
+              <ListPlus size={13} className="mr-1 inline" />{libraryEntry?.watchLater ? "已加入稍后看" : "稍后观看"}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mt-4">

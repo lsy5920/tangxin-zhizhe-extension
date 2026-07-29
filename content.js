@@ -156,7 +156,8 @@
     fullDetails: [],
     screening: { schemaVersion: 2, activeSession: null, history: [], request: { phase: "idle" } },
     downloadTasks: {},
-    downloadSnapshots: []
+    downloadSnapshots: [],
+    experience: { library: {}, bookmarks: {}, alerts: [], downloadPolicy: {}, accountPatrol: { records: {} }, storageAudit: null }
   };
 
   const uiState = {
@@ -1606,6 +1607,7 @@
         screening: state.screening,
         downloadTasks: state.downloadTasks || {},
         downloadSnapshots: state.downloadSnapshots || [],
+        experience: state.experience || {},
         downloadPlanner: uiState.downloadPlanner,
         purchaseReconciliation: uiState.purchaseReconciliation,
         adCleaner: adCleanerStats(),
@@ -2225,6 +2227,7 @@
       : { schemaVersion: 2, activeSession: null, history: [], request: { phase: "idle" } };
     state.downloadTasks = saved.downloadTasks && typeof saved.downloadTasks === "object" ? saved.downloadTasks : {};
     state.downloadSnapshots = Array.isArray(saved.downloadSnapshots) ? saved.downloadSnapshots : [];
+    state.experience = saved.experience && typeof saved.experience === "object" ? saved.experience : state.experience || {};
     if (autoCleaned) {
       const reason = saved.remote?.lastAutoCleanReason || "已自动清理旧版本插件缓存并切换到当前默认配置";
       emitFlow("自动清理缓存", reason, "ok");
@@ -2255,6 +2258,7 @@
     const saved = response.state || {};
     state.downloadTasks = saved.downloadTasks && typeof saved.downloadTasks === "object" ? saved.downloadTasks : {};
     state.downloadSnapshots = Array.isArray(saved.downloadSnapshots) ? saved.downloadSnapshots : [];
+    state.experience = saved.experience && typeof saved.experience === "object" ? saved.experience : state.experience || {};
     announceDownloadTasks();
     renderDownloads();
     publishState();
@@ -2274,6 +2278,7 @@
       : { schemaVersion: 2, activeSession: null, history: [], request: { phase: "idle" } };
     state.downloadTasks = saved.downloadTasks && typeof saved.downloadTasks === "object" ? saved.downloadTasks : {};
     state.downloadSnapshots = Array.isArray(saved.downloadSnapshots) ? saved.downloadSnapshots : [];
+    state.experience = saved.experience && typeof saved.experience === "object" ? saved.experience : {};
     state.accountPool = Array.isArray(saved.accountPool) ? saved.accountPool : [];
     state.selectedFullAccountId = saved.selectedFullAccountId || state.accountPool[0]?.id || "";
     state.remote = saved.remote || null;
@@ -2436,7 +2441,7 @@
       const bootstrapSession = await collectSession();
       const response = await sendRuntime("downloadFullVideo", {
         movieId: id,
-        movieTitle: currentMovieTitle(),
+        movieTitle: options.movieTitle || currentMovieTitle(),
         accountId: state.selectedFullAccountId,
         bootstrapSession,
         lineKey,
@@ -2445,7 +2450,9 @@
         container: options.container || "mp4",
         networkMode: options.networkMode || "balanced",
         qualityHeight: Number(options.qualityHeight || 0),
-        viewportHeight: Math.max(window.innerHeight || 0, window.innerWidth || 0, 720)
+        viewportHeight: Math.max(window.innerHeight || 0, window.innerWidth || 0, 720),
+        priority: options.priority || "normal",
+        notBefore: options.notBefore || ""
       });
       if (response.state) syncSavedState(response.state);
       const mode = response.mode === "hls-opfs" ? "HLS 断点下载" : "直链断点下载";
@@ -2756,7 +2763,7 @@
     }
   }
 
-  async function refreshFullDetail(movieId = currentMovieId()) {
+  async function refreshFullDetail(movieId = currentMovieId(), requestedTitle = "") {
     const id = String(movieId || currentMovieId()).trim();
     if (!id) throw new Error("当前页面未识别到正在播放的视频（详情页或 Vlog 当前卡片）");
     const page = refreshPageContext("manual-refresh");
@@ -2785,7 +2792,7 @@
     try {
       response = await sendRuntime("createPlaybackSession", {
         movieId: id,
-        movieTitle: currentMovieTitle(),
+        movieTitle: requestedTitle || currentMovieTitle(),
         requestId,
         pageKey: token.pageKey,
         pageEpoch: token.pageEpoch,
@@ -2941,6 +2948,53 @@
       if (action === "upload-local-account-remote") await uploadLocalAccountRemote(accountId);
       if (action === "refresh-full-detail") await refreshFullDetail(payload.movieId || currentMovieId());
       if (action === "refresh-playback-session") await refreshFullDetail(payload.movieId || currentMovieId());
+      if (action === "open-library-playback") {
+        const movieId = String(payload.movieId || "").trim();
+        if (!movieId) throw new Error("片库条目缺少视频编号");
+        await refreshFullDetail(movieId, String(payload.movieTitle || ""));
+      }
+      if (action === "update-library-entry") {
+        const response = await sendRuntime("updateLibraryEntry", payload);
+        syncSavedState(response.state || {});
+        emitFlow("我的片库", "收藏状态已保存", "ok");
+      }
+      if (action === "mark-library-playback") {
+        const response = await sendRuntime("markLibraryPlayback", payload);
+        syncSavedState(response.state || {});
+      }
+      if (action === "save-playback-bookmark") {
+        const response = await sendRuntime("savePlaybackBookmark", payload);
+        syncSavedState(response.state || {});
+        emitFlow("时间书签", payload.endSeconds ? "片段书签已保存" : "当前位置已保存", "ok");
+      }
+      if (action === "delete-playback-bookmark") {
+        const response = await sendRuntime("deletePlaybackBookmark", payload);
+        syncSavedState(response.state || {});
+        emitFlow("时间书签", "书签已删除", "ok");
+      }
+      if (action === "mark-experience-alert") {
+        const response = await sendRuntime("markExperienceAlert", payload);
+        syncSavedState(response.state || {});
+      }
+      if (action === "clear-experience-alerts") {
+        const response = await sendRuntime("clearExperienceAlerts", payload);
+        syncSavedState(response.state || {});
+      }
+      if (action === "save-experience-settings") {
+        const response = await sendRuntime("saveExperienceSettings", payload);
+        syncSavedState(response.state || {});
+        emitFlow("自动化设置", "设置已保存", "ok");
+      }
+      if (action === "set-notifications-enabled") {
+        const response = await sendRuntime("setNotificationsEnabled", payload);
+        syncSavedState(response.state || {});
+        emitFlow("系统提醒", payload.enabled ? "系统提醒已开启" : "系统提醒已关闭", "ok");
+      }
+      if (action === "run-account-patrol") {
+        const response = await sendRuntime("runAccountPatrol", { ...payload, force: true }, 120000);
+        syncSavedState(response.state || {});
+        emitFlow("账号巡检", `已检查 ${response.checked || 0} 个账号`, response.failed ? "error" : "ok");
+      }
       if (action === "plan-full-video-download") {
         await planFullVideo(payload.movieId || currentMovieId(), payload);
       }
@@ -2960,8 +3014,35 @@
           sourceId: payload.sourceId || "",
           container: payload.container || "mp4",
           networkMode: payload.networkMode || "balanced",
-          qualityHeight: Number(payload.qualityHeight || 0)
+          qualityHeight: Number(payload.qualityHeight || 0),
+          priority: payload.priority || "normal",
+          notBefore: payload.notBefore || ""
         });
+      }
+      if (action === "configure-download-task") {
+        const response = await sendRuntime("configureDownloadTask", payload);
+        syncSavedState(response.state || {});
+        emitFlow("下载调度", "任务优先级或开始时间已更新", "ok");
+      }
+      if (action === "pause-download-queue") {
+        const response = await sendRuntime("pauseDownloadQueue", payload);
+        syncSavedState(response.state || {});
+        emitFlow("下载调度", "队列与活动任务已暂停", "ok");
+      }
+      if (action === "resume-download-queue") {
+        const response = await sendRuntime("resumeDownloadQueue", payload);
+        syncSavedState(response.state || {});
+        emitFlow("下载调度", "队列已继续", "ok");
+      }
+      if (action === "run-storage-audit") {
+        const response = await sendRuntime("runStorageAudit", { allowAutoCleanup: false }, 120000);
+        syncSavedState(response.state || {});
+        emitFlow("存储管家", "OPFS 空间扫描完成", "ok");
+      }
+      if (action === "cleanup-opfs-storage") {
+        const response = await sendRuntime("cleanupOpfsStorage", { targets: payload.targets || [] }, 120000);
+        syncSavedState(response.state || {});
+        emitFlow("存储管家", `已安全清理 ${response.deleted || 0} 组数据`, "ok");
       }
       if (action === "refresh-downloads") {
         await refreshLocalDownloadState();

@@ -209,6 +209,102 @@ export type DownloadTask = {
   objectReady?: boolean;
   saveVia?: string;
   plan?: DownloadPlan | null;
+  priority?: "high" | "normal" | "low" | string;
+  notBefore?: string;
+  pauseReason?: string;
+  resumeRequested?: boolean;
+  createdAt?: string;
+  viewportHeight?: number;
+  estimatedBytes?: number;
+};
+
+export type LibraryEntry = {
+  movieId: string;
+  title?: string;
+  favorite?: boolean;
+  watchLater?: boolean;
+  tags?: string[];
+  note?: string;
+  addedAt?: string;
+  updatedAt?: string;
+  lastPlayedAt?: string;
+  watchedAt?: string;
+};
+
+export type PlaybackBookmark = {
+  id: string;
+  movieId: string;
+  title?: string;
+  label?: string;
+  note?: string;
+  startSeconds: number;
+  endSeconds?: number | null;
+  durationSeconds?: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type AccountHealthRecord = {
+  accountId: string;
+  state?: "unknown" | "healthy" | "degraded" | "cooling" | "needs_attention" | string;
+  consecutiveFailures?: number;
+  lastCheckedAt?: string;
+  cooldownUntil?: string;
+  lastReason?: string;
+  history?: Array<{ checkedAt?: string; ok?: boolean; category?: string; reason?: string }>;
+};
+
+export type ExperienceAlert = {
+  id: string;
+  key?: string;
+  category?: string;
+  level?: "info" | "warning" | "error" | "success" | string;
+  title?: string;
+  detail?: string;
+  createdAt?: string;
+  readAt?: string;
+  count?: number;
+};
+
+export type StorageAuditEntry = {
+  taskId: string;
+  attemptId: string;
+  movieId?: string;
+  filename?: string;
+  category?: "active" | "artifact" | "resumable" | "residue" | "orphan" | "duplicate" | string;
+  bytes?: number;
+  protected?: boolean;
+  duplicateGroup?: string;
+  updatedAt?: string;
+};
+
+export type ExperienceState = {
+  schemaVersion?: number;
+  library?: Record<string, LibraryEntry>;
+  bookmarks?: Record<string, PlaybackBookmark[]>;
+  downloadPolicy?: {
+    maxConcurrent?: number;
+    queuePaused?: boolean;
+    windowEnabled?: boolean;
+    windowStart?: string;
+    windowEnd?: string;
+    autoCleanup?: boolean;
+  };
+  accountPatrol?: {
+    enabled?: boolean;
+    intervalHours?: number;
+    lastRunAt?: string;
+    records?: Record<string, AccountHealthRecord>;
+  };
+  notificationsEnabled?: boolean;
+  storageAudit?: {
+    checkedAt?: string;
+    storage?: { known?: boolean; quota?: number; usage?: number; available?: number };
+    managedBytes?: number;
+    lowSpace?: boolean;
+    entries?: StorageAuditEntry[];
+  } | null;
+  alerts?: ExperienceAlert[];
 };
 
 export type DownloadVariant = {
@@ -364,6 +460,7 @@ export type BridgeState = {
     cloudError?: string;
     checkedAt?: string;
   } | null;
+  experience?: ExperienceState;
   remote?: {
     baseUrl?: string;
     accountSourceMode?: string;

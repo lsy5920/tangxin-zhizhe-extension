@@ -1,9 +1,17 @@
 "use strict";
 
-importScripts("state_mutation_core.js");
+importScripts("state_mutation_core.js", "experience_core.js");
 
 const stateMutationCore = globalThis.TxzzStateMutationCore;
+const experienceCore = globalThis.TxzzExperienceCore;
 if (!stateMutationCore) throw new Error("状态变更核心未加载");
+if (!experienceCore) throw new Error("体验状态核心未加载");
+
+const EXPERIENCE_STORAGE_KEY = "txzzExperienceV1";
+const DOWNLOAD_SCHEDULER_ALARM = "txzz-download-scheduler";
+const DOWNLOAD_NEXT_ALARM = "txzz-download-next";
+const ACCOUNT_PATROL_ALARM = "txzz-account-patrol";
+const STORAGE_AUDIT_ALARM = "txzz-storage-audit";
 
 const API_CONFIG = {
   baseUrl: "https://txh068.com",
@@ -92,8 +100,15 @@ let saveTokenMutationQueue = Promise.resolve();
 let updateVerificationKeyPromise = null;
 const localPurchaseLocks = new Set();
 let latestPlaybackRequest = null;
+let experienceMutationQueue = Promise.resolve();
+let experienceSnapshot = experienceCore.defaultExperienceState();
+let downloadDispatchTimer = null;
+const downloadStartInFlight = new Set();
+let accountPatrolInFlight = null;
+let persistedDownloadsReconciled = false;
+let persistedDownloadRecoveryInFlight = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-28-2227";
+const LOCAL_UPDATE_BUILD = "2026-07-29-1810";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -437,7 +452,11 @@ function isCloudAccount(account = {}) {
 }
 
 function isHealthyAccount(account = {}) {
-  return account?.enabled !== false && String(account?.status || "") !== "error";
+  const record = experienceSnapshot.accountPatrol?.records?.[String(account?.id || "")];
+  return account?.enabled !== false
+    && String(account?.status || "") !== "error"
+    && String(record?.state || "") !== "needs_attention"
+    && !experienceCore.accountIsCooling(record);
 }
 
 function playbackProtocol(url = "") {
@@ -789,8 +808,39 @@ async function syncRemoteAccounts(state) {
   return state;
 }
 
+/**
+ * 体验状态独立于高频 txzzState 写入；读取和修改都经过自己的串行队列，
+ * 防止下载进度更新覆盖收藏、书签或巡检记录。
+ */
+async function getExperienceInternal() {
+  await experienceMutationQueue.catch(() => {});
+  const stored = await chrome.storage.local.get(EXPERIENCE_STORAGE_KEY);
+  const normalized = experienceCore.normalizeExperienceState(stored[EXPERIENCE_STORAGE_KEY] || {});
+  experienceSnapshot = normalized;
+  return structuredClone(normalized);
+}
+
+async function mutateExperience(mutator) {
+  const task = experienceMutationQueue.then(async () => {
+    const stored = await chrome.storage.local.get(EXPERIENCE_STORAGE_KEY);
+    const current = experienceCore.normalizeExperienceState(stored[EXPERIENCE_STORAGE_KEY] || {});
+    const mutated = await mutator(structuredClone(current));
+    const normalized = experienceCore.normalizeExperienceState(mutated || current);
+    await chrome.storage.local.set({ [EXPERIENCE_STORAGE_KEY]: normalized });
+    experienceSnapshot = normalized;
+    return structuredClone(normalized);
+  });
+  experienceMutationQueue = task.catch(() => {});
+  return task;
+}
+
+function publicExperienceState() {
+  return experienceCore.normalizeExperienceState(experienceSnapshot);
+}
+
 async function getStateInternal() {
   await stateMutationQueue.catch(() => {});
+  await getExperienceInternal();
   const stored = await chrome.storage.local.get("txzzState");
   const storedState = stored.txzzState || {};
   const removedRemoteAccessConfig = [
@@ -840,14 +890,21 @@ async function getStateInternal() {
 }
 
 function sanitizeState(state) {
+  const {
+    localPurchaseLedger: _localPurchaseLedger,
+    fullDetailCache: _fullDetailCache,
+    downloadDeletedTaskIds: _downloadDeletedTaskIds,
+    ...publicState
+  } = state || {};
   return {
-    ...state,
+    ...publicState,
     remote: publicRemoteConfig(state.remote),
     accountPool: (state.accountPool || []).map(publicAccount),
     fullDetails: (state.fullDetails || []).slice(-80),
     screening: normalizeScreeningState(state.screening, state.fullDetails),
     downloadTasks: state.downloadTasks && typeof state.downloadTasks === "object" ? state.downloadTasks : {},
-    downloadSnapshots: Array.isArray(state.downloadSnapshots) ? state.downloadSnapshots.slice(-30) : []
+    downloadSnapshots: Array.isArray(state.downloadSnapshots) ? state.downloadSnapshots.slice(-30) : [],
+    experience: publicExperienceState()
   };
 }
 
@@ -875,6 +932,8 @@ async function saveState(state) {
 
 async function resetAllLocalData() {
   await chrome.storage.local.clear();
+  experienceSnapshot = experienceCore.defaultExperienceState();
+  await chrome.storage.local.set({ [EXPERIENCE_STORAGE_KEY]: experienceSnapshot });
   const state = {
     ...DEFAULT_STATE,
     accountPool: [],
@@ -892,6 +951,135 @@ async function resetAllLocalData() {
   };
   await saveState(state);
   return { ok: true, state: sanitizeState(state) };
+}
+
+async function stateResponseWithExperience(extra = {}) {
+  const state = await getStateInternal();
+  return { ok: true, ...extra, state: sanitizeState(state), experience: publicExperienceState() };
+}
+
+async function updateLibraryExperience(message = {}) {
+  const patch = {
+    movieId: message.movieId,
+    title: message.title || message.movieTitle
+  };
+  // 只传递调用方真正提供的字段；把 undefined 写入会误清另一项收藏标记或已有备注。
+  for (const key of ["favorite", "watchLater", "tags", "note", "lastPlayedAt", "watchedAt"]) {
+    if (Object.prototype.hasOwnProperty.call(message, key)) patch[key] = message[key];
+  }
+  await mutateExperience((experience) => experienceCore.updateLibraryEntry(experience, patch));
+  return stateResponseWithExperience();
+}
+
+async function markLibraryPlayback(message = {}) {
+  const movieId = String(message.movieId || "").trim();
+  if (!movieId) return stateResponseWithExperience();
+  await mutateExperience((experience) => {
+    const current = experience.library?.[movieId];
+    if (!current) return experience;
+    return experienceCore.updateLibraryEntry(experience, {
+      ...current,
+      movieId,
+      title: message.title || current.title,
+      lastPlayedAt: nowIso(),
+      watchedAt: message.ended === true ? nowIso() : current.watchedAt
+    });
+  });
+  return stateResponseWithExperience();
+}
+
+async function savePlaybackBookmark(message = {}) {
+  const bookmark = {
+    id: String(message.id || `bookmark_${Date.now()}_${crypto.randomUUID().replaceAll("-", "").slice(0, 10)}`),
+    movieId: String(message.movieId || "").trim(),
+    title: String(message.title || message.movieTitle || "").trim(),
+    label: String(message.label || "").trim(),
+    note: String(message.note || "").trim(),
+    startSeconds: Number(message.startSeconds ?? message.positionSeconds ?? 0),
+    endSeconds: message.endSeconds === null || message.endSeconds === undefined ? null : Number(message.endSeconds),
+    durationSeconds: Number(message.durationSeconds || 0)
+  };
+  await mutateExperience((experience) => experienceCore.addBookmark(experience, bookmark));
+  return stateResponseWithExperience({ bookmark });
+}
+
+async function deletePlaybackBookmark(message = {}) {
+  await mutateExperience((experience) => experienceCore.removeBookmark(
+    experience,
+    String(message.movieId || ""),
+    String(message.bookmarkId || message.id || "")
+  ));
+  return stateResponseWithExperience();
+}
+
+async function markExperienceAlert(message = {}) {
+  await mutateExperience((experience) => {
+    const next = experienceCore.normalizeExperienceState(experience);
+    const id = String(message.alertId || "");
+    next.alerts = next.alerts.map((item) => item.id === id ? { ...item, readAt: nowIso() } : item);
+    return next;
+  });
+  return stateResponseWithExperience();
+}
+
+async function clearExperienceAlerts() {
+  await mutateExperience((experience) => ({ ...experience, alerts: [] }));
+  return stateResponseWithExperience();
+}
+
+async function notificationsPermissionGranted() {
+  if (!chrome.notifications?.create || !chrome.permissions?.contains) return false;
+  try {
+    return await chrome.permissions.contains({ permissions: ["notifications"] });
+  } catch (_) {
+    return false;
+  }
+}
+
+async function emitExperienceAlert(alert) {
+  const experience = await mutateExperience((current) => experienceCore.pushAlert(current, alert));
+  if (!experience.notificationsEnabled || !await notificationsPermissionGranted()) return experience;
+  const latest = experience.alerts.find((item) => item.key === String(alert.key || "")) || experience.alerts.at(-1);
+  if (!latest) return experience;
+  await chrome.notifications.create(`txzz-${latest.id}`, {
+    type: "basic",
+    iconUrl: chrome.runtime.getURL("icons/notification.svg"),
+    title: latest.title || "糖心志者",
+    message: latest.detail || latest.title || "有一条新提醒",
+    priority: latest.level === "error" ? 2 : 0
+  }).catch(() => {});
+  return experience;
+}
+
+async function setNotificationsEnabled(enabled) {
+  const requested = enabled === true;
+  if (requested) {
+    if (!chrome.permissions?.request) throw new Error("当前浏览器不支持可选通知权限");
+    const granted = await chrome.permissions.request({ permissions: ["notifications"] });
+    if (!granted) throw new Error("系统通知权限未授予；插件内提醒仍可正常使用");
+  } else if (chrome.permissions?.remove) {
+    await chrome.permissions.remove({ permissions: ["notifications"] }).catch(() => false);
+  }
+  await mutateExperience((experience) => ({ ...experience, notificationsEnabled: requested }));
+  return stateResponseWithExperience({ granted: requested });
+}
+
+async function saveExperienceSettings(message = {}) {
+  await mutateExperience((experience) => ({
+    ...experience,
+    downloadPolicy: {
+      ...experience.downloadPolicy,
+      ...(message.downloadPolicy && typeof message.downloadPolicy === "object" ? message.downloadPolicy : {})
+    },
+    accountPatrol: {
+      ...experience.accountPatrol,
+      ...(message.accountPatrol && typeof message.accountPatrol === "object" ? message.accountPatrol : {}),
+      records: experience.accountPatrol?.records || {}
+    }
+  }));
+  await ensureAutomationAlarms();
+  scheduleDownloadDispatch(0);
+  return stateResponseWithExperience();
 }
 
 async function apiRequestRaw(endpoint, data, session = {}) {
@@ -1195,7 +1383,14 @@ function compactDownloadTasks(tasks = {}) {
   const grouped = new Map();
   for (const [key, rawTask] of Object.entries(tasks || {})) {
     if (!rawTask || typeof rawTask !== "object") continue;
-    const task = { ...rawTask, stage: normalizeDownloadStage(rawTask.stage) };
+    const task = {
+      ...rawTask,
+      stage: normalizeDownloadStage(rawTask.stage),
+      priority: experienceCore.normalizePriority(rawTask.priority),
+      notBefore: String(rawTask.notBefore || ""),
+      pauseReason: String(rawTask.pauseReason || ""),
+      createdAt: String(rawTask.createdAt || rawTask.updatedAt || nowIso())
+    };
     const groupKey = String(task.movieId || key || "");
     const existing = grouped.get(groupKey);
     if (!existing) {
@@ -2277,6 +2472,273 @@ async function planFullVideoDownload(message = {}) {
   };
 }
 
+async function persistDownloadTaskPatch(taskId, attemptId, patch) {
+  const state = await getStateInternal();
+  const current = state.downloadTasks?.[taskId];
+  if (!current || (attemptId && String(current.attemptId || "") !== String(attemptId))) return null;
+  state.downloadTasks = {
+    ...(state.downloadTasks || {}),
+    [taskId]: { ...current, ...patch, updatedAt: nowIso() }
+  };
+  await saveState(state);
+  return state.downloadTasks[taskId];
+}
+
+async function markScheduledDownloadBlocked(task, error, pauseReason = "source-stale") {
+  const reason = String(error?.message || error || "保存的片源已失效，请重新规划");
+  const stage = pauseReason === "insufficient-storage" ? "paused" : "stale";
+  await persistDownloadTaskPatch(task.taskId, task.attemptId, {
+    stage,
+    pauseReason,
+    error: reason
+  });
+  await emitExperienceAlert({
+    key: `download:${task.taskId}:${pauseReason}`,
+    category: pauseReason === "insufficient-storage" ? "storage" : "download",
+    level: "warning",
+    title: pauseReason === "insufficient-storage" ? "下载空间不足" : "下载片源需要重新规划",
+    detail: `${task.movieTitle || task.movieId || "视频"}：${reason}`
+  });
+}
+
+/**
+ * 调度器只消费任务内已经确认过的 URL；重新探测失败时进入 stale，绝不调用取源或购买接口。
+ */
+async function startStoredDownloadTask(rawTask = {}) {
+  const taskId = String(rawTask.taskId || "");
+  const attemptId = String(rawTask.attemptId || "");
+  if (!taskId || !attemptId || downloadStartInFlight.has(taskId)) return { ok: false, ignored: true };
+  downloadStartInFlight.add(taskId);
+  try {
+    const task = await persistDownloadTaskPatch(taskId, attemptId, { stage: "recovering", pauseReason: "", error: "" });
+    if (!task) return { ok: false, ignored: true };
+    await ensureOffscreenDocument();
+
+    if (task.resumeRequested) {
+      const resumed = await chrome.runtime.sendMessage({
+        type: "offscreenResumeDownload",
+        taskId,
+        attemptId
+      }).catch(() => ({ ok: false }));
+      if (resumed?.ok !== false) {
+        await persistDownloadTaskPatch(taskId, attemptId, { resumeRequested: false });
+        return { ok: true, resumed: true };
+      }
+    }
+
+    let planResult;
+    try {
+      planResult = await chrome.runtime.sendMessage({
+        type: "offscreenPlanDownload",
+        taskId: `${taskId}_scheduled_plan`,
+        movieId: task.movieId,
+        url: task.url,
+        mode: task.mode,
+        networkMode: task.networkMode || "balanced",
+        qualityHeight: Number(task.qualityHeight || 0),
+        viewportHeight: Number(task.viewportHeight || 720),
+        durationSeconds: Number(task.plan?.durationSeconds || 0)
+      });
+    } catch (error) {
+      await markScheduledDownloadBlocked(task, error, "source-stale");
+      return { ok: false, stale: true };
+    }
+    if (planResult?.ok === false) {
+      await markScheduledDownloadBlocked(task, planResult.error || "片源探测失败", "source-stale");
+      return { ok: false, stale: true };
+    }
+    if (planResult?.plan?.blockedReason) {
+      await markScheduledDownloadBlocked(task, planResult.plan.blockedReason, "insufficient-storage");
+      return { ok: false, blocked: true };
+    }
+    await persistDownloadTaskPatch(taskId, attemptId, {
+      plan: planResult.plan || task.plan || null,
+      estimatedBytes: Number(planResult?.plan?.estimatedBytes || task.estimatedBytes || 0),
+      resumeRequested: false
+    });
+    const startResult = await chrome.runtime.sendMessage({
+      ...task,
+      type: task.mode === "progressive-opfs" ? "offscreenDownloadProgressive" : "offscreenDownloadM3u8",
+      sequence: Number(task.sequence || 0),
+      estimatedBytes: Number(planResult?.plan?.estimatedBytes || task.estimatedBytes || 0)
+    });
+    if (startResult?.ok === false) {
+      await markScheduledDownloadBlocked(task, startResult.error || "视频下载启动失败", "source-stale");
+      return { ok: false, stale: true };
+    }
+    return { ok: true, started: true };
+  } finally {
+    downloadStartInFlight.delete(taskId);
+  }
+}
+
+async function scheduleNextDownloadAlarm(state = null) {
+  if (!chrome.alarms?.create) return;
+  const current = state || await getStateInternal();
+  const experience = await getExperienceInternal();
+  const wakeAt = experienceCore.nextDownloadAlarmAt(
+    current.downloadTasks || {},
+    experience.downloadPolicy || {},
+    Date.now()
+  );
+  await chrome.alarms.clear(DOWNLOAD_NEXT_ALARM).catch(() => false);
+  if (wakeAt > Date.now()) chrome.alarms.create(DOWNLOAD_NEXT_ALARM, { when: Math.max(Date.now() + 1000, wakeAt) });
+}
+
+async function runDownloadScheduler() {
+  if (!persistedDownloadsReconciled) await ensurePersistedDownloadsReconciled();
+  const state = await getStateInternal();
+  const experience = await getExperienceInternal();
+  const due = experienceCore.selectDueDownloads(state.downloadTasks || {}, experience.downloadPolicy || {}, Date.now());
+  await Promise.all(due.map((task) => startStoredDownloadTask(task)));
+  await scheduleNextDownloadAlarm(await getStateInternal());
+  return { ok: true, started: due.length };
+}
+
+function scheduleDownloadDispatch(delayMs = 120) {
+  if (downloadDispatchTimer) clearTimeout(downloadDispatchTimer);
+  downloadDispatchTimer = setTimeout(() => {
+    downloadDispatchTimer = null;
+    runDownloadScheduler().catch(() => {});
+  }, Math.max(0, delayMs));
+}
+
+async function configureDownloadTask(message = {}) {
+  const taskId = String(message.taskId || "");
+  const state = await getStateInternal();
+  const task = state.downloadTasks?.[taskId];
+  if (!task) throw new Error("未找到下载任务");
+  const notBefore = message.notBefore ? new Date(message.notBefore).toISOString() : "";
+  state.downloadTasks = {
+    ...(state.downloadTasks || {}),
+    [taskId]: {
+      ...task,
+      priority: experienceCore.normalizePriority(message.priority),
+      notBefore,
+      updatedAt: nowIso()
+    }
+  };
+  await saveState(state);
+  await scheduleNextDownloadAlarm(state);
+  scheduleDownloadDispatch(0);
+  return { ok: true, state: sanitizeState(state) };
+}
+
+async function pauseDownloadQueue() {
+  await mutateExperience((experience) => ({
+    ...experience,
+    downloadPolicy: { ...experience.downloadPolicy, queuePaused: true }
+  }));
+  const state = await getStateInternal();
+  const active = Object.values(state.downloadTasks || {}).filter((task) => ["probing", "downloading", "recovering", "assembling"].includes(String(task.stage || "")));
+  for (const task of active) {
+    await controlDownloadTask(String(task.taskId || ""), "pause").catch(() => {});
+    await persistDownloadTaskPatch(task.taskId, task.attemptId, { pauseReason: "queue-paused" });
+  }
+  return stateResponseWithExperience();
+}
+
+async function resumeDownloadQueue() {
+  await mutateExperience((experience) => ({
+    ...experience,
+    downloadPolicy: { ...experience.downloadPolicy, queuePaused: false }
+  }));
+  const state = await getStateInternal();
+  for (const [taskId, task] of Object.entries(state.downloadTasks || {})) {
+    if (task.stage !== "paused" || task.pauseReason !== "queue-paused") continue;
+    state.downloadTasks[taskId] = {
+      ...task,
+      stage: "queued",
+      pauseReason: "",
+      resumeRequested: true,
+      updatedAt: nowIso()
+    };
+  }
+  await saveState(state);
+  scheduleDownloadDispatch(0);
+  return stateResponseWithExperience();
+}
+
+function downloadTasksForStorageAudit(state) {
+  return Object.values(state.downloadTasks || {}).map((task) => ({
+    taskId: String(task.taskId || ""),
+    attemptId: String(task.attemptId || ""),
+    movieId: String(task.movieId || ""),
+    filename: String(task.filename || ""),
+    stage: String(task.stage || ""),
+    container: String(task.container || task.format || ""),
+    qualityHeight: Number(task.qualityHeight || 0)
+  })).filter((task) => task.taskId && task.attemptId);
+}
+
+async function runStorageAudit({ allowAutoCleanup = true } = {}) {
+  const state = await getStateInternal();
+  await ensureOffscreenDocument();
+  const result = await chrome.runtime.sendMessage({
+    type: "offscreenAuditStorage",
+    knownTasks: downloadTasksForStorageAudit(state)
+  });
+  if (result?.ok === false || !result?.audit) throw new Error(result?.error || "OPFS 存储扫描失败");
+  await mutateExperience((experience) => ({ ...experience, storageAudit: result.audit }));
+  if (result.audit.lowSpace) {
+    await emitExperienceAlert({
+      key: "storage:low-space",
+      category: "storage",
+      level: "warning",
+      title: "收纳空间偏低",
+      detail: "可用空间低于 1 GiB 或总配额的 15%，新任务会在空间不足时暂停。"
+    });
+  }
+  const experience = await getExperienceInternal();
+  if (allowAutoCleanup && experience.downloadPolicy?.autoCleanup) {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const targets = result.audit.entries
+      .filter((entry) => ["orphan", "residue"].includes(entry.category) && !entry.protected)
+      .filter((entry) => (Date.parse(entry.updatedAt || "") || 0) < cutoff)
+      .map((entry) => `${entry.taskId}:${entry.attemptId}`);
+    if (targets.length) return cleanupOpfsStorage(targets, true);
+  }
+  return stateResponseWithExperience({ audit: result.audit });
+}
+
+async function cleanupOpfsStorage(targets = [], automatic = false) {
+  const state = await getStateInternal();
+  await ensureOffscreenDocument();
+  const result = await chrome.runtime.sendMessage({
+    type: "offscreenCleanupStorage",
+    knownTasks: downloadTasksForStorageAudit(state),
+    targets: Array.isArray(targets) ? targets.map(String) : []
+  });
+  if (result?.ok === false) throw new Error(result?.error || "OPFS 清理失败");
+  const deletedKeys = new Set((result.deletedKeys || []).map(String));
+  if (deletedKeys.size) {
+    const deletedTaskIds = new Set((state.downloadDeletedTaskIds || []).map(String));
+    for (const [taskId, task] of Object.entries(state.downloadTasks || {})) {
+      if (!deletedKeys.has(`${taskId}:${task.attemptId}`)) continue;
+      deletedTaskIds.add(taskId);
+      delete state.downloadTasks[taskId];
+      downloadProgressBuffer.delete(taskId);
+      downloadObservedStage.delete(taskId);
+      const timer = downloadProgressTimers.get(taskId);
+      if (timer) clearTimeout(timer);
+      downloadProgressTimers.delete(taskId);
+    }
+    state.downloadDeletedTaskIds = Array.from(deletedTaskIds).slice(-120);
+    await saveState(state);
+  }
+  await mutateExperience((experience) => ({ ...experience, storageAudit: result.audit || null }));
+  if (automatic && Number(result.deleted || 0) > 0) {
+    await emitExperienceAlert({
+      key: "storage:auto-cleanup",
+      category: "storage",
+      level: "success",
+      title: "已完成安全空间整理",
+      detail: `自动清理了 ${result.deleted} 组超过 7 天的孤儿或失败残留。`
+    });
+  }
+  return stateResponseWithExperience({ deleted: Number(result.deleted || 0), audit: result.audit || null });
+}
+
 async function downloadFullVideo(message = {}) {
   const source = await prepareDownloadSource(message);
   const {
@@ -2323,6 +2785,10 @@ async function downloadFullVideo(message = {}) {
     }).catch(() => {});
   }
   const attemptId = downloadAttemptId();
+  const requestedNotBefore = Date.parse(String(message.notBefore || ""));
+  const notBefore = Number.isFinite(requestedNotBefore) && requestedNotBefore > Date.now()
+    ? new Date(requestedNotBefore).toISOString()
+    : "";
   const queued = await getStateInternal();
   queued.downloadDeletedTaskIds = (queued.downloadDeletedTaskIds || []).filter((id) => id !== taskId);
   queued.downloadTasks = {
@@ -2337,6 +2803,10 @@ async function downloadFullVideo(message = {}) {
       attemptId,
       sequence: 0,
       stage: "queued",
+      priority: experienceCore.normalizePriority(message.priority),
+      notBefore,
+      pauseReason: "",
+      resumeRequested: false,
       current: 0,
       total: 0,
       percent: 0,
@@ -2349,46 +2819,19 @@ async function downloadFullVideo(message = {}) {
       container: requestedContainer,
       networkMode: String(message.networkMode || "balanced"),
       qualityHeight: Number(message.qualityHeight || 0),
+      viewportHeight: Number(message.viewportHeight || 720),
+      estimatedBytes: Number(planResult?.plan?.estimatedBytes || 0),
       plan: planResult.plan || null,
       objectReady: false,
       error: "",
+      createdAt: nowIso(),
       updatedAt: nowIso()
     }
   };
   await saveState(queued);
-  const startResult = await chrome.runtime.sendMessage({
-    type: mode === "progressive-opfs" ? "offscreenDownloadProgressive" : "offscreenDownloadM3u8",
-    taskId,
-    attemptId,
-    sequence: 0,
-    movieId,
-    movieTitle: title,
-    titleSnippet,
-    url,
-    filename,
-    lineKey,
-    mode,
-    container: requestedContainer,
-    networkMode: String(message.networkMode || "balanced"),
-    qualityHeight: Number(message.qualityHeight || 0),
-    viewportHeight: Number(message.viewportHeight || 720),
-    estimatedBytes: Number(planResult?.plan?.estimatedBytes || 0)
-  });
-  if (startResult?.ok === false) {
-    await recordDownloadProgress({
-      taskId,
-      attemptId,
-      sequence: 1,
-      movieId,
-      mode,
-      stage: "error",
-      filename,
-      url,
-      lineKey,
-      error: startResult.error || "视频下载启动失败"
-    }, true);
-    throw new Error(startResult.error || "视频下载启动失败");
-  }
+  await scheduleNextDownloadAlarm(queued);
+  await runDownloadScheduler();
+  const latest = await getStateInternal();
   return {
     ok: true,
     mode,
@@ -2400,7 +2843,8 @@ async function downloadFullVideo(message = {}) {
     lineKey,
     plan: planResult.plan,
     summary,
-    state: sanitizeState(queued)
+    notBefore,
+    state: sanitizeState(latest)
   };
 }
 
@@ -2451,6 +2895,26 @@ async function applyDownloadProgress(message = {}) {
   if (entries.length > 40) state.downloadTasks = Object.fromEntries(entries.slice(-40));
   state.downloadTasks = compactDownloadTasks(state.downloadTasks);
   await saveState(state);
+  if (["paused", "ready", "complete", "cancelled", "stale", "error"].includes(stage)) {
+    scheduleDownloadDispatch(150);
+  }
+  if (["ready", "complete"].includes(stage)) {
+    emitExperienceAlert({
+      key: `download:${taskId}:ready`,
+      category: "download",
+      level: "success",
+      title: "视频已经收纳完成",
+      detail: state.downloadTasks[taskId]?.movieTitle || state.downloadTasks[taskId]?.filename || taskId
+    }).catch(() => {});
+  } else if (stage === "error") {
+    emitExperienceAlert({
+      key: `download:${taskId}:error`,
+      category: "download",
+      level: "error",
+      title: "下载任务失败",
+      detail: state.downloadTasks[taskId]?.error || "请打开收纳篮查看详情"
+    }).catch(() => {});
+  }
   return { ok: true };
 }
 
@@ -2663,6 +3127,30 @@ async function controlDownloadTask(taskId = "", action = "") {
   const task = state.downloadTasks?.[taskId];
   if (!task) throw new Error("未找到下载任务");
   if (!task.attemptId) throw new Error("旧下载任务缺少恢复标识，请重新创建任务");
+  if (action === "resume") {
+    state.downloadTasks = {
+      ...(state.downloadTasks || {}),
+      [taskId]: {
+        ...task,
+        stage: "queued",
+        pauseReason: "",
+        resumeRequested: true,
+        notBefore: "",
+        updatedAt: nowIso()
+      }
+    };
+    await saveState(state);
+    scheduleDownloadDispatch(0);
+    return { ok: true, action, queued: true, state: sanitizeState(state) };
+  }
+  if (action === "pause" && String(task.stage || "") === "queued") {
+    state.downloadTasks = {
+      ...(state.downloadTasks || {}),
+      [taskId]: { ...task, stage: "paused", pauseReason: "manual", updatedAt: nowIso() }
+    };
+    await saveState(state);
+    return { ok: true, action, state: sanitizeState(state) };
+  }
   await ensureOffscreenDocument();
   const messageType = {
     pause: "offscreenPauseDownload",
@@ -2675,21 +3163,14 @@ async function controlDownloadTask(taskId = "", action = "") {
     taskId,
     attemptId: task.attemptId
   });
-  if (action === "resume" && result?.ok === false) {
-    // 离屏页重启后内存控制器会消失；沿用 attemptId 从 OPFS 检查点恢复，而不是创建新任务。
-    result = await chrome.runtime.sendMessage({
-      ...task,
-      type: task.mode === "progressive-opfs" ? "offscreenDownloadProgressive" : "offscreenDownloadM3u8"
-    });
-  }
   if (result?.ok === false) throw new Error(result.error || `下载任务${action}失败`);
   const fresh = await getStateInternal();
   const current = fresh.downloadTasks?.[taskId];
   if (current?.attemptId === task.attemptId) {
-    const stage = action === "pause" ? "paused" : action === "resume" ? "recovering" : "cancelled";
+    const stage = action === "pause" ? "paused" : "cancelled";
     fresh.downloadTasks = {
       ...(fresh.downloadTasks || {}),
-      [taskId]: { ...current, stage, updatedAt: nowIso() }
+      [taskId]: { ...current, stage, pauseReason: action === "pause" ? "manual" : "", updatedAt: nowIso() }
     };
     await saveState(fresh);
   }
@@ -4153,11 +4634,148 @@ async function removeAccount(accountId) {
   return { ok: true, state: sanitizeState(state) };
 }
 
-async function recoverPersistedDownloads() {
+function maskedHealthReason(error) {
+  return String(error?.message || error || "验证失败")
+    .replace(/[A-Za-z0-9_=-]{24,}/g, "***")
+    .replace(/(token|password|qrcode)\s*[:=]\s*\S+/gi, "$1=***")
+    .slice(0, 180);
+}
+
+async function verifyAccountForPatrol(accountId) {
+  const state = await getStateInternal();
+  const account = normalizeAccount(state.accountPool.find((item) => item.id === accountId));
+  if (!account?.id || !state.accountPool.some((item) => item.id === account.id)) throw new Error(`未找到账号：${accountId}`);
+  if (isCloudAccount(account)) {
+    const response = await remoteRequest(state, "/v1/accounts/verify", {
+      method: "POST",
+      body: JSON.stringify({ accountId: account.id })
+    });
+    await syncRemoteAccounts(await getStateInternal());
+    return response;
+  }
+  const session = await acquireAccountSession(account, null);
+  const fresh = await getStateInternal();
+  const index = fresh.accountPool.findIndex((item) => item.id === account.id);
+  if (index >= 0) {
+    fresh.accountPool[index] = {
+      ...normalizeAccount(fresh.accountPool[index]),
+      deviceId: session.deviceId,
+      userToken: session.userToken,
+      userInfo: session.userInfo,
+      lastVerifiedAt: nowIso(),
+      lastError: "",
+      status: "ok"
+    };
+    await saveState(fresh);
+  }
+  return { account: publicAccount(fresh.accountPool[index] || account) };
+}
+
+async function recordAccountHealth(accountId, result) {
+  let savedRecord = null;
+  await mutateExperience((experience) => {
+    const current = experience.accountPatrol?.records?.[accountId] || { accountId };
+    savedRecord = experienceCore.applyHealthResult(current, { accountId, ...result });
+    return {
+      ...experience,
+      accountPatrol: {
+        ...experience.accountPatrol,
+        records: { ...(experience.accountPatrol?.records || {}), [accountId]: savedRecord }
+      }
+    };
+  });
+  return savedRecord;
+}
+
+async function verifyAccountWithHealth(accountId, bootstrapSession = null) {
+  try {
+    const result = await updateAccountSession(accountId, bootstrapSession);
+    await recordAccountHealth(accountId, { ok: true });
+    return result;
+  } catch (error) {
+    await recordAccountHealth(accountId, {
+      ok: false,
+      category: experienceCore.classifyHealthFailure(error),
+      reason: maskedHealthReason(error)
+    });
+    throw error;
+  }
+}
+
+async function runAccountPatrol({ force = false, accountId = "" } = {}) {
+  if (accountPatrolInFlight) return accountPatrolInFlight;
+  const task = (async () => {
+    const experience = await getExperienceInternal();
+    if (!force && experience.accountPatrol?.enabled === false) return { ok: true, checked: 0, skipped: true };
+    const state = await getStateInternal();
+    const candidates = (state.accountPool || [])
+      .filter((account) => account.enabled !== false)
+      .filter((account) => !accountId || String(account.id) === String(accountId));
+    let checked = 0;
+    let failed = 0;
+    for (const account of candidates) {
+      const currentExperience = await getExperienceInternal();
+      const currentRecord = currentExperience.accountPatrol?.records?.[account.id];
+      if (!force && experienceCore.accountIsCooling(currentRecord)) continue;
+      try {
+        await verifyAccountForPatrol(account.id);
+        await recordAccountHealth(account.id, { ok: true });
+        checked += 1;
+      } catch (error) {
+        const record = await recordAccountHealth(account.id, {
+          ok: false,
+          category: experienceCore.classifyHealthFailure(error),
+          reason: maskedHealthReason(error)
+        });
+        checked += 1;
+        failed += 1;
+        if (["cooling", "needs_attention"].includes(String(record?.state || ""))) {
+          await emitExperienceAlert({
+            key: `account:${account.id}:${record.state}`,
+            category: "account",
+            level: record.state === "needs_attention" ? "error" : "warning",
+            title: record.state === "needs_attention" ? "账号凭据需要处理" : "账号已进入冷却",
+            detail: `${account.label || account.id}：${record.lastReason || "验证失败"}`
+          });
+        }
+      }
+    }
+    await mutateExperience((current) => ({
+      ...current,
+      accountPatrol: { ...current.accountPatrol, lastRunAt: nowIso() }
+    }));
+    return stateResponseWithExperience({ checked, failed });
+  })();
+  accountPatrolInFlight = task;
+  try {
+    return await task;
+  } finally {
+    if (accountPatrolInFlight === task) accountPatrolInFlight = null;
+  }
+}
+
+async function ensureAutomationAlarms() {
+  if (!chrome.alarms?.create) return;
+  const experience = await getExperienceInternal();
+  chrome.alarms.create(DOWNLOAD_SCHEDULER_ALARM, { delayInMinutes: 1, periodInMinutes: 15 });
+  chrome.alarms.create(STORAGE_AUDIT_ALARM, { delayInMinutes: 5, periodInMinutes: 24 * 60 });
+  await chrome.alarms.clear(ACCOUNT_PATROL_ALARM).catch(() => false);
+  if (experience.accountPatrol?.enabled !== false) {
+    chrome.alarms.create(ACCOUNT_PATROL_ALARM, {
+      delayInMinutes: 3,
+      periodInMinutes: Number(experience.accountPatrol?.intervalHours || 6) * 60
+    });
+  }
+  await scheduleNextDownloadAlarm();
+}
+
+async function recoverPersistedDownloads({ dispatch = true } = {}) {
   const state = await getStateInternal();
   const recoveryPlan = stateMutationCore.planPersistedDownloadRecovery(state.downloadTasks || {});
-  if (!recoveryPlan.length) return { ok: true, recovered: 0 };
-  await ensureOffscreenDocument();
+  if (!recoveryPlan.length) {
+    persistedDownloadsReconciled = true;
+    return { ok: true, recovered: 0 };
+  }
   let recovered = 0;
   for (const item of recoveryPlan) {
     const task = item.task;
@@ -4170,32 +4788,51 @@ async function recoverPersistedDownloads() {
       };
       continue;
     }
-    state.downloadTasks[task.taskId] = { ...task, stage: "recovering", updatedAt: nowIso() };
-    const result = await chrome.runtime.sendMessage({
+    state.downloadTasks[task.taskId] = {
       ...task,
-      type: task.mode === "progressive-opfs" ? "offscreenDownloadProgressive" : "offscreenDownloadM3u8"
-    }).catch((error) => ({ ok: false, error: error?.message || String(error) }));
-    if (result?.ok === false) {
-      state.downloadTasks[task.taskId] = {
-        ...state.downloadTasks[task.taskId],
-        stage: "error",
-        error: result.error || "恢复下载失败",
-        updatedAt: nowIso()
-      };
-    } else {
-      recovered += 1;
-    }
+      stage: "queued",
+      resumeRequested: true,
+      pauseReason: "",
+      updatedAt: nowIso()
+    };
+    recovered += 1;
   }
   await saveState(state);
+  persistedDownloadsReconciled = true;
+  if (dispatch) scheduleDownloadDispatch(0);
   return { ok: true, recovered };
 }
 
+async function ensurePersistedDownloadsReconciled() {
+  if (persistedDownloadsReconciled) return { ok: true, recovered: 0, reused: true };
+  if (persistedDownloadRecoveryInFlight) return persistedDownloadRecoveryInFlight;
+  const task = recoverPersistedDownloads({ dispatch: false });
+  persistedDownloadRecoveryInFlight = task;
+  try {
+    return await task;
+  } finally {
+    if (persistedDownloadRecoveryInFlight === task) persistedDownloadRecoveryInFlight = null;
+  }
+}
+
 chrome.runtime.onStartup?.addListener(() => {
-  recoverPersistedDownloads().catch(() => {});
+  ensureAutomationAlarms().catch(() => {});
+  ensurePersistedDownloadsReconciled().then(() => scheduleDownloadDispatch(0)).catch(() => {});
 });
 
 chrome.runtime.onInstalled?.addListener(() => {
-  recoverPersistedDownloads().catch(() => {});
+  ensureAutomationAlarms().catch(() => {});
+  ensurePersistedDownloadsReconciled().then(() => scheduleDownloadDispatch(0)).catch(() => {});
+});
+
+chrome.alarms?.onAlarm.addListener((alarm) => {
+  if ([DOWNLOAD_SCHEDULER_ALARM, DOWNLOAD_NEXT_ALARM].includes(String(alarm?.name || ""))) {
+    runDownloadScheduler().catch(() => {});
+  } else if (alarm?.name === ACCOUNT_PATROL_ALARM) {
+    runAccountPatrol().catch(() => {});
+  } else if (alarm?.name === STORAGE_AUDIT_ALARM) {
+    runStorageAudit().catch(() => {});
+  }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -4208,6 +4845,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "getStateLocal") {
       sendResponse({ ok: true, state: sanitizeState(await getStateInternal()) });
+      return;
+    }
+    if (message?.type === "updateLibraryEntry") {
+      sendResponse(await updateLibraryExperience(message));
+      return;
+    }
+    if (message?.type === "markLibraryPlayback") {
+      sendResponse(await markLibraryPlayback(message));
+      return;
+    }
+    if (message?.type === "savePlaybackBookmark") {
+      sendResponse(await savePlaybackBookmark(message));
+      return;
+    }
+    if (message?.type === "deletePlaybackBookmark") {
+      sendResponse(await deletePlaybackBookmark(message));
+      return;
+    }
+    if (message?.type === "markExperienceAlert") {
+      sendResponse(await markExperienceAlert(message));
+      return;
+    }
+    if (message?.type === "clearExperienceAlerts") {
+      sendResponse(await clearExperienceAlerts());
+      return;
+    }
+    if (message?.type === "saveExperienceSettings") {
+      sendResponse(await saveExperienceSettings(message));
+      return;
+    }
+    if (message?.type === "setNotificationsEnabled") {
+      sendResponse(await setNotificationsEnabled(message.enabled === true));
+      return;
+    }
+    if (message?.type === "runAccountPatrol") {
+      sendResponse(await runAccountPatrol({ force: message.force === true, accountId: String(message.accountId || "") }));
       return;
     }
     if (message?.type === "saveRemoteConfig") {
@@ -4273,6 +4946,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
   if (message?.type === "clearState") {
+      await mutateExperience(() => experienceCore.defaultExperienceState());
       const state = await saveState({ ...DEFAULT_STATE, accountPool: [] });
       sendResponse({ ok: true, state: sanitizeState(state) });
       return;
@@ -4294,7 +4968,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
     if (message?.type === "verifyAccount") {
-      const result = await updateAccountSession(String(message.accountId || ""), message.bootstrapSession || message.session || null);
+      const result = await verifyAccountWithHealth(String(message.accountId || ""), message.bootstrapSession || message.session || null);
       sendResponse({ ok: true, ...result });
       return;
     }
@@ -4316,6 +4990,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "downloadFullVideo") {
       sendResponse(await downloadFullVideo(message));
+      return;
+    }
+    if (message?.type === "configureDownloadTask") {
+      sendResponse(await configureDownloadTask(message));
+      return;
+    }
+    if (message?.type === "pauseDownloadQueue") {
+      sendResponse(await pauseDownloadQueue());
+      return;
+    }
+    if (message?.type === "resumeDownloadQueue") {
+      sendResponse(await resumeDownloadQueue());
+      return;
+    }
+    if (message?.type === "runDownloadScheduler") {
+      sendResponse(await runDownloadScheduler());
+      return;
+    }
+    if (message?.type === "runStorageAudit") {
+      sendResponse(await runStorageAudit({ allowAutoCleanup: message.allowAutoCleanup !== false }));
+      return;
+    }
+    if (message?.type === "cleanupOpfsStorage") {
+      sendResponse(await cleanupOpfsStorage(message.targets || [], false));
       return;
     }
     if (message?.type === "downloadProgress") {

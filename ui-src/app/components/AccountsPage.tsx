@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle, Cloud, Coins, Crown, Edit2, Eye, EyeOff, HardDrive, Heart, Key, Plus, RefreshCw, Search, ShieldCheck, Trash2, Upload, XCircle } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle, Clock3, Cloud, Coins, Crown, Edit2, Eye, EyeOff, HardDrive, Heart, Key, Plus, RefreshCw, Search, ShieldCheck, Snowflake, Trash2, Upload, XCircle } from "lucide-react";
 import type { AccountItem, AccountsPageIntent, BridgeState } from "../types";
 import { accountAvailable, accountName, accountRights, accountStats, accountStatusLabel, formatRelativeTime, isCloudAccount, visibleAccounts } from "../helpers";
 import {
@@ -44,16 +44,24 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
   const [pendingDelete, setPendingDelete] = useState<AccountItem | null>(null);
   const [formError, setFormError] = useState("");
   const [form, setForm] = useState(EMPTY_ACCOUNT_FORM);
+  const [healthIssuesOnly, setHealthIssuesOnly] = useState(false);
+  const [patrolEnabled, setPatrolEnabled] = useState(state.experience?.accountPatrol?.enabled !== false);
+  const [patrolInterval, setPatrolInterval] = useState(Number(state.experience?.accountPatrol?.intervalHours || 6));
 
   const stats = accountStats(state);
   const accounts = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
-    const source = visibleAccounts(state, showInvalid);
+    // “只看问题账号”必须同时包含默认隐藏的失效云端账号，否则筛选会漏掉最需要处理的对象。
+    let source = visibleAccounts(state, showInvalid || healthIssuesOnly);
+    if (healthIssuesOnly) source = source.filter((account) => {
+      const health = state.experience?.accountPatrol?.records?.[String(account.id || "")];
+      return ["degraded", "cooling", "needs_attention"].includes(String(health?.state || ""));
+    });
     if (!normalizedQuery) return source;
     return source.filter((account) => [accountName(account), account.username, account.id, account.notes]
       .filter(Boolean)
       .some((value) => String(value).toLocaleLowerCase("zh-CN").includes(normalizedQuery)));
-  }, [state, showInvalid, query]);
+  }, [state, showInvalid, query, healthIssuesOnly]);
   const cloudAccounts = accounts.filter(isCloudAccount);
   const localAccounts = accounts.filter((a) => !isCloudAccount(a));
 
@@ -62,6 +70,11 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
     setSourceMode(state.remote?.accountSourceMode || "cloud");
     setConfigError("");
   }, [state.remote?.baseUrl, state.remote?.accountSourceMode]);
+
+  useEffect(() => {
+    setPatrolEnabled(state.experience?.accountPatrol?.enabled !== false);
+    setPatrolInterval(Number(state.experience?.accountPatrol?.intervalHours || 6));
+  }, [state.experience?.accountPatrol?.enabled, state.experience?.accountPatrol?.intervalHours]);
 
   useEffect(() => {
     const hasIntent = typeof intent?.showInvalid === "boolean" || Boolean(intent?.openAdd);
@@ -137,6 +150,9 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
     const rights = accountRights(account);
     const lastVerified = (account as unknown as { lastVerifiedAt?: string }).lastVerifiedAt;
     const tokenMasked = account.tokenMasked || "";
+    const health = state.experience?.accountPatrol?.records?.[String(account.id || "")];
+    const healthLabel = health?.state === "healthy" ? "巡检健康" : health?.state === "degraded" ? "状态波动" : health?.state === "cooling" ? "冷却中" : health?.state === "needs_attention" ? "需处理" : "尚未巡检";
+    const healthTone = health?.state === "healthy" ? "bg-success-50 text-success-600" : health?.state === "degraded" ? "bg-warning-50 text-warning-600" : ["cooling", "needs_attention"].includes(String(health?.state || "")) ? "bg-danger-50 text-danger-600" : "bg-slate-100 text-slate-500";
 
     return (
       <div
@@ -155,7 +171,8 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
               <div className="mt-1 flex flex-wrap gap-1">
                 {selected && <Pill className="bg-brand-100 text-brand-700">当前选中</Pill>}
                 {cloud && <Pill className="bg-info-50 text-info-600">云端只读</Pill>}
-                <Pill className={ok ? "bg-success-50 text-success-600" : "bg-danger-50 text-danger-600"}>{accountStatusLabel(account)}</Pill>
+                 <Pill className={ok ? "bg-success-50 text-success-600" : "bg-danger-50 text-danger-600"}>{accountStatusLabel(account)}</Pill>
+                 <Pill className={healthTone}>{healthLabel}</Pill>
               </div>
             </div>
           </div>
@@ -183,6 +200,14 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
           <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
             {tokenMasked && <span className="flex items-center gap-1"><Key size={11} />{tokenMasked}</span>}
             {lastVerified && <span className="flex items-center gap-1"><ShieldCheck size={11} className="text-success-500" />{formatRelativeTime(lastVerified)}验证</span>}
+          </div>
+        )}
+        {health && (
+          <div className={`mt-2.5 rounded-xl px-3 py-2 text-[10px] leading-5 ${health.state === "healthy" ? "bg-success-50 text-success-700" : "bg-warning-50 text-warning-700"}`}>
+            <span className="font-bold">连续失败 {health.consecutiveFailures || 0} 次</span>
+            {health.lastCheckedAt && <span> · {formatRelativeTime(health.lastCheckedAt)}巡检</span>}
+            {health.cooldownUntil && Date.parse(health.cooldownUntil) > Date.now() && <span className="block"><Snowflake size={11} className="mr-1 inline" />冷却至 {new Date(health.cooldownUntil).toLocaleString("zh-CN", { hour12: false })}</span>}
+            {health.lastReason && <span className="mt-0.5 block break-words">{health.lastReason}</span>}
           </div>
         )}
 
@@ -234,6 +259,18 @@ export function AccountsPage({ state, onAction, intent, onIntentHandled }: Props
           { label: "失效", value: stats.invalid, tone: "rose" }
         ]}
       />
+
+      <SectionCard title="账号健康巡检" icon={Activity} hint="只验证会话，不获取影片、不执行购买；失败账号按规则进入冷却" tone="amber">
+        <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+          <label className="flex min-h-12 items-center justify-between rounded-xl bg-slate-50 px-3 text-[11px] font-semibold text-slate-600">启用周期巡检<input type="checkbox" checked={patrolEnabled} onChange={(event) => setPatrolEnabled(event.target.checked)} className="size-4 accent-violet-600" /></label>
+          <label className="rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-semibold text-slate-500"><Clock3 size={12} className="mr-1 inline" />间隔<select value={patrolInterval} disabled={!patrolEnabled} onChange={(event) => setPatrolInterval(Number(event.target.value))} className="ml-2 min-h-9 rounded-lg border border-slate-200 bg-white px-2 text-slate-700 disabled:opacity-50"><option value={1}>1 小时</option><option value={6}>6 小时</option><option value={12}>12 小时</option><option value={24}>24 小时</option></select></label>
+          <div className="grid grid-cols-2 gap-2"><SoftButton size="sm" variant="secondary" onClick={() => onAction("save-experience-settings", { accountPatrol: { enabled: patrolEnabled, intervalHours: patrolInterval } })}>保存</SoftButton><SoftButton size="sm" icon={RefreshCw} onClick={() => onAction("run-account-patrol")}>立即巡检</SoftButton></div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+          <Pill className="bg-slate-100 text-slate-600">上次：{state.experience?.accountPatrol?.lastRunAt ? formatRelativeTime(state.experience.accountPatrol.lastRunAt) : "尚未运行"}</Pill>
+          <button type="button" aria-pressed={healthIssuesOnly} onClick={() => setHealthIssuesOnly((value) => !value)} className={`min-h-9 rounded-xl px-3 font-bold ${healthIssuesOnly ? "bg-danger-500 text-white" : "bg-danger-50 text-danger-600"}`}>{healthIssuesOnly ? "正在只看问题账号" : "只看波动 / 冷却 / 需处理"}</button>
+        </div>
+      </SectionCard>
 
       <SectionCard title="小屋连接与轮班方式" icon={Cloud} hint="服务标识已安全内置，只需填写地址；保存后会立即敲门验证" tone="sky">
         <div className="space-y-3">

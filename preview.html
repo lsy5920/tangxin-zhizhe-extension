@@ -160,11 +160,24 @@
           request: previewRequest
         },
         downloadTasks: {
-          task_preview: { taskId: "task_preview", attemptId: "attempt_preview", sequence: 18, movieId: "9527", movieTitle: "预览视频", mode: "hls-opfs", format: "mp4", lineKey: "primary", url: previewVideo, stage: "downloading", current: 18, total: 40, bytes: 188743680, totalBytes: 419430400, percent: 45, speedBps: 2457600, updatedAt: new Date().toISOString() }
+          task_preview: { taskId: "task_preview", attemptId: "attempt_preview", sequence: 18, movieId: "9527", movieTitle: "预览视频", mode: "hls-opfs", format: "mp4", lineKey: "primary", url: previewVideo, stage: "downloading", priority: "high", notBefore: "", createdAt: new Date(Date.now() - 600000).toISOString(), current: 18, total: 40, bytes: 188743680, totalBytes: 419430400, percent: 45, speedBps: 2457600, updatedAt: new Date().toISOString() }
+        },
+        experience: {
+          schemaVersion: 1,
+          library: {
+            "9527": { movieId: "9527", title: "星糖列车与月亮放映厅", favorite: true, watchLater: true, tags: ["Vlog", "旅行"], note: "想再看一次夜景片段", addedAt: new Date(Date.now() - 86400000).toISOString(), updatedAt: new Date().toISOString(), lastPlayedAt: "", watchedAt: "" },
+            "2048": { movieId: "2048", title: "棉花糖云海巡游", favorite: true, watchLater: false, tags: ["治愈"], note: "", addedAt: new Date(Date.now() - 172800000).toISOString(), updatedAt: new Date(Date.now() - 86400000).toISOString(), lastPlayedAt: new Date(Date.now() - 86400000).toISOString(), watchedAt: new Date(Date.now() - 86400000).toISOString() }
+          },
+          bookmarks: { "9527": [{ id: "bookmark-preview", movieId: "9527", title: "星糖列车与月亮放映厅", label: "月亮升起", note: "这里的转场很漂亮", startSeconds: 12, endSeconds: 24, durationSeconds: 60, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }] },
+          downloadPolicy: { maxConcurrent: 1, queuePaused: false, windowEnabled: false, windowStart: "00:00", windowEnd: "23:59", autoCleanup: false },
+          accountPatrol: { enabled: true, intervalHours: 6, lastRunAt: new Date(Date.now() - 3600000).toISOString(), records: { "cloud-1": { accountId: "cloud-1", state: "healthy", consecutiveFailures: 0, lastCheckedAt: new Date(Date.now() - 3600000).toISOString(), cooldownUntil: "", lastReason: "", history: [] }, "cloud-2": { accountId: "cloud-2", state: "cooling", consecutiveFailures: 2, lastCheckedAt: new Date(Date.now() - 600000).toISOString(), cooldownUntil: new Date(Date.now() + 600000).toISOString(), lastReason: "预览网络超时", history: [] } } },
+          notificationsEnabled: false,
+          alerts: [{ id: "alert-preview", key: "account:cloud-2:cooling", category: "account", level: "warning", title: "账号已进入冷却", detail: "云端备用账号：预览网络超时", createdAt: new Date().toISOString(), readAt: "", count: 1 }],
+          storageAudit: { checkedAt: new Date().toISOString(), storage: { known: true, quota: 2147483648, usage: 805306368, available: 1342177280 }, managedBytes: 524288000, lowSpace: false, entries: [{ taskId: "task_preview", attemptId: "attempt_preview", movieId: "9527", filename: "星糖列车.mp4", category: "active", bytes: 419430400, protected: true, duplicateGroup: "", updatedAt: new Date().toISOString() }, { taskId: "task_orphan", attemptId: "attempt_old", movieId: "", filename: "", category: "orphan", bytes: 104857600, protected: false, duplicateGroup: "", updatedAt: new Date(Date.now() - 864000000).toISOString() }] }
         },
         downloadPlanner: null,
         purchaseReconciliation: { items: previewReconciliationItems, loading: false, checkedAt: new Date().toISOString() },
-        repositoryUpdate: { ok: true, checkPhase: "success", downloadPhase: "idle", checkedAt: new Date().toISOString(), updateAvailable: false, local: { version: "5.1.3", build: "2026-07-28-2227" }, remote: { version: "5.1.3", build: "2026-07-28-2227" } },
+        repositoryUpdate: { ok: true, checkPhase: "success", downloadPhase: "idle", checkedAt: new Date().toISOString(), updateAvailable: false, local: { version: "5.2.0", build: "2026-07-29-1810" }, remote: { version: "5.2.0", build: "2026-07-29-1810" } },
         adCleaner: { enabled: true, version: "v3", total: 12, removed: 8, blockedClicks: 3, splashHits: 1, countdownHits: 1, selectors: 1, lastRunAt: new Date().toISOString() },
         flow: [{ title: "本地预览", detail: `糖果影院确定性场景：${previewScenario}`, level: "ok", ts: new Date().toISOString() }]
       };
@@ -228,6 +241,9 @@
               lineKey: payload.sourceId || "primary",
               url: previewVideo,
               stage: "queued",
+              priority: payload.priority || "normal",
+              notBefore: payload.notBefore || "",
+              createdAt: now,
               current: 0,
               total: 86,
               percent: 0,
@@ -244,6 +260,51 @@
             const stage = action === "pause-download-task" ? "paused" : action === "resume-download-task" ? "recovering" : "cancelled";
             next.downloadTasks = { ...current.downloadTasks, [taskId]: { ...task, sequence: Number(task.sequence || 0) + 1, stage, updatedAt: now } };
           }
+        }
+        if (action === "configure-download-task") {
+          const task = current.downloadTasks?.[payload.taskId];
+          if (task) next.downloadTasks = { ...current.downloadTasks, [payload.taskId]: { ...task, priority: payload.priority || "normal", notBefore: payload.notBefore || "", updatedAt: now } };
+        }
+        if (action === "pause-download-queue" || action === "resume-download-queue") {
+          const paused = action === "pause-download-queue";
+          next.experience = { ...current.experience, downloadPolicy: { ...(current.experience?.downloadPolicy || {}), queuePaused: paused } };
+        }
+        if (action === "save-experience-settings") {
+          next.experience = { ...current.experience, downloadPolicy: { ...(current.experience?.downloadPolicy || {}), ...(payload.downloadPolicy || {}) }, accountPatrol: { ...(current.experience?.accountPatrol || {}), ...(payload.accountPatrol || {}), records: current.experience?.accountPatrol?.records || {} } };
+        }
+        if (action === "set-notifications-enabled") next.experience = { ...current.experience, notificationsEnabled: Boolean(payload.enabled) };
+        if (action === "update-library-entry") {
+          const library = { ...(current.experience?.library || {}) };
+          if (!payload.favorite && !payload.watchLater) delete library[payload.movieId];
+          else library[payload.movieId] = { ...(library[payload.movieId] || {}), ...payload, updatedAt: now, addedAt: library[payload.movieId]?.addedAt || now };
+          next.experience = { ...current.experience, library };
+        }
+        if (action === "open-library-playback") {
+          const picked = payload.movieId === historySession.movieId ? historySession : fixtureSession;
+          next.screening = { ...(current.screening || {}), activeSession: picked, history: [...(current.screening?.history || []).filter((item) => item.movieId !== picked.movieId), picked], request: { phase: "idle" } };
+        }
+        if (action === "mark-library-playback" && current.experience?.library?.[payload.movieId]) {
+          const entry = current.experience.library[payload.movieId];
+          next.experience = { ...current.experience, library: { ...current.experience.library, [payload.movieId]: { ...entry, lastPlayedAt: now, watchedAt: payload.ended ? now : entry.watchedAt } } };
+        }
+        if (action === "save-playback-bookmark") {
+          const movieId = payload.movieId || fixtureSession.movieId;
+          const rows = [...(current.experience?.bookmarks?.[movieId] || [])];
+          const id = payload.id || `bookmark_${Date.now()}`;
+          const bookmark = { ...payload, id, movieId, createdAt: payload.createdAt || now, updatedAt: now };
+          next.experience = { ...current.experience, bookmarks: { ...(current.experience?.bookmarks || {}), [movieId]: [...rows.filter((item) => item.id !== id), bookmark].sort((a, b) => a.startSeconds - b.startSeconds) } };
+        }
+        if (action === "delete-playback-bookmark") {
+          const movieId = payload.movieId || fixtureSession.movieId;
+          next.experience = { ...current.experience, bookmarks: { ...(current.experience?.bookmarks || {}), [movieId]: (current.experience?.bookmarks?.[movieId] || []).filter((item) => item.id !== payload.bookmarkId) } };
+        }
+        if (action === "mark-experience-alert") next.experience = { ...current.experience, alerts: (current.experience?.alerts || []).map((item) => item.id === payload.alertId ? { ...item, readAt: now } : item) };
+        if (action === "clear-experience-alerts") next.experience = { ...current.experience, alerts: [] };
+        if (action === "run-account-patrol") next.experience = { ...current.experience, accountPatrol: { ...(current.experience?.accountPatrol || {}), lastRunAt: now, records: Object.fromEntries((current.accountPool || []).map((account) => [account.id, { accountId: account.id, state: "healthy", consecutiveFailures: 0, lastCheckedAt: now, cooldownUntil: "", lastReason: "", history: [] }])) } };
+        if (action === "run-storage-audit") next.experience = { ...current.experience, storageAudit: { ...(current.experience?.storageAudit || {}), checkedAt: now } };
+        if (action === "cleanup-opfs-storage") {
+          const targets = new Set(payload.targets || []);
+          next.experience = { ...current.experience, storageAudit: { ...(current.experience?.storageAudit || {}), checkedAt: now, entries: (current.experience?.storageAudit?.entries || []).filter((entry) => !targets.has(`${entry.taskId}:${entry.attemptId}`)) } };
         }
         if (action === "load-purchase-reconciliation") {
           next.purchaseReconciliation = { ...(current.purchaseReconciliation || {}), loading: false, checkedAt: now };

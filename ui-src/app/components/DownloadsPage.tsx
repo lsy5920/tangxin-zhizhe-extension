@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Ban, CheckCircle, Copy, Download, FolderOpen, Link, Loader, MoreHorizontal, Pause, Play, RefreshCw, Save, Search, SortDesc, Trash2, XCircle } from "lucide-react";
+import { AlertTriangle, Ban, CalendarClock, CheckCircle, Copy, Download, FolderOpen, HardDrive, Link, Loader, MoreHorizontal, Pause, Play, RefreshCw, Save, Search, Settings2, SortDesc, Trash2, XCircle } from "lucide-react";
 import type { BridgeState, DownloadTask } from "../types";
 import { absoluteUrl, canSaveDownload, downloadFormat, downloadLineLabel, downloadProgress, downloadSpeedText, downloadStageLabel, downloadStats, downloadTasks, downloadTitle, formatBytes, maskUrl, shortTime } from "../helpers";
 import {
@@ -34,6 +34,13 @@ function taskTone(task: DownloadTask) {
   return { label: downloadStageLabel(task.stage), color: "bg-info-50 text-info-600", icon: <Loader size={12} className="animate-spin" /> };
 }
 
+function localDateTimeInput(value?: string) {
+  const date = new Date(String(value || ""));
+  if (!Number.isFinite(date.getTime())) return "";
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+}
+
 export function DownloadsPage({ state, onAction }: Props) {
   const tasks = downloadTasks(state);
   const stats = downloadStats(tasks);
@@ -43,8 +50,31 @@ export function DownloadsPage({ state, onAction }: Props) {
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [view, setView] = useState<"queue" | "storage">("queue");
+  const [maxConcurrent, setMaxConcurrent] = useState(1);
+  const [windowEnabled, setWindowEnabled] = useState(false);
+  const [windowStart, setWindowStart] = useState("00:00");
+  const [windowEnd, setWindowEnd] = useState("23:59");
+  const [autoCleanup, setAutoCleanup] = useState(false);
+  const [selectedStorageKeys, setSelectedStorageKeys] = useState<string[]>([]);
   const retryGeneration = useRef(0);
   const readyCount = tasks.filter(canSaveDownload).length;
+
+  useEffect(() => {
+    const policy = state.experience?.downloadPolicy;
+    setMaxConcurrent(Number(policy?.maxConcurrent || 1));
+    setWindowEnabled(policy?.windowEnabled === true);
+    setWindowStart(policy?.windowStart || "00:00");
+    setWindowEnd(policy?.windowEnd || "23:59");
+    setAutoCleanup(policy?.autoCleanup === true);
+  }, [state.experience?.downloadPolicy]);
+
+  useEffect(() => {
+    const available = new Set((state.experience?.storageAudit?.entries || [])
+      .filter((entry) => !entry.protected && ["orphan", "residue", "duplicate"].includes(String(entry.category || "")))
+      .map((entry) => `${entry.taskId}:${entry.attemptId}`));
+    setSelectedStorageKeys((current) => current.filter((key) => available.has(key)));
+  }, [state.experience?.storageAudit]);
 
   useEffect(() => () => {
     // 页面卸载后终止尚未发出的重试动作，避免切页后后台继续排队。
@@ -72,6 +102,12 @@ export function DownloadsPage({ state, onAction }: Props) {
   const readyTaskIds = filteredTasks.filter(canSaveDownload).map((task) => task.taskId || "").filter(Boolean);
   const filterLabel = filterItems.find((item) => item.key === filter)?.label || "当前筛选";
   const retryMovieIds = uniqueRetryMovieIds(filteredTasks);
+  const storageAudit = state.experience?.storageAudit;
+  const cleanableStorageEntries = (storageAudit?.entries || []).filter((entry) => !entry.protected && ["orphan", "residue", "duplicate"].includes(String(entry.category || "")));
+
+  const saveDownloadPolicy = () => onAction("save-experience-settings", {
+    downloadPolicy: { maxConcurrent, windowEnabled, windowStart, windowEnd, autoCleanup }
+  });
 
   function runBulkAction(action: string, payload?: Record<string, unknown>) {
     setShowBulkActions(false);
@@ -120,6 +156,32 @@ export function DownloadsPage({ state, onAction }: Props) {
           </>
         }
       />
+
+      <SegmentedControl
+        items={[
+          { key: "queue" as const, label: "智能队列", count: stats.total },
+          { key: "storage" as const, label: "存储管家", count: storageAudit?.entries?.length || 0 }
+        ]}
+        value={view}
+        onChange={setView}
+      />
+
+      {view === "queue" ? <>
+      <SectionCard title="智能下载调度" icon={Settings2} hint="到期任务按优先级与创建时间进入可恢复下载内核">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <label className="rounded-xl bg-slate-50 p-3 text-[11px] font-semibold text-slate-600">最大并发
+            <select value={maxConcurrent} onChange={(event) => setMaxConcurrent(Number(event.target.value))} className="mt-2 min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3"><option value={1}>1 · 最稳定</option><option value={2}>2 · 均衡</option><option value={3}>3 · 高性能</option></select>
+          </label>
+          <label className="rounded-xl bg-slate-50 p-3 text-[11px] font-semibold text-slate-600"><span className="flex items-center justify-between">限定开始窗口<input type="checkbox" checked={windowEnabled} onChange={(event) => setWindowEnabled(event.target.checked)} className="size-4 accent-violet-600" /></span><span className="mt-2 grid grid-cols-2 gap-2"><input type="time" disabled={!windowEnabled} value={windowStart} onChange={(event) => setWindowStart(event.target.value)} className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 disabled:opacity-50" /><input type="time" disabled={!windowEnabled} value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} className="min-h-10 rounded-lg border border-slate-200 bg-white px-2 disabled:opacity-50" /></span></label>
+          <label className="rounded-xl bg-slate-50 p-3 text-[11px] font-semibold text-slate-600"><span className="flex items-center justify-between">7 天残留自动整理<input type="checkbox" checked={autoCleanup} onChange={(event) => setAutoCleanup(event.target.checked)} className="size-4 accent-violet-600" /></span><span className="mt-2 block text-[10px] font-normal leading-5 text-slate-400">只处理孤儿与失败残留，绝不删除活动任务或已完成成品。</span></label>
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-violet-50 p-3">
+            <SoftButton size="sm" variant="secondary" icon={Pause} onClick={() => onAction("pause-download-queue")}>暂停全部</SoftButton>
+            <SoftButton size="sm" variant="sky" icon={Play} onClick={() => onAction("resume-download-queue")}>继续队列</SoftButton>
+            <SoftButton size="sm" className="col-span-2" icon={Save} onClick={saveDownloadPolicy}>保存调度设置</SoftButton>
+          </div>
+        </div>
+        {state.experience?.downloadPolicy?.queuePaused && <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-700">队列已暂停，新任务仍会保存，但不会自动开始。</p>}
+      </SectionCard>
 
       <SectionCard title="整理与查找" icon={Search} hint={`收纳篮里当前显示 ${filteredTasks.length} / ${stats.total} 个任务`}>
         <div className="space-y-3">
@@ -181,6 +243,8 @@ export function DownloadsPage({ state, onAction }: Props) {
                 <div className="flex flex-wrap gap-1.5">
                   <Pill className="bg-slate-100 text-slate-600">{downloadFormat(task)}</Pill>
                   {task.lineKey && <Pill className="bg-brand-50 text-brand-700">{downloadLineLabel(task.lineKey)}</Pill>}
+                  <Pill className={task.priority === "high" ? "bg-danger-50 text-danger-600" : task.priority === "low" ? "bg-slate-100 text-slate-500" : "bg-violet-50 text-violet-600"}>{task.priority === "high" ? "高优先" : task.priority === "low" ? "低优先" : "普通优先"}</Pill>
+                  {task.notBefore && <Pill className="bg-amber-50 text-amber-700"><CalendarClock size={10} />{new Date(task.notBefore).toLocaleString("zh-CN", { hour12: false })}</Pill>}
                   <Pill className="bg-info-50 text-info-600">{task.totalBytes ? `${formatBytes(task.bytes)} / ${formatBytes(task.totalBytes)}` : formatBytes(task.bytes)}</Pill>
                   {downloadSpeedText(task) && <Pill className="bg-success-50 text-success-600">{downloadSpeedText(task)}</Pill>}
                   <Pill className="bg-slate-50 text-slate-500">{shortTime(task.updatedAt)}</Pill>
@@ -194,6 +258,12 @@ export function DownloadsPage({ state, onAction }: Props) {
                   </div>
                 )}
                 {(task.error || task.transmuxError) && <div className="flex items-start gap-2 rounded-xl bg-danger-50 p-2.5"><AlertTriangle size={13} className="mt-0.5 shrink-0 text-danger-500" /><p className="break-all text-[11px] leading-[1.55] text-danger-600">{task.error || `MP4 转封装失败，TS 已保留：${task.transmuxError}`}</p></div>}
+                {["queued", "paused", "stale", "error"].includes(String(task.stage || "")) && (
+                  <div className="grid gap-2 rounded-xl bg-slate-50 p-2.5 sm:grid-cols-2">
+                    <label className="text-[9px] font-semibold text-slate-500">优先级<select value={task.priority || "normal"} onChange={(event) => onAction("configure-download-task", { taskId: task.taskId || "", priority: event.target.value, notBefore: task.notBefore || "" })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-[10px]"><option value="high">高</option><option value="normal">普通</option><option value="low">低</option></select></label>
+                    <label className="text-[9px] font-semibold text-slate-500">指定开始时间<input type="datetime-local" defaultValue={localDateTimeInput(task.notBefore)} onBlur={(event) => onAction("configure-download-task", { taskId: task.taskId || "", priority: task.priority || "normal", notBefore: event.target.value ? new Date(event.target.value).toISOString() : "" })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-[10px]" /></label>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2">
                   {task.stage === "error" && <SoftButton size="sm" variant="amber" icon={RefreshCw} disabled={!task.movieId} onClick={() => onAction("download-full-video", { movieId: task.movieId || "" })}>重试</SoftButton>}
                   {["queued", "probing", "downloading", "recovering", "assembling"].includes(String(task.stage)) && <SoftButton size="sm" variant="amber" icon={Pause} onClick={() => onAction("pause-download-task", { taskId: task.taskId || "" })}>暂停</SoftButton>}
@@ -212,6 +282,26 @@ export function DownloadsPage({ state, onAction }: Props) {
           <div className="lg:col-span-2"><EmptyState icon={Download} title="收纳篮还是空的" desc="进入视频详情页点击“下载”，任务就会来到这里" /></div>
         )}
       </div>
+      </> : (
+        <SectionCard title="OPFS 存储管家" icon={HardDrive} hint={storageAudit?.checkedAt ? `最近扫描 ${shortTime(storageAudit.checkedAt)}` : "首次使用请先扫描浏览器私有文件系统"}>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="rounded-xl bg-slate-50 p-3"><span className="text-[10px] text-slate-400">浏览器配额</span><strong className="mt-1 block text-[13px] text-slate-800">{storageAudit?.storage?.known ? formatBytes(storageAudit.storage.quota || 0) : "无法检测"}</strong></div>
+            <div className="rounded-xl bg-violet-50 p-3"><span className="text-[10px] text-violet-400">插件管理占用</span><strong className="mt-1 block text-[13px] text-violet-700">{formatBytes(storageAudit?.managedBytes || 0)}</strong></div>
+            <div className={`rounded-xl p-3 ${storageAudit?.lowSpace ? "bg-danger-50" : "bg-success-50"}`}><span className={`text-[10px] ${storageAudit?.lowSpace ? "text-danger-400" : "text-success-500"}`}>可用空间</span><strong className={`mt-1 block text-[13px] ${storageAudit?.lowSpace ? "text-danger-700" : "text-success-700"}`}>{storageAudit?.storage?.known ? formatBytes(storageAudit.storage.available || 0) : "浏览器未提供"}</strong></div>
+          </div>
+          {storageAudit?.lowSpace && <p className="mt-3 rounded-xl border border-danger-100 bg-danger-50 p-3 text-[11px] font-semibold text-danger-600">可用空间低于 1 GiB 或总配额的 15%，空间不足的新任务将自动暂停。</p>}
+          <div className="mt-3 flex flex-wrap gap-2"><SoftButton size="sm" icon={RefreshCw} onClick={() => onAction("run-storage-audit")}>重新扫描</SoftButton><SoftButton size="sm" variant="danger" icon={Trash2} disabled={!selectedStorageKeys.length} onClick={() => onAction("cleanup-opfs-storage", { targets: selectedStorageKeys })}>安全清理所选（{selectedStorageKeys.length}）</SoftButton><SoftButton size="sm" variant="ghost" disabled={!cleanableStorageEntries.length} onClick={() => setSelectedStorageKeys(cleanableStorageEntries.map((entry) => `${entry.taskId}:${entry.attemptId}`))}>选择全部可清理项</SoftButton></div>
+          <div className="mt-4 space-y-2">
+            {!storageAudit && <EmptyState icon={HardDrive} title="还没有空间报告" desc="点击“重新扫描”统计活动任务、成品、可恢复分片和安全残留" />}
+            {storageAudit?.entries?.map((entry) => {
+              const key = `${entry.taskId}:${entry.attemptId}`;
+              const cleanable = !entry.protected && ["orphan", "residue", "duplicate"].includes(String(entry.category || ""));
+              const label = entry.category === "artifact" ? "已组装成品" : entry.category === "resumable" ? "可恢复分片" : entry.category === "residue" ? "失败/取消残留" : entry.category === "duplicate" ? "疑似重复成品" : entry.category === "orphan" ? "孤儿文件" : "活动任务";
+              return <label key={key} className={`flex items-center gap-3 rounded-xl border p-3 ${entry.protected ? "border-success-100 bg-success-50/60" : cleanable ? "border-warning-100 bg-warning-50/55" : "border-slate-100 bg-slate-50"}`}><input type="checkbox" disabled={!cleanable} checked={selectedStorageKeys.includes(key)} onChange={(event) => setSelectedStorageKeys((current) => event.target.checked ? [...new Set([...current, key])] : current.filter((item) => item !== key))} className="size-4 shrink-0 accent-violet-600 disabled:opacity-30" /><span className="min-w-0 flex-1"><strong className="block truncate text-[11px] text-slate-700">{entry.filename || entry.movieId || entry.taskId}</strong><span className="mt-1 block truncate text-[9px] text-slate-400">{label}{entry.protected ? " · 正在使用，已保护" : ""} · {formatBytes(entry.bytes || 0)}</span></span></label>;
+            })}
+          </div>
+        </SectionCard>
+      )}
 
       <ModalSheet open={showBulkActions} onClose={() => setShowBulkActions(false)} title={`批量操作 · ${filterLabel}`}>
         <div className="grid gap-2 sm:grid-cols-2">

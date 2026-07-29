@@ -7,6 +7,7 @@ export const RELEASE_INCLUDE_PATHS = [
   "manifest.json",
   "background.js",
   "state_mutation_core.js",
+  "experience_core.js",
   "page_context_core.js",
   "download_core.js",
   "content.js",
@@ -20,6 +21,7 @@ export const RELEASE_INCLUDE_PATHS = [
   "save.css",
   "save.js",
   "README.md",
+  "icons",
   "dist-ui",
   "vendor"
 ];

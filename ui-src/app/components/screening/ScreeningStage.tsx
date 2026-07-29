@@ -1,15 +1,26 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { PlayerContextMenu, PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerMorePanelKey } from "../player/PlayerChrome";
 import { PlayerGestureHudOverlay, PlayerGestureSurface, type GestureHudState } from "../player/PlayerGestureSystem";
 import { isBrowserFullscreen } from "../player/browserFullscreen";
 import { usePlaybackController } from "../../playback/usePlaybackController";
 import { useFullscreenController } from "../../playback/useFullscreenController";
 import type { PlaybackSession } from "../../playback/types";
+import type { PlaybackBookmark } from "../../types";
+import { formatDuration } from "../../helpers";
+
+export type PlaybackBookmarkCommand = {
+  nonce: number;
+  type: "seek" | "loop";
+  bookmark: PlaybackBookmark;
+};
 
 type Props = {
   session: PlaybackSession;
   onAction: (action: string, payload?: Record<string, unknown>) => void;
   onPlayingChange?: (playing: boolean) => void;
+  bookmarks?: PlaybackBookmark[];
+  bookmarkCommand?: PlaybackBookmarkCommand | null;
+  onMediaStatsChange?: (stats: { currentTime: number; duration: number }) => void;
 };
 
 function percent(value: number, total: number) {
@@ -28,7 +39,7 @@ function orientationLabel(mode: "auto" | "landscape" | "portrait") {
   return "自动方向";
 }
 
-export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
+export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks = [], bookmarkCommand = null, onMediaStatsChange }: Props) {
   const player = usePlaybackController(session);
   const fullscreen = useFullscreenController({
     video: player.video,
@@ -45,9 +56,14 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
   const [holdHint, setHoldHint] = useState("");
   const [dragging, setDragging] = useState(false);
   const [previewTime, setPreviewTime] = useState<number | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const controlsTimerRef = useRef<number>();
   const hudTimerRef = useRef<number>();
   const previousRateRef = useRef(1);
+  const playedRecordedRef = useRef(false);
+  const endedRecordedRef = useRef(false);
+  const [loopStart, setLoopStart] = useState<number | null>(null);
+  const [loopRange, setLoopRange] = useState<{ start: number; end: number } | null>(null);
   const activeSource = player.activeSource;
   const hasUrl = Boolean(activeSource?.url);
   const paused = player.stats.paused;
@@ -91,6 +107,43 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
     onPlayingChange?.(player.runtime.phase === "playing");
     return () => onPlayingChange?.(false);
   }, [onPlayingChange, player.runtime.phase]);
+
+  useEffect(() => {
+    onMediaStatsChange?.({ currentTime: player.stats.currentTime, duration: player.stats.duration });
+  }, [onMediaStatsChange, player.stats.currentTime, player.stats.duration]);
+
+  useEffect(() => {
+    if (player.runtime.phase === "playing" && !playedRecordedRef.current) {
+      playedRecordedRef.current = true;
+      onAction("mark-library-playback", { movieId: session.movieId, title: session.title, ended: false });
+    }
+    if (player.runtime.phase === "ended" && !endedRecordedRef.current) {
+      endedRecordedRef.current = true;
+      onAction("mark-library-playback", { movieId: session.movieId, title: session.title, ended: true });
+    }
+  }, [onAction, player.runtime.phase, session.movieId, session.title]);
+
+  useEffect(() => {
+    if (!loopRange || player.runtime.phase !== "playing") return;
+    if (player.stats.currentTime >= loopRange.end - 0.2) player.seekTo(loopRange.start);
+  }, [loopRange, player.runtime.phase, player.stats.currentTime, player.seekTo]);
+
+  useEffect(() => {
+    if (!bookmarkCommand?.bookmark || bookmarkCommand.bookmark.movieId !== session.movieId) return;
+    const bookmark = bookmarkCommand.bookmark;
+    if (bookmark.startSeconds > player.stats.duration && player.stats.duration > 0) {
+      showHud({ kind: "seek-scrub", text: "当前片源无法到达该书签" }, 1500);
+      return;
+    }
+    player.seekTo(bookmark.startSeconds);
+    if (bookmarkCommand.type === "loop" && Number(bookmark.endSeconds || 0) > bookmark.startSeconds + 1) {
+      setLoopStart(bookmark.startSeconds);
+      setLoopRange({ start: bookmark.startSeconds, end: Number(bookmark.endSeconds) });
+      showHud({ kind: "seek-scrub", text: `循环 ${formatDuration(bookmark.startSeconds)}–${formatDuration(Number(bookmark.endSeconds))}` }, 1300);
+    }
+  // command nonce guarantees that selecting the same bookmark twice still runs.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookmarkCommand?.nonce]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -192,6 +245,67 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
   const copyCurrentLink = () => onAction("copy-play-link", { url: activeSource?.url || "", label: `${activeSource?.label || "当前线路"}完整链接` });
   const openCurrentLink = () => onAction("open-playback-url", { url: activeSource?.url || "", label: activeSource?.label || "当前线路" });
   const downloadCurrent = () => onAction("plan-full-video-download", { movieId: session.movieId, sourceId: activeSource?.id || "" });
+  const savePointBookmark = () => {
+    if (!player.stats.duration || player.stats.currentTime < 0) {
+      showHud({ kind: "seek-scrub", text: "影片就绪后才能保存书签" }, 1300);
+      return;
+    }
+    onAction("save-playback-bookmark", {
+      movieId: session.movieId,
+      title: session.title,
+      label: `书签 ${formatDuration(player.stats.currentTime)}`,
+      startSeconds: player.stats.currentTime,
+      durationSeconds: player.stats.duration
+    });
+    showHud({ kind: "seek-scrub", text: `已保存 ${formatDuration(player.stats.currentTime)}` }, 1100);
+  };
+  const setCurrentAsLoopStart = () => {
+    setLoopStart(player.stats.currentTime);
+    setLoopRange(null);
+    showHud({ kind: "seek-scrub", text: `A 点 ${formatDuration(player.stats.currentTime)}` }, 1100);
+  };
+  const setCurrentAsLoopEnd = () => {
+    if (loopStart === null) {
+      showHud({ kind: "seek-scrub", text: "请先设置 A 点" }, 1300);
+      return;
+    }
+    const end = player.stats.currentTime;
+    if (end <= loopStart + 1 || (player.stats.duration > 0 && end > player.stats.duration + 0.25)) {
+      showHud({ kind: "seek-scrub", text: "B 点必须至少比 A 点晚 1 秒" }, 1500);
+      return;
+    }
+    setLoopRange({ start: loopStart, end });
+    onAction("save-playback-bookmark", {
+      movieId: session.movieId,
+      title: session.title,
+      label: `片段 ${formatDuration(loopStart)}–${formatDuration(end)}`,
+      startSeconds: loopStart,
+      endSeconds: end,
+      durationSeconds: player.stats.duration
+    });
+    showHud({ kind: "seek-scrub", text: `循环 ${formatDuration(loopStart)}–${formatDuration(end)}` }, 1300);
+  };
+  const clearLoop = () => {
+    setLoopRange(null);
+    setLoopStart(null);
+    showHud({ kind: "seek-scrub", text: "片段循环已结束" }, 1000);
+  };
+
+  const handleStageContextMenuCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    // 控件需要保留浏览器/控件自身的右键语义；视频画面则必须在捕获阶段拦截，
+    // 因为 ArtPlayer 的 video 元素可能在手势层之前停止 contextmenu 冒泡。
+    if (target instanceof HTMLElement && target.closest("button,input,textarea,select,[role='slider'],[contenteditable='true']")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!hasUrl || locked) return;
+    const rect = stageRef.current?.getBoundingClientRect() || event.currentTarget.getBoundingClientRect();
+    setMoreOpen(false);
+    setContextMenu({
+      x: Math.max(8, Math.min(event.clientX - rect.left, Math.max(8, rect.width - 8))),
+      y: Math.max(8, Math.min(event.clientY - rect.top, Math.max(8, rect.height - 8)))
+    });
+  };
 
   const shellStyle = fullscreen.active
     ? ({ background: "#000" } as CSSProperties)
@@ -212,8 +326,9 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
       }}
       onPointerMove={() => revealControls()}
       onPointerLeave={() => { if (!moreOpen && player.runtime.phase === "playing") setControlsVisible(false); }}
+      onContextMenuCapture={handleStageContextMenuCapture}
     >
-      <div className="txzz-player-orientation-stage absolute inset-0">
+      <div ref={stageRef} className="txzz-player-orientation-stage absolute inset-0">
         <div ref={player.containerRef} className="txzz-player-clean txzz-player-card-body absolute inset-0 h-full w-full bg-black" />
         <div
           className="txzz-player-brightness-mask pointer-events-none absolute inset-0 z-[8]"
@@ -265,6 +380,12 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
           onClose={() => setContextMenu(null)}
           onCopyLink={copyCurrentLink}
           onOpenLink={openCurrentLink}
+          onBookmark={savePointBookmark}
+          onLoopStart={setCurrentAsLoopStart}
+          onLoopEnd={setCurrentAsLoopEnd}
+          onClearLoop={clearLoop}
+          loopStarted={loopStart !== null}
+          loopActive={Boolean(loopRange)}
           onDiagnostic={() => onAction("copy-playback-health-report", { movieId: session.movieId })}
         />
         <PlayerTopBar
@@ -309,6 +430,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
           duration={player.stats.duration}
           bufferedPercent={percent(player.stats.bufferedEnd, player.stats.duration)}
           progressPercent={percent(player.stats.currentTime, player.stats.duration)}
+          markers={bookmarks.map((bookmark) => ({ id: bookmark.id, time: bookmark.startSeconds, label: bookmark.label }))}
           progressPreviewTime={previewTime}
           isDraggingProgress={dragging}
           volume={player.preferences.volume}
@@ -345,6 +467,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange }: Props) {
           onSeekEnd={onSeekEnd}
           onSeekCancel={() => { setDragging(false); setPreviewTime(null); }}
           onKeyboardSeek={player.seekBy}
+          onMarkerSelect={(_id, time) => player.seekTo(time)}
           onTogglePlay={() => void player.togglePlay()}
           onSeekBack={() => player.seekBy(-player.preferences.seekStep)}
           onSeekForward={() => player.seekBy(player.preferences.seekStep)}

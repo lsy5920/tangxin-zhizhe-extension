@@ -10,7 +10,8 @@ export default defineConfig({
   },
   build: {
     outDir: "dist-ui",
-    emptyOutDir: false,
+    // 正式 CRX 会复制整个 dist-ui；每次先清空可避免旧插画或分块残留进入安装包。
+    emptyOutDir: true,
     cssCodeSplit: false,
     lib: {
       entry: resolve(__dirname, "ui-src/main.tsx"),

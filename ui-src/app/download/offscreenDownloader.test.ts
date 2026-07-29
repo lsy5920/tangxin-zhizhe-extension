@@ -13,6 +13,7 @@ type DownloadControl = {
 
 type DownloaderHooks = {
   cancelTask: (taskId: string, attemptId: string) => { ok: boolean };
+  classifyStorageEntry: (input: Record<string, unknown>) => { category: string; protected: boolean };
   clearTasks: () => void;
   createControl: (message: Record<string, unknown>) => DownloadControl;
   pauseTask: (taskId: string, attemptId: string) => { ok: boolean };
@@ -72,5 +73,28 @@ describe("offscreen download controls", () => {
     expect(abort).toHaveBeenCalledOnce();
     expect(control.cancelled).toBe(true);
     await expect(hooks.waitIfPaused(control)).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("protects active and waiting-to-save artifacts while classifying safe residue", () => {
+    expect(hooks.classifyStorageEntry({
+      known: { stage: "ready" },
+      artifact: { kind: "video" },
+      attemptName: "attempt-ready"
+    })).toEqual({ category: "artifact", protected: true });
+    expect(hooks.classifyStorageEntry({
+      known: { stage: "assembling" },
+      checkpoint: {},
+      attemptName: "attempt-active"
+    })).toEqual({ category: "active", protected: true });
+    expect(hooks.classifyStorageEntry({
+      known: { stage: "error" },
+      checkpoint: {},
+      attemptName: "attempt-error"
+    })).toEqual({ category: "residue", protected: false });
+    expect(hooks.classifyStorageEntry({
+      known: { stage: "paused" },
+      checkpoint: {},
+      attemptName: "attempt-paused"
+    })).toEqual({ category: "resumable", protected: false });
   });
 });

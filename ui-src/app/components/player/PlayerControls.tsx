@@ -107,6 +107,8 @@ type ProgressProps = {
   seekStep: number;
   lineLabel: string;
   qualityLabel: string;
+  markers?: Array<{ id: string; time: number; label?: string }>;
+  onMarkerSelect?: (id: string, time: number) => void;
   onSeekStart: (ratio: number, event: ReactPointerEvent<HTMLDivElement>) => void;
   onSeekMove: (ratio: number) => void;
   onSeekEnd: (ratio: number) => void;
@@ -125,6 +127,8 @@ export function PlayerProgressBar({
   seekStep,
   lineLabel,
   qualityLabel,
+  markers = [],
+  onMarkerSelect,
   onSeekStart,
   onSeekMove,
   onSeekEnd,
@@ -217,6 +221,22 @@ export function PlayerProgressBar({
         )}
         <div className="absolute inset-y-0 left-0 overflow-hidden rounded-full bg-white/20" style={{ width: `${bufferedPercent}%` }} />
         <div className="absolute inset-y-0 left-0 rounded-full bg-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.45)]" style={{ width: `${shownPercent}%` }} />
+        {markers.filter((marker) => duration > 0 && marker.time >= 0 && marker.time <= duration).map((marker) => (
+          <button
+            key={marker.id}
+            type="button"
+            aria-label={`跳转到书签 ${marker.label || formatDuration(marker.time)}`}
+            title={marker.label || `书签 ${formatDuration(marker.time)}`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onMarkerSelect?.(marker.id, marker.time);
+            }}
+            className="absolute top-1/2 z-[3] h-4 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90 bg-fuchsia-400 shadow-[0_0_8px_rgba(244,114,182,.8)] outline-none focus-visible:ring-2 focus-visible:ring-white"
+            style={{ left: `${Math.max(0, Math.min(100, (marker.time / duration) * 100))}%` }}
+          />
+        ))}
         <div
           className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-lg ring-2 ring-sky-300/45 transition-transform ${
             dragging ? "scale-110" : "group-hover/progress:scale-105"

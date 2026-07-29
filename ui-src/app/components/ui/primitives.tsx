@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type {
   ButtonHTMLAttributes,
+  CSSProperties,
   InputHTMLAttributes,
   LabelHTMLAttributes,
   ReactNode,
@@ -390,12 +391,12 @@ export function StatGrid({
   items: Array<{ label: string; value: string | number; tone?: "purple" | "emerald" | "sky" | "amber" | "rose" | "pink"; onClick?: () => void }>;
 }) {
   const toneMap = {
-    purple: "border-[#ddd5ff] bg-[#f4f1ff] after:bg-[#9a88e3]",
-    emerald: "border-success-100 bg-success-50 after:bg-success-500",
-    sky: "border-info-100 bg-info-50 after:bg-info-500",
-    amber: "border-warning-100 bg-warning-50 after:bg-warning-500",
-    rose: "border-danger-100 bg-danger-50 after:bg-danger-500",
-    pink: "border-brand-100 bg-brand-50 after:bg-brand-500"
+    purple: { card: "border-[#ddd5ff] bg-[#f4f1ff]", accent: "#9a88e3" },
+    emerald: { card: "border-success-100 bg-success-50", accent: "#24a77f" },
+    sky: { card: "border-info-100 bg-info-50", accent: "#4b91d1" },
+    amber: { card: "border-warning-100 bg-warning-50", accent: "#d9963c" },
+    rose: { card: "border-danger-100 bg-danger-50", accent: "#dc5d76" },
+    pink: { card: "border-brand-100 bg-brand-50", accent: "#e04c71" }
   };
   return (
     <div className={`grid gap-2.5 ${items.length >= 4 ? "grid-cols-2 lg:grid-cols-4" : items.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
@@ -403,11 +404,16 @@ export function StatGrid({
         const tone = toneMap[item.tone || "purple"];
         const body = (
           <>
+            <span
+              aria-hidden="true"
+              className="txzz-stat-ornament"
+              style={{ "--txzz-stat-accent": tone.accent } as CSSProperties}
+            />
             <p className="truncate text-xl font-extrabold tabular-nums leading-none text-slate-900">{item.value}</p>
             <p className="mt-1.5 truncate text-[11px] font-semibold text-slate-500">{item.label}</p>
           </>
         );
-        const cls = `relative overflow-hidden rounded-[1.35rem] border px-3.5 py-3.5 text-left shadow-[var(--txzz-shadow-sm)] after:absolute after:-right-2 after:-top-2 after:h-8 after:w-8 after:rounded-full after:opacity-18 ${tone}`;
+        const cls = `relative overflow-hidden rounded-[1.35rem] border px-3.5 py-3.5 text-left shadow-[var(--txzz-shadow-sm)] ${tone.card}`;
         if (item.onClick) {
           return (
             <button key={item.label} type="button" onClick={item.onClick} className={`${cls} transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md active:translate-y-0`}>

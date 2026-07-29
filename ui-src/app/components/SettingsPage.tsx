@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Activity, AlertTriangle, Ban, CheckCircle, Copy, Database, ExternalLink, Info, Lightbulb, Radio, RefreshCw, Sparkles, Trash2, Users } from "lucide-react";
+import { Activity, AlertTriangle, Ban, Bell, CheckCircle, Copy, Database, ExternalLink, Info, Lightbulb, Radio, RefreshCw, Sparkles, Trash2, Users } from "lucide-react";
 import type { AccountsPageIntent, BridgeState, Page, SettingsPageIntent, SettingsSection, WorkerDiagnostics } from "../types";
 import { requestCloudDiagnostics } from "../bridge";
 import { formatRelativeTime } from "../helpers";
@@ -414,6 +414,13 @@ export function SettingsPage({ state, onAction, onPage, intent = {}, onIntentHan
         >
           {state.displayPatchApplied ? "重新应用展示覆盖" : "立即应用展示覆盖"}
         </SoftButton>
+      </SectionCard>
+
+      <SectionCard title="自动化提醒" icon={Bell} hint="插件内提醒始终可用；系统通知只在你主动授权后开启" tone="sky">
+        <div className="flex flex-col gap-3 rounded-xl bg-info-50/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div><p className="text-[12px] font-semibold text-slate-700">系统下载、空间与账号提醒</p><p className="mt-1 text-[11px] leading-5 text-slate-500">移动浏览器不支持或拒绝权限时，会完整回退到总览页待处理事项。</p></div>
+          <SoftButton variant={state.experience?.notificationsEnabled ? "danger" : "sky"} icon={Bell} onClick={() => onAction("set-notifications-enabled", { enabled: !state.experience?.notificationsEnabled })}>{state.experience?.notificationsEnabled ? "关闭系统通知" : "授权并开启通知"}</SoftButton>
+        </div>
       </SectionCard>
 
       <SectionCard title="广告清理" icon={Ban} hint="严格模式：仅清理实测 .ad-splash 开屏" tone="emerald">

@@ -16,6 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   EXPECTED_EXTENSION_ID,
@@ -78,6 +79,18 @@ function ensurePrivateKey() {
     );
   }
   return fs.readFileSync(KEY_PATH);
+}
+
+function runFreshUiBuildGate() {
+  const commands = [
+    [path.join(ROOT, "scripts", "check-deps.mjs"), []],
+    [path.join(ROOT, "node_modules", "vite", "bin", "vite.js"), ["build"]],
+    [path.join(ROOT, "scripts", "check-release.mjs"), ["--source-only"]]
+  ];
+  console.log("[pack-crx] 重新构建 UI 并验证源码/产物一致性…");
+  for (const [script, args] of commands) {
+    execFileSync(process.execPath, [script, ...args], { cwd: ROOT, stdio: "inherit" });
+  }
 }
 
 function prepareStage() {
@@ -167,6 +180,8 @@ function signUpdateManifest(updateManifest, privateKey, packageMeta) {
 }
 
 async function packCrx() {
+  // 打包入口自行重建，避免源码更新后误把旧 dist-ui（缺插画或动画）封进正式 CRX。
+  runFreshUiBuildGate();
   const manifest = readManifest();
   const version = String(manifest.version || "0.0.0");
   const updateManifest = readUpdateManifest();

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clock3, Database, Download, Film, Gauge, HardDrive, X } from "lucide-react";
+import { CalendarClock, Clock3, Database, Download, Film, Gauge, HardDrive, ListOrdered, X } from "lucide-react";
 import type { DownloadPlannerState } from "../../types";
 import { portalIntoPluginUi, SoftButton, useModalFocusTrap } from "../ui/primitives";
 
@@ -29,6 +29,9 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
   const [networkMode, setNetworkMode] = useState("balanced");
   const [qualityHeight, setQualityHeight] = useState(0);
   const [container, setContainer] = useState("mp4");
+  const [priority, setPriority] = useState("normal");
+  const [scheduleMode, setScheduleMode] = useState<"now" | "scheduled">("now");
+  const [scheduledAt, setScheduledAt] = useState("");
   const dialogRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const closePlanner = () => onAction("close-download-planner");
@@ -39,6 +42,11 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
     setSourceId(planner.source?.id || planner.lineKey || "");
     setQualityHeight(Number(planner.plan?.selectedVariant?.height || 0));
     setContainer(planner.plan?.compatibleContainers?.includes("mp4") ? "mp4" : planner.plan?.compatibleContainers?.[0] || "mp4");
+    setPriority("normal");
+    setScheduleMode("now");
+    const date = new Date(Date.now() + 60 * 60 * 1000);
+    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+    setScheduledAt(date.toISOString().slice(0, 16));
   }, [planner?.open, planner?.taskId, planner?.source?.id, planner?.plan?.selectedVariant?.height]);
 
   const variants = useMemo(() => [...(planner?.plan?.variants || [])]
@@ -97,6 +105,20 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
               {(plan.compatibleContainers || ["mp4"]).map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}
             </select>
           </label>
+          <label className="rounded-2xl bg-fuchsia-50 p-3 text-xs font-bold text-slate-600">
+            <span className="mb-2 flex items-center gap-2 text-fuchsia-600"><ListOrdered size={14} />队列优先级</span>
+            <select value={priority} onChange={(event) => setPriority(event.target.value)} className="min-h-11 w-full rounded-xl border border-fuchsia-100 bg-white px-3 text-slate-700">
+              <option value="high">高 · 优先开始</option><option value="normal">普通 · 默认</option><option value="low">低 · 空闲时开始</option>
+            </select>
+          </label>
+          <div className="rounded-2xl bg-emerald-50 p-3 text-xs font-bold text-slate-600">
+            <span className="mb-2 flex items-center gap-2 text-emerald-600"><CalendarClock size={14} />开始时间</span>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button type="button" aria-pressed={scheduleMode === "now"} onClick={() => setScheduleMode("now")} className={`min-h-11 rounded-xl border text-[11px] ${scheduleMode === "now" ? "border-emerald-300 bg-emerald-500 text-white" : "border-emerald-100 bg-white text-emerald-700"}`}>尽快开始</button>
+              <button type="button" aria-pressed={scheduleMode === "scheduled"} onClick={() => setScheduleMode("scheduled")} className={`min-h-11 rounded-xl border text-[11px] ${scheduleMode === "scheduled" ? "border-emerald-300 bg-emerald-500 text-white" : "border-emerald-100 bg-white text-emerald-700"}`}>指定时间</button>
+            </div>
+            {scheduleMode === "scheduled" && <input type="datetime-local" value={scheduledAt} min={new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setScheduledAt(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-emerald-100 bg-white px-3 text-[11px] text-slate-700" />}
+          </div>
         </div>
 
         <dl className="mt-4 grid gap-2 rounded-2xl border border-pink-100 bg-white p-4 text-xs sm:grid-cols-2">
@@ -109,14 +131,17 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
         {blocked && <p className="mt-3 rounded-2xl bg-rose-50 p-3 text-xs font-bold leading-5 text-rose-600">{plan.blockedReason}</p>}
         <div className="mt-5 grid gap-2 sm:grid-cols-[auto_1fr]">
           <SoftButton variant="secondary" onClick={replan}>重新估算</SoftButton>
-          <SoftButton icon={Download} disabled={blocked} onClick={() => onAction("start-planned-download", {
+          <SoftButton icon={Download} disabled={blocked || (scheduleMode === "scheduled" && !scheduledAt)} onClick={() => onAction("start-planned-download", {
             movieId: planner.movieId || "",
+            movieTitle: planner.movieTitle || "",
             sourceId,
             lineKey: sourceId || planner.lineKey || "auto",
             networkMode,
             qualityHeight,
-            container
-          })}>放进可恢复下载队列</SoftButton>
+            container,
+            priority,
+            notBefore: scheduleMode === "scheduled" && scheduledAt ? new Date(scheduledAt).toISOString() : ""
+          })}>{scheduleMode === "scheduled" ? "按计划放进下载队列" : "放进可恢复下载队列"}</SoftButton>
         </div>
       </section>
     </div>

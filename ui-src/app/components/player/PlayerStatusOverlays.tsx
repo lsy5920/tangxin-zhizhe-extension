@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Activity, ChevronLeft, Copy, ExternalLink, Film, Play, RefreshCw, Route, Unlock, X } from "lucide-react";
+import { Activity, BookmarkPlus, ChevronLeft, Copy, ExternalLink, Film, Play, RefreshCw, Repeat2, Route, TimerReset, Unlock, X } from "lucide-react";
 import { CtrlButton } from "./PlayerControls";
 
 export type PlayerOverlayProps = {
@@ -129,6 +129,12 @@ export type PlayerContextMenuProps = {
   onCopyLink: () => void;
   onOpenLink: () => void;
   onDiagnostic: () => void;
+  onBookmark: () => void;
+  onLoopStart: () => void;
+  onLoopEnd: () => void;
+  onClearLoop: () => void;
+  loopStarted: boolean;
+  loopActive: boolean;
 };
 
 /** 右键菜单由 React 手势层承接，避免 ArtPlayer 禁用指针后入口失效。 */
@@ -139,7 +145,13 @@ export function PlayerContextMenu({
   onClose,
   onCopyLink,
   onOpenLink,
-  onDiagnostic
+  onDiagnostic,
+  onBookmark,
+  onLoopStart,
+  onLoopEnd,
+  onClearLoop,
+  loopStarted,
+  loopActive
 }: PlayerContextMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState({ left: 8, top: 8 });
@@ -205,6 +217,10 @@ export function PlayerContextMenu({
     >
       <ContextMenuButton icon={Copy} label="复制完整链接" onClick={() => run(onCopyLink)} />
       <ContextMenuButton icon={ExternalLink} label="新窗口打开" onClick={() => run(onOpenLink)} />
+      <ContextMenuButton icon={BookmarkPlus} label="保存当前位置书签" onClick={() => run(onBookmark)} />
+      <ContextMenuButton icon={TimerReset} label={loopStarted ? "重新设置 A 点" : "设为片段 A 点"} onClick={() => run(onLoopStart)} />
+      <ContextMenuButton icon={Repeat2} label="设为 B 点并循环" onClick={() => run(onLoopEnd)} />
+      {loopActive && <ContextMenuButton icon={X} label="结束片段循环" onClick={() => run(onClearLoop)} />}
       <ContextMenuButton icon={Activity} label="查看播放器诊断" onClick={() => run(onDiagnostic)} />
       <div className="my-1 h-px bg-white/8" />
       <ContextMenuButton icon={X} label="关闭菜单" onClick={onClose} />

@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import Artplayer from "artplayer";
 import App from "./app/App";
+import { APP_BUILD, APP_VERSION } from "./app/constants";
 import "./styles/index.css";
 import candyUiStyles from "./styles/index.css?inline";
 
@@ -44,10 +45,15 @@ Artplayer.MOBILE_CLICK_PLAY = false;
 Artplayer.MOBILE_DBCLICK_PLAY = false;
 
 function createHost() {
-  const existed = document.getElementById(HOST_ID);
+  let existed = document.getElementById(HOST_ID);
   if (existed?.shadowRoot) {
-    bindHostVisualViewport(existed);
-    return existed.shadowRoot;
+    if (existed.dataset.txzzUiBuild === APP_BUILD) {
+      bindHostVisualViewport(existed);
+      return existed.shadowRoot;
+    }
+    // 页面未刷新但扩展已升级时，旧 ShadowRoot 不能复用，否则会继续保留旧插画与动画。
+    existed.remove();
+    existed = null;
   }
 
   const host = existed || document.createElement("div");
@@ -63,15 +69,28 @@ function createHost() {
     pointerEvents: "none"
   });
   if (!existed) document.documentElement.appendChild(host);
+  host.dataset.txzzUiVersion = APP_VERSION;
+  host.dataset.txzzUiBuild = APP_BUILD;
   bindHostVisualViewport(host);
 
   const shadow = host.shadowRoot || host.attachShadow({ mode: "open" });
-  const styleHref = chrome.runtime.getURL("dist-ui/txzz-ui.css");
+  const getRuntimeUrl = globalThis.chrome?.runtime?.getURL;
+  const styleHref = typeof getRuntimeUrl === "function"
+    ? `${getRuntimeUrl("dist-ui/txzz-ui.css")}?build=${encodeURIComponent(APP_BUILD)}`
+    : new URL("./dist-ui/txzz-ui.css", document.baseURI).href;
 
-  if (!shadow.querySelector(`link[href="${styleHref}"]`)) {
+  if (!shadow.querySelector('link[data-txzz-ui-stylesheet="external"]')) {
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = styleHref;
+    link.dataset.txzzUiStylesheet = "external";
+    link.addEventListener("load", () => {
+      host.dataset.txzzExternalStyle = "ready";
+    }, { once: true });
+    link.addEventListener("error", () => {
+      // 外置资源偶发被缓存或扩展资源策略拦截时，下面的同构内联副本仍保证完整 UI。
+      host.dataset.txzzExternalStyle = "fallback-inline";
+    }, { once: true });
     shadow.appendChild(link);
   }
 
@@ -80,6 +99,7 @@ function createHost() {
   if (!shadow.getElementById(APP_STYLE_ID)) {
     const style = document.createElement("style");
     style.id = APP_STYLE_ID;
+    style.dataset.txzzUiBuild = APP_BUILD;
     style.textContent = candyUiStyles;
     shadow.appendChild(style);
   }

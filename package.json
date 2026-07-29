@@ -1,7 +1,7 @@
 {
   "name": "tangxin-zhizhe-extension",
   "private": true,
-  "version": "5.1.3",
+  "version": "5.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -16,7 +16,7 @@
     "check:release": "node scripts/check-release.mjs",
     "check": "tsc --noEmit && vite build && node scripts/check-release.mjs --source-only",
     "pack": "node scripts/pack-crx.mjs",
-    "release": "node scripts/check-deps.mjs && tsc --noEmit && vite build && node scripts/check-release.mjs --source-only && node scripts/pack-crx.mjs && node scripts/check-release.mjs"
+    "release": "node scripts/check-deps.mjs && tsc --noEmit && vitest run && node scripts/pack-crx.mjs && node scripts/check-release.mjs"
   },
   "dependencies": {
     "artplayer": "5.4.0",

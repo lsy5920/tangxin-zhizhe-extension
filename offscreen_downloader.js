@@ -23,6 +23,26 @@ async function getRootDirectory() {
   return originRoot.getDirectoryHandle(ROOT_DIRECTORY, { create: true });
 }
 
+async function* directoryEntries(directory) {
+  // Chromium 新旧实现对 entries()/values() 暴露并不完全一致；统一成 [name, handle]。
+  if (typeof directory?.entries === "function") {
+    yield* directory.entries();
+    return;
+  }
+  if (typeof directory?.values === "function") {
+    for await (const handle of directory.values()) yield [String(handle?.name || ""), handle];
+    return;
+  }
+  if (directory?.[Symbol.asyncIterator]) {
+    for await (const entry of directory) {
+      if (Array.isArray(entry)) yield entry;
+      else yield [String(entry?.name || ""), entry];
+    }
+    return;
+  }
+  throw new Error("当前浏览器无法枚举 OPFS 目录，请升级浏览器后重试");
+}
+
 async function getAttemptDirectory(taskId, attemptId, create = true) {
   const root = await getRootDirectory();
   const taskDirectory = await root.getDirectoryHandle(safePathPart(taskId), { create });
@@ -34,6 +54,27 @@ async function removeTaskDirectory(taskId) {
   await root.removeEntry(safePathPart(taskId), { recursive: true }).catch((error) => {
     if (error?.name !== "NotFoundError") throw error;
   });
+}
+
+async function removeAttemptDirectory(taskId, attemptId) {
+  const root = await getRootDirectory();
+  const taskName = safePathPart(taskId);
+  let taskDirectory;
+  try {
+    taskDirectory = await root.getDirectoryHandle(taskName, { create: false });
+  } catch (error) {
+    if (error?.name === "NotFoundError") return;
+    throw error;
+  }
+  await taskDirectory.removeEntry(safePathPart(attemptId), { recursive: true }).catch((error) => {
+    if (error?.name !== "NotFoundError") throw error;
+  });
+  let hasEntries = false;
+  for await (const _entry of directoryEntries(taskDirectory)) {
+    hasEntries = true;
+    break;
+  }
+  if (!hasEntries) await root.removeEntry(taskName, { recursive: true }).catch(() => {});
 }
 
 async function writeFile(directory, name, bytes) {
@@ -278,6 +319,14 @@ function estimatePlanBytes(plan, selectedVariant) {
   return 0;
 }
 
+function storageBlockedReason(storage, requiredBytes) {
+  if (!storage?.known) return "";
+  if (requiredBytes > 0 && requiredBytes > storage.available) return "可用空间不足预计大小的 115%";
+  if (storage.available < 1024 ** 3) return "可用空间低于 1 GiB 安全线";
+  if (storage.available / Math.max(1, storage.quota) < 0.15) return "可用空间低于浏览器配额的 15% 安全线";
+  return "";
+}
+
 async function planDownload(message = {}) {
   const control = createControl({ ...message, taskId: message.taskId || `plan-${crypto.randomUUID()}` });
   if (message.mode === "progressive-opfs") {
@@ -290,9 +339,7 @@ async function planDownload(message = {}) {
     const requiredBytes = estimatedBytes > 0 ? Math.ceil(estimatedBytes * 1.15) : 0;
     const blockedReason = estimatedBytes > core.LIMITS.taskBytes
       ? "预计文件超过 8 GiB 任务上限"
-      : storage.known && requiredBytes > storage.available
-        ? "可用空间不足预计大小的 115%"
-        : "";
+      : storageBlockedReason(storage, requiredBytes);
     return {
       ok: true,
       plan: {
@@ -317,9 +364,7 @@ async function planDownload(message = {}) {
   const requiredBytes = estimatedBytes > 0 ? Math.ceil(estimatedBytes * 1.15) : 0;
   const blockedReason = estimatedBytes > core.LIMITS.taskBytes
     ? "预计文件超过 8 GiB 任务上限"
-    : storage.known && requiredBytes > storage.available
-      ? "可用空间不足预计大小的 115%"
-      : "";
+    : storageBlockedReason(storage, requiredBytes);
   return {
     ok: true,
     plan: {
@@ -714,6 +759,128 @@ async function getArtifact(message = {}) {
   return { ok: true, artifact };
 }
 
+async function directoryUsage(directory) {
+  let bytes = 0;
+  let updatedAt = "";
+  const files = [];
+  for await (const [name, handle] of directoryEntries(directory)) {
+    if (handle.kind === "file") {
+      const file = await handle.getFile();
+      bytes += Number(file.size || 0);
+      const modified = Number(file.lastModified || 0);
+      if (modified > (Date.parse(updatedAt) || 0)) updatedAt = new Date(modified).toISOString();
+      files.push(name);
+      continue;
+    }
+    const nested = await directoryUsage(handle);
+    bytes += nested.bytes;
+    if ((Date.parse(nested.updatedAt) || 0) > (Date.parse(updatedAt) || 0)) updatedAt = nested.updatedAt;
+  }
+  return { bytes, updatedAt, files };
+}
+
+function classifyStorageEntry({ known = null, artifact = null, checkpoint = null, liveControl = null, attemptName = "", now = Date.now() } = {}) {
+  const activeStages = new Set(["probing", "downloading", "recovering", "assembling", "saving"]);
+  const protectedStages = new Set([...activeStages, "ready"]);
+  const protectedEntry = Boolean(
+    // ready 表示成品仍等待用户保存，和正在组装/保存一样必须始终受保护。
+    (known && protectedStages.has(String(known.stage || "")))
+    || (liveControl && safePathPart(liveControl.attemptId) === attemptName)
+    || (artifact?.kind === "crx" && now - (Date.parse(artifact.createdAt || "") || 0) < 24 * 60 * 60 * 1000)
+  );
+  let category = "orphan";
+  if (known && activeStages.has(String(known.stage || ""))) category = "active";
+  else if (known && artifact) category = "artifact";
+  else if (known && ["cancelled", "stale", "error"].includes(String(known.stage || ""))) category = "residue";
+  else if (known && checkpoint) category = "resumable";
+  else if (known) category = "residue";
+  else if (artifact) category = "artifact";
+  return { category, protected: protectedEntry };
+}
+
+async function auditStorage(message = {}) {
+  const storage = await storageEstimate();
+  const knownTasks = new Map((Array.isArray(message.knownTasks) ? message.knownTasks : []).map((task) => [
+    `${safePathPart(task.taskId)}:${safePathPart(task.attemptId)}`,
+    task
+  ]));
+  const entries = [];
+  const root = await getRootDirectory();
+  for await (const [taskName, taskHandle] of directoryEntries(root)) {
+    if (taskHandle.kind !== "directory") continue;
+    for await (const [attemptName, attemptHandle] of directoryEntries(taskHandle)) {
+      if (attemptHandle.kind !== "directory") continue;
+      const usage = await directoryUsage(attemptHandle);
+      const artifact = await readJson(attemptHandle, "artifact.json").catch(() => null);
+      const checkpoint = await readJson(attemptHandle, "checkpoint.json").catch(() => null);
+      const known = knownTasks.get(`${taskName}:${attemptName}`) || null;
+      const liveControl = tasks.get(String(known?.taskId || artifact?.taskId || checkpoint?.taskId || taskName));
+      const classification = classifyStorageEntry({ known, artifact, checkpoint, liveControl, attemptName });
+      entries.push({
+        taskId: String(known?.taskId || artifact?.taskId || checkpoint?.taskId || taskName),
+        attemptId: String(known?.attemptId || artifact?.attemptId || checkpoint?.attemptId || attemptName),
+        movieId: String(known?.movieId || artifact?.movieId || checkpoint?.movieId || ""),
+        filename: String(artifact?.filename || known?.filename || ""),
+        format: String(artifact?.format || known?.container || ""),
+        qualityHeight: Number(known?.qualityHeight || 0),
+        category: classification.category,
+        bytes: usage.bytes,
+        protected: classification.protected,
+        duplicateGroup: "",
+        updatedAt: usage.updatedAt || artifact?.createdAt || checkpoint?.updatedAt || checkpoint?.createdAt || ""
+      });
+    }
+  }
+  const duplicateGroups = new Map();
+  for (const entry of entries.filter((item) => item.category === "artifact" && item.movieId && item.bytes > 0)) {
+    const key = `${entry.movieId}|${entry.format}|${entry.qualityHeight}|${entry.bytes}`;
+    const group = duplicateGroups.get(key) || [];
+    group.push(entry);
+    duplicateGroups.set(key, group);
+  }
+  for (const [key, group] of duplicateGroups) {
+    if (group.length < 2) continue;
+    group.sort((left, right) => (Date.parse(right.updatedAt || "") || 0) - (Date.parse(left.updatedAt || "") || 0));
+    group.forEach((entry, index) => {
+      entry.duplicateGroup = key;
+      if (index > 0 && !entry.protected) entry.category = "duplicate";
+    });
+  }
+  const managedBytes = entries.reduce((sum, item) => sum + item.bytes, 0);
+  const lowSpace = storage.known && (storage.available < 1024 ** 3 || storage.available / Math.max(1, storage.quota) < 0.15);
+  return {
+    ok: true,
+    audit: {
+      checkedAt: new Date().toISOString(),
+      storage,
+      managedBytes,
+      lowSpace,
+      // 清理操作必须看到完整枚举；只返回前 200 项会让排序靠后的孤儿文件永久无法清理。
+      entries: entries.sort((left, right) => right.bytes - left.bytes)
+    }
+  };
+}
+
+async function cleanupStorage(message = {}) {
+  const targets = new Set((Array.isArray(message.targets) ? message.targets : []).map(String));
+  if (!targets.size) return { ok: true, deleted: 0, audit: (await auditStorage(message)).audit };
+  const before = await auditStorage(message);
+  const allowed = new Set(["orphan", "residue", "duplicate"]);
+  let deleted = 0;
+  const deletedKeys = [];
+  for (const entry of before.audit.entries) {
+    const key = `${entry.taskId}:${entry.attemptId}`;
+    if (!targets.has(key) || entry.protected || !allowed.has(entry.category)) continue;
+    cancelTask(entry.taskId, entry.attemptId);
+    const running = tasks.get(entry.taskId)?.promise;
+    if (running) await running.catch(() => {});
+    await removeAttemptDirectory(entry.taskId, entry.attemptId);
+    deleted += 1;
+    deletedKeys.push(key);
+  }
+  return { ok: true, deleted, deletedKeys, audit: (await auditStorage(message)).audit };
+}
+
 function bytesToHex(bytes) {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
 }
@@ -813,6 +980,7 @@ if (globalThis.__TXZZ_TEST__ === true) {
   // 仅在测试沙箱显式开启时暴露控制器，生产环境不会增加可调用入口。
   globalThis.TxzzOffscreenDownloaderTestHooks = Object.freeze({
     cancelTask,
+    classifyStorageEntry,
     clearTasks() {
       for (const control of tasks.values()) cancelTask(control.taskId, control.attemptId);
       tasks.clear();
@@ -836,6 +1004,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
     if (message?.type === "offscreenGetDownloadArtifact") {
       sendResponse(await getArtifact(message));
+      return;
+    }
+    if (message?.type === "offscreenAuditStorage") {
+      sendResponse(await auditStorage(message));
+      return;
+    }
+    if (message?.type === "offscreenCleanupStorage") {
+      sendResponse(await cleanupStorage(message));
       return;
     }
     if (message?.type === "offscreenStoreVerifiedCrx") {

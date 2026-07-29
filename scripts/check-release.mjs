@@ -314,6 +314,8 @@ const contentText = readText("content.js");
 const previewText = readText("preview.html");
 const readmeText = readText("README.md");
 const packScriptText = readText("scripts/pack-crx.mjs");
+const uiScriptText = readText("dist-ui/txzz-ui.js");
+const uiStyleText = readText("dist-ui/txzz-ui.css");
 
 const sourceVersion = String(manifest.version || "");
 const publishedVersion = String(updateManifest.version || "");
@@ -366,6 +368,7 @@ expect(
 );
 for (const runtimeFile of [
   "state_mutation_core.js",
+  "experience_core.js",
   "page_context_core.js",
   "download_core.js",
   "save.html",
@@ -374,6 +377,14 @@ for (const runtimeFile of [
 ]) {
   expect(RELEASE_INCLUDE_PATHS.includes(runtimeFile), `发布文件列表缺少新增运行时文件：${runtimeFile}`);
 }
+expect(RELEASE_INCLUDE_PATHS.includes("icons"), "发布文件列表缺少通知图标目录 icons");
+expect(manifest.permissions?.includes("alarms"), "manifest 缺少智能调度和巡检所需 alarms 权限");
+expect(manifest.optional_permissions?.includes("notifications"), "manifest 缺少可选 notifications 权限");
+for (const marker of [".txzz-stat-ornament", "@keyframes txzz-stat-float", "@keyframes txzz-companion-breathe"]) {
+  expect(uiStyleText.includes(marker), `正式 UI CSS 缺少插画/动画标记：${marker}`);
+}
+expect(uiScriptText.includes("txzz-app-style"), "正式 UI 脚本缺少 Shadow DOM 内联样式兜底");
+expect(uiScriptText.includes("txzzUiBuild"), "正式 UI 脚本缺少构建代次标记，旧 ShadowRoot 可能被复用");
 expect(backgroundText.includes('getURL(`save.html#token='), "background.js 未打开扩展安全保存页");
 expect(!contentText.includes("clientSave"), "content.js 不得再通过 runtime 消息接收整包 CRX 字节");
 expect(!RELEASE_INCLUDE_PATHS.includes("update.json"), "发布文件列表不得包含 update.json");

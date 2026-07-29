@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Film, RefreshCw, Sparkles, Ticket, WandSparkles } from "lucide-react";
-import type { BridgeState, Page } from "../types";
+import type { BridgeState, Page, PlaybackBookmark } from "../types";
 import { reconcileScreeningState } from "../playback/migration";
 import type { PlaybackSession } from "../playback/types";
-import { ScreeningStage } from "./screening/ScreeningStage";
+import { ScreeningStage, type PlaybackBookmarkCommand } from "./screening/ScreeningStage";
 import { ScreeningSidebar } from "./screening/ScreeningSidebar";
 import { ScreeningDrawer } from "./screening/ScreeningDrawer";
 
@@ -20,16 +20,41 @@ export function PlaybackPage({ state, onAction }: Props) {
   );
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const [playing, setPlaying] = useState(false);
+  const [mediaStats, setMediaStats] = useState({ currentTime: 0, duration: 0 });
+  const [bookmarkCommand, setBookmarkCommand] = useState<PlaybackBookmarkCommand | null>(null);
   const activeSession = screening.activeSession;
   const selectedSession = screening.history.find((item) => item.id === selectedSessionId) || activeSession;
+  const libraryEntry = selectedSession ? state.experience?.library?.[selectedSession.movieId] || null : null;
+  const bookmarks = selectedSession ? state.experience?.bookmarks?.[selectedSession.movieId] || [] : [];
 
   useEffect(() => {
     if (!activeSession?.id) return;
     setSelectedSessionId((current) => current && screening.history.some((item) => item.id === current) ? current : activeSession.id);
   }, [activeSession?.id, screening.history]);
 
+  useEffect(() => {
+    setMediaStats({ currentTime: 0, duration: 0 });
+    setBookmarkCommand(null);
+  }, [selectedSession?.movieId]);
+
   const refresh = (session: PlaybackSession | null = selectedSession) => {
     onAction("refresh-playback-session", { movieId: session?.movieId || "", movieTitle: session?.title || "" });
+  };
+
+  const updateCurrentLibrary = (patch: { favorite?: boolean; watchLater?: boolean }) => {
+    if (!selectedSession) return;
+    onAction("update-library-entry", {
+      movieId: selectedSession.movieId,
+      title: selectedSession.title,
+      favorite: patch.favorite ?? libraryEntry?.favorite ?? false,
+      watchLater: patch.watchLater ?? libraryEntry?.watchLater ?? false,
+      tags: libraryEntry?.tags || [],
+      note: libraryEntry?.note || ""
+    });
+  };
+
+  const commandBookmark = (type: PlaybackBookmarkCommand["type"], bookmark: PlaybackBookmark) => {
+    setBookmarkCommand({ nonce: Date.now() + Math.random(), type, bookmark });
   };
 
   return (
@@ -44,7 +69,7 @@ export function PlaybackPage({ state, onAction }: Props) {
         <span className="pointer-events-none absolute -right-8 -top-12 h-32 w-32 rounded-full bg-fuchsia-200/35 blur-2xl" />
         <div className="relative flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-[10px] font-black tracking-[.18em] text-fuchsia-500"><Sparkles size={12} /> CANDY CINEMA 5.1</p>
+            <p className="flex items-center gap-1.5 text-[10px] font-black tracking-[.18em] text-fuchsia-500"><Sparkles size={12} /> CANDY CINEMA 5.2</p>
             <h1 className="mt-1 flex items-center gap-2 text-[19px] font-black tracking-[-.03em] text-slate-900 sm:text-[22px]"><Ticket size={20} className="text-violet-500" />沉浸糖果影院</h1>
             <p className="mt-1 text-[11px] leading-5 text-slate-500">检票、轮换、解锁和选线都由同一会话编排；资源就绪后仍需你亲自点击开映。</p>
           </div>
@@ -57,7 +82,15 @@ export function PlaybackPage({ state, onAction }: Props) {
       <div className="txzz-playback-workspace relative grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(19rem,.72fr)]">
         <main className="txzz-player-card min-w-0 overflow-hidden rounded-[1.7rem] border border-white/70 bg-white/72 p-2.5 shadow-[0_24px_70px_rgba(75,45,108,.16)] backdrop-blur-xl sm:p-3">
           {selectedSession ? (
-            <ScreeningStage key={selectedSession.id} session={selectedSession} onAction={onAction} onPlayingChange={setPlaying} />
+            <ScreeningStage
+              key={selectedSession.id}
+              session={selectedSession}
+              onAction={onAction}
+              onPlayingChange={setPlaying}
+              bookmarks={bookmarks}
+              bookmarkCommand={bookmarkCommand}
+              onMediaStatsChange={setMediaStats}
+            />
           ) : (
             <div className="relative flex min-h-[19rem] aspect-video items-center justify-center overflow-hidden rounded-[1.35rem] bg-[radial-gradient(circle_at_50%_20%,#35294c_0%,#17131f_48%,#09080d_100%)] p-6 text-center text-white">
               <span className="absolute left-[12%] top-[18%] text-amber-200/70">✦</span><span className="absolute right-[16%] top-[28%] text-fuchsia-200/70">✦</span>
@@ -72,7 +105,14 @@ export function PlaybackPage({ state, onAction }: Props) {
         </main>
 
         <div className="txzz-playback-hidden-during-fullscreen">
-          <ScreeningSidebar session={selectedSession || null} request={screening.request} onRefresh={() => refresh()} />
+          <ScreeningSidebar
+            session={selectedSession || null}
+            request={screening.request}
+            onRefresh={() => refresh()}
+            libraryEntry={libraryEntry}
+            onToggleFavorite={() => updateCurrentLibrary({ favorite: !libraryEntry?.favorite })}
+            onToggleWatchLater={() => updateCurrentLibrary({ watchLater: !libraryEntry?.watchLater })}
+          />
         </div>
       </div>
 
@@ -81,7 +121,10 @@ export function PlaybackPage({ state, onAction }: Props) {
           state={state}
           session={selectedSession || null}
           history={screening.history}
+          currentDuration={mediaStats.duration}
           onSelectHistory={(session) => setSelectedSessionId(session.id)}
+          onSeekBookmark={(bookmark) => commandBookmark("seek", bookmark)}
+          onLoopBookmark={(bookmark) => commandBookmark("loop", bookmark)}
           onAction={onAction}
         />
       </div>
