@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.3.0",
-  "build": "2026-07-30-0014",
-  "releasedAt": "2026-07-30 00:14",
+  "version": "5.4.0",
+  "build": "2026-07-30-0138",
+  "releasedAt": "2026-07-30 01:38",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-30-0138",
+      "type": "功能",
+      "title": "独立糖心影院与按需检票开映",
+      "detail": "新增来自目标网站原始列表接口的沉浸式糖心影院，提供发现分区、关键词搜索、最新/热门/权益/画面方向筛选、分页海报墙、影片详情、收藏和稍后看。目录阶段使用严格字段白名单，不包含完整播放 URL，也不轮换账号、不请求详情、不触发购买；只有用户明确点击“获取完整线路并开映”后，才使用独立影院请求代次接入现有完整播放会话，避免受网页 Vlog 当前卡片切换影响。桌面与手机共用真实扩展 UI，新增目录缓存、旧响应隔离、广告区块过滤和 6 项紧凑导航。真实 CDP 验收同步修复长检票被前端过早终止、检票新片时仍显示旧舞台，以及新 active session 到达后足迹选择仍指向上一部的问题。",
+      "releasedAt": "2026-07-30 01:38"
+    },
     {
       "id": "2026-07-30-0014",
       "type": "重构",
@@ -221,11 +228,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 701932,
-  "packageSha256": "77293f6db19588eb6d8aadde40b685935551663f0f29fa9161b5a6303dbbff3a",
+  "packageSize": 721392,
+  "packageSha256": "4889f8f882c44ca4d23d4b7cdd06e4edbd280a900365c329bde5492f09b3deaa",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "hlqdPGZq16XJohCEI2gfRLmFVZw3EppnZtwYfebj9TynNaEX+6fD1DmfKSvxR7cXPV473/k9hfwyqYl54gk37krg3jpUPBtQABsv52Et+QWdvOLGjHBcU83k5/L7bCKKpKLjmRG/Jg8i2Vju6KyzxqU0+GZYhoEA/ruOYdtYliFRtG+PgS8FEpEVEpWH4M1aTTuUhzM59MjiA1kCTSzFiUSzZAxKZh//QLpXnyWbPHwOuTrIt/ka29/XyEMLkNFso6YxSzNrE6VWrHrCZMspzKy04FV3TXN4AlAE4PpT1pk8CdBw/Ay45pCJzL/GCtmC3N5Ki2m4379MbUP1IEfGrg=="
+    "value": "C4jFytTPQ0GNzau+76Kxil2LfPKSzTqRKZjTeoUlvXvZTBOo8swXKOqHPTbKGJ+17BztGEILCjvwK2dXAlRKyTa9bx6ALrPea48l8ahvaOqcttPz4/9qJaGR2jxpempyY5SiwUGE0mabXtdcs1fTbYuWcXWnv5q5vEeA1Mw7LUPGOUool3voU9gG5SNkNXA6ZuF9Hsv5J0ufbcku64Fx1iSQ00tpbqpg3JF9gUXTuCJL+UvSaRx6Wn8BP+HVatwc28heYOh19+hpF35WQnJ05/OqigsDEbw/vefc83BlAmnC7VbUGqHtZBwAcoQCimb1OzFWqzc65JZE9sHlgHMv4w=="
   }
 }

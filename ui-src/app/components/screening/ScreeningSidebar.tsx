@@ -20,10 +20,12 @@ function acquisitionLabel(mode?: PlaybackSession["acquisition"]["mode"]) {
 
 export function ScreeningSidebar({ session, request, onRefresh, libraryEntry, onToggleFavorite, onToggleWatchLater }: Props) {
   const resolving = request.phase === "resolving";
+  const requestedMovieId = String(request.movieId || "");
+  const requestedTitle = String(request.movieTitle || (requestedMovieId ? `影片 ${requestedMovieId}` : ""));
   const acquisition = session?.acquisition;
   const purchased = acquisition?.mode === "purchased";
   const steps = [
-    { label: "识别本场影片", detail: session?.movieId ? `编号 ${session.movieId}` : "等待详情页", done: Boolean(session?.movieId), active: resolving && !session },
+    { label: "识别本场影片", detail: session?.movieId ? `编号 ${session.movieId}` : requestedMovieId ? `编号 ${requestedMovieId}` : "等待选片", done: Boolean(session?.movieId || requestedMovieId), active: resolving && !session && !requestedMovieId },
     { label: "轮换可用账号", detail: session ? `已尝试 ${acquisition?.attempts || 1} 个账号` : "检查直链优先", done: Boolean(session), active: resolving },
     { label: purchased ? "安全核对金币" : "跳过金币购买", detail: purchased ? "账本已 resolved" : session ? "已有直链，禁止扣费" : "仅在全部锁定后进行", done: Boolean(session), active: false },
     { label: "送达放映线路", detail: session ? `${session.sources.length} 条可用线路` : "检票后可开映", done: Boolean(session?.sources.length), active: false }
@@ -37,12 +39,12 @@ export function ScreeningSidebar({ session, request, onRefresh, libraryEntry, on
           <div className="txzz-ticket-mascot flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.2rem] border border-white/80 bg-white/82 text-2xl shadow-sm" aria-hidden="true">🍬</div>
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-1 text-[10px] font-black tracking-[.16em] text-violet-500"><Sparkles size={11} /> TANGTANG CHECK-IN</p>
-            <h2 className="mt-1 line-clamp-2 text-[16px] font-black leading-snug text-slate-900">{session?.title || "糖糖检票员等你入场"}</h2>
-            <p className="mt-1 text-[11px] leading-5 text-slate-500">{session ? "资源已备好，但不会自动播放。点画面中央“开映”才会正式放映。" : "打开任意影片详情页，糖糖会检查账号和线路。"}</p>
+            <h2 className="mt-1 line-clamp-2 text-[16px] font-black leading-snug text-slate-900">{session?.title || requestedTitle || "糖糖检票员等你入场"}</h2>
+            <p className="mt-1 text-[11px] leading-5 text-slate-500">{session ? "资源已备好，但不会自动播放。点画面中央“开映”才会正式放映。" : resolving ? "正在检查账号与完整线路；旧影片已经收起，不会串场。" : "从糖心影院选片，或打开网站影片详情，糖糖就会开始检票。"}</p>
           </div>
         </div>
         <div className="relative mt-3 flex flex-wrap gap-1.5">
-          <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-fuchsia-600"><Ticket size={10} className="mr-1 inline" />{session ? acquisitionLabel(acquisition?.mode) : "等待电影票"}</span>
+          <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-fuchsia-600"><Ticket size={10} className="mr-1 inline" />{session ? acquisitionLabel(acquisition?.mode) : resolving ? "正在出票" : "等待电影票"}</span>
           {session?.account?.label && <span className="max-w-full truncate rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold text-violet-600"><UserRound size={10} className="mr-1 inline" />{session.account.label}</span>}
           {purchased && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-600"><Coins size={10} className="mr-1 inline" />幂等解锁</span>}
         </div>

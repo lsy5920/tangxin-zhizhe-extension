@@ -89,6 +89,7 @@ export type ScreeningState = {
     phase: "idle" | "resolving" | "error";
     requestId?: string;
     movieId?: string;
+    movieTitle?: string;
     error?: string;
     startedAt?: string;
   };

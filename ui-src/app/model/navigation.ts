@@ -1,4 +1,5 @@
 import {
+  Clapperboard,
   Download,
   House,
   Play,
@@ -33,13 +34,13 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     icon: House
   },
   {
-    id: "accounts",
-    label: "账号小屋",
-    shortLabel: "账号",
-    eyebrow: "ACCOUNTS",
-    subtitle: "云端轮换与本地凭据",
-    companionHint: "把可用账号照顾得好好的",
-    icon: Users
+    id: "cinema",
+    label: "糖心影院",
+    shortLabel: "影院",
+    eyebrow: "CINEMA",
+    subtitle: "发现、搜索与选片",
+    companionHint: "先逛目录，选好影片后再检票开映",
+    icon: Clapperboard
   },
   {
     id: "playback",
@@ -49,6 +50,15 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     subtitle: "播放器、线路与记录",
     companionHint: "选择最顺畅的线路开始放映",
     icon: Play
+  },
+  {
+    id: "accounts",
+    label: "账号小屋",
+    shortLabel: "账号",
+    eyebrow: "ACCOUNTS",
+    subtitle: "云端轮换与本地凭据",
+    companionHint: "把可用账号照顾得好好的",
+    icon: Users
   },
   {
     id: "downloads",

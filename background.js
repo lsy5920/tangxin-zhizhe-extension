@@ -1,12 +1,14 @@
 "use strict";
 
-importScripts("state_mutation_core.js", "experience_core.js", "update_core.js");
+importScripts("state_mutation_core.js", "experience_core.js", "cinema_catalog_core.js", "update_core.js");
 
 const stateMutationCore = globalThis.TxzzStateMutationCore;
 const experienceCore = globalThis.TxzzExperienceCore;
+const cinemaCatalogCore = globalThis.TxzzCinemaCatalogCore;
 const updateCore = globalThis.TxzzUpdateCore;
 if (!stateMutationCore) throw new Error("状态变更核心未加载");
 if (!experienceCore) throw new Error("体验状态核心未加载");
+if (!cinemaCatalogCore) throw new Error("影院目录核心未加载");
 if (!updateCore) throw new Error("更新决策核心未加载");
 
 const EXPERIENCE_STORAGE_KEY = "txzzExperienceV1";
@@ -102,6 +104,8 @@ let saveTokenMutationQueue = Promise.resolve();
 let updateVerificationKeyPromise = null;
 const localPurchaseLocks = new Set();
 let latestPlaybackRequest = null;
+let latestCinemaPlaybackRequest = null;
+let latestCinemaCatalogRequestId = "";
 let experienceMutationQueue = Promise.resolve();
 let experienceSnapshot = experienceCore.defaultExperienceState();
 let downloadDispatchTimer = null;
@@ -109,8 +113,10 @@ const downloadStartInFlight = new Set();
 let accountPatrolInFlight = null;
 let persistedDownloadsReconciled = false;
 let persistedDownloadRecoveryInFlight = null;
+const cinemaCatalogCache = new Map();
+let cinemaVisitorSessionCache = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-30-0014";
+const LOCAL_UPDATE_BUILD = "2026-07-30-0138";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -128,6 +134,7 @@ const DEFAULT_STATE = {
       history: [],
       request: { phase: "idle" }
     },
+    cinemaCatalog: cinemaCatalogCore.defaultCatalogState(),
     // 本地账号模式也使用持久化账本；该字段不会通过 sanitizeState 暴露给页面。
     localPurchaseLedger: {},
     fullDetailCache: {},
@@ -718,6 +725,7 @@ function buildAutoCleanState(storedState = {}) {
     },
     fullDetails: legacyDetails.slice(-80),
     screening: normalizeScreeningState(storedState.screening, legacyDetails),
+    cinemaCatalog: cinemaCatalogCore.normalizeCatalogState(storedState.cinemaCatalog),
     fullDetailCache: {},
     lastFullTrace: null,
     lastGuestTrace: null,
@@ -875,6 +883,7 @@ async function getStateInternal() {
   }
   state.fullDetails = Array.isArray(state.fullDetails) ? state.fullDetails.slice(-80) : [];
   state.screening = normalizeScreeningState(state.screening, state.fullDetails);
+  state.cinemaCatalog = cinemaCatalogCore.normalizeCatalogState(state.cinemaCatalog);
   state.fullDetailCache = state.fullDetailCache && typeof state.fullDetailCache === "object" ? state.fullDetailCache : {};
   state.localPurchaseLedger = state.localPurchaseLedger && typeof state.localPurchaseLedger === "object" ? state.localPurchaseLedger : {};
   state.downloadTasks = compactDownloadTasks(state.downloadTasks && typeof state.downloadTasks === "object" ? state.downloadTasks : {});
@@ -904,6 +913,7 @@ function sanitizeState(state) {
     accountPool: (state.accountPool || []).map(publicAccount),
     fullDetails: (state.fullDetails || []).slice(-80),
     screening: normalizeScreeningState(state.screening, state.fullDetails),
+    cinemaCatalog: cinemaCatalogCore.normalizeCatalogState(state.cinemaCatalog),
     downloadTasks: state.downloadTasks && typeof state.downloadTasks === "object" ? state.downloadTasks : {},
     downloadSnapshots: Array.isArray(state.downloadSnapshots) ? state.downloadSnapshots.slice(-30) : [],
     experience: publicExperienceState()
@@ -942,6 +952,7 @@ async function resetAllLocalData() {
     remote: { ...REMOTE_CONFIG },
     fullDetails: [],
     screening: normalizeScreeningState(null, []),
+    cinemaCatalog: cinemaCatalogCore.defaultCatalogState(),
     localPurchaseLedger: {},
     fullDetailCache: {},
     downloadTasks: {},
@@ -1161,6 +1172,167 @@ function normalizeBootstrapSession(session = {}) {
   const userToken = String(session.userToken || session.token || "");
   const deviceId = String(session.deviceId || "");
   return userToken && deviceId ? { userToken, deviceId } : null;
+}
+
+function rememberCinemaCatalogCache(key, value) {
+  cinemaCatalogCache.delete(key);
+  cinemaCatalogCache.set(key, {
+    storedAt: Date.now(),
+    value: structuredClone(value)
+  });
+  while (cinemaCatalogCache.size > 20) {
+    cinemaCatalogCache.delete(cinemaCatalogCache.keys().next().value);
+  }
+}
+
+function readCinemaCatalogCache(key) {
+  const cached = cinemaCatalogCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - Number(cached.storedAt || 0) > 5 * 60 * 1000) {
+    cinemaCatalogCache.delete(key);
+    return null;
+  }
+  // 命中后移到 Map 末尾，以近似 LRU 的方式保留最近查询。
+  cinemaCatalogCache.delete(key);
+  cinemaCatalogCache.set(key, cached);
+  return structuredClone(cached.value);
+}
+
+async function cinemaCatalogSession(message = {}) {
+  const bootstrap = normalizeBootstrapSession(message.bootstrapSession || message.session || null);
+  if (bootstrap) return bootstrap;
+  if (cinemaVisitorSessionCache && Date.now() < cinemaVisitorSessionCache.expiresAt) {
+    return cinemaVisitorSessionCache.session;
+  }
+  const session = await createVisitorSession(String(message.deviceId || "") || makeDeviceId());
+  cinemaVisitorSessionCache = {
+    session,
+    expiresAt: Date.now() + 30 * 60 * 1000
+  };
+  return session;
+}
+
+async function commitCinemaCatalogResult(requestId, patch) {
+  const fresh = await getStateInternal();
+  const current = cinemaCatalogCore.normalizeCatalogState(fresh.cinemaCatalog);
+  if (
+    latestCinemaCatalogRequestId !== requestId
+    || String(current.requestId || "") !== String(requestId)
+  ) {
+    return { ok: true, stale: true, requestId, state: sanitizeState(fresh) };
+  }
+  fresh.cinemaCatalog = cinemaCatalogCore.normalizeCatalogState({
+    ...current,
+    ...patch,
+    requestId
+  });
+  await saveState(fresh);
+  return {
+    ok: true,
+    requestId,
+    catalog: fresh.cinemaCatalog,
+    state: sanitizeState(fresh)
+  };
+}
+
+/**
+ * 影院目录只调用公开列表端点。这里刻意不读取账号池、不请求 /movie/detail，
+ * 更不会触发 /movie/doBuy 或 Worker 播放接口；完整线路只在用户点击开映后获取。
+ */
+async function fetchCinemaCatalog(message = {}) {
+  const mode = ["discover", "browse", "search"].includes(message.mode) ? message.mode : "discover";
+  const requestId = String(message.requestId || crypto.randomUUID());
+  const query = String(message.query || message.keywords || "").trim().slice(0, 80);
+  const filters = cinemaCatalogCore.buildSearchParams(message.filters || {}, { includePage: false });
+  const pageSize = Math.max(1, Math.min(48, Math.floor(Number(message.pageSize || 24)) || 24));
+  const requestedPage = Math.max(1, Math.floor(Number(message.page || 1)) || 1);
+  const append = message.append === true && mode !== "discover";
+  const queryKey = cinemaCatalogCore.catalogQueryKey({ mode, query, filters, pageSize });
+  const page = append ? requestedPage : 1;
+  const cacheKey = `${queryKey}:page:${page}`;
+  latestCinemaCatalogRequestId = requestId;
+
+  let state = await getStateInternal();
+  const previous = cinemaCatalogCore.normalizeCatalogState(state.cinemaCatalog);
+  const sameQuery = previous.queryKey === queryKey;
+  state.cinemaCatalog = cinemaCatalogCore.normalizeCatalogState({
+    ...previous,
+    mode,
+    phase: append && sameQuery ? "loading-more" : "loading",
+    requestId,
+    query,
+    queryKey,
+    filters,
+    page: append && sameQuery ? previous.page : 0,
+    pageSize,
+    sections: sameQuery ? previous.sections : [],
+    items: sameQuery ? previous.items : [],
+    hasMore: sameQuery ? previous.hasMore : false,
+    error: ""
+  });
+  await saveState(state);
+
+  try {
+    let normalized = message.forceRefresh === true ? null : readCinemaCatalogCache(cacheKey);
+    if (!normalized) {
+      const session = await cinemaCatalogSession(message);
+      if (mode === "discover") {
+        const raw = await apiRequest("/movie/block", { position: "app_home_tj" }, session);
+        const result = cinemaCatalogCore.normalizeDiscoverResponse(raw);
+        normalized = { sections: result.sections, items: result.items, page: 1, hasMore: false };
+      } else {
+        const params = cinemaCatalogCore.buildSearchParams({
+          ...filters,
+          keywords: query,
+          page,
+          page_size: pageSize
+        });
+        const raw = await apiRequest("/movie/search", params, session);
+        const result = cinemaCatalogCore.normalizeSearchResponse(raw, { page, pageSize });
+        normalized = {
+          sections: [],
+          items: result.items,
+          page: result.page,
+          hasMore: result.hasMore,
+          total: result.total
+        };
+      }
+      rememberCinemaCatalogCache(cacheKey, normalized);
+    }
+
+    const fresh = await getStateInternal();
+    const current = cinemaCatalogCore.normalizeCatalogState(fresh.cinemaCatalog);
+    const canAppend = append && current.queryKey === queryKey;
+    const items = canAppend
+      ? cinemaCatalogCore.appendUniqueMovies(current.items, normalized.items)
+      : normalized.items;
+    return commitCinemaCatalogResult(requestId, {
+      mode,
+      phase: "ready",
+      query,
+      queryKey,
+      filters,
+      sections: mode === "discover" ? normalized.sections : [],
+      items,
+      page: normalized.page,
+      pageSize,
+      hasMore: normalized.hasMore === true,
+      fetchedAt: nowIso(),
+      error: ""
+    });
+  } catch (error) {
+    const failed = await commitCinemaCatalogResult(requestId, {
+      phase: "error",
+      error: error?.message || String(error),
+      fetchedAt: nowIso()
+    });
+    if (failed.stale) return failed;
+    return {
+      ...failed,
+      ok: false,
+      error: error?.message || String(error)
+    };
+  }
 }
 
 async function loginByAccount(account, bootstrapSession = null) {
@@ -2031,10 +2203,13 @@ async function ensurePlaybackSessionCompleteness(session = null) {
   return normalizeStoredPlaybackSession({ ...normalized, sources });
 }
 
-function playbackRequestMatches(state, requestId = "", contextKey = "") {
+function playbackRequestMatches(state, requestId = "", contextKey = "", requestScope = "page") {
   if (!requestId) return true;
-  if (latestPlaybackRequest?.requestId && String(latestPlaybackRequest.requestId) !== String(requestId)) return false;
-  if (latestPlaybackRequest?.contextKey && contextKey && String(latestPlaybackRequest.contextKey) !== String(contextKey)) return false;
+  const cinemaScope = requestScope === "cinema";
+  if (!cinemaScope && latestCinemaPlaybackRequest?.active) return false;
+  const latest = cinemaScope ? latestCinemaPlaybackRequest : latestPlaybackRequest;
+  if (latest?.requestId && String(latest.requestId) !== String(requestId)) return false;
+  if (latest?.contextKey && contextKey && String(latest.contextKey) !== String(contextKey)) return false;
   const current = state?.screening?.request || {};
   if (String(current.requestId || "") !== String(requestId)) return false;
   if (contextKey && current.contextKey && String(current.contextKey) !== String(contextKey)) return false;
@@ -2051,7 +2226,8 @@ async function finishPlaybackSession(options = {}) {
     cacheKey = `${account?.id || "default"}:${movieId}`,
     session: suppliedSession = null,
     requestId = "",
-    contextKey = ""
+    contextKey = "",
+    requestScope = "page"
   } = options;
   const resolved = await resolvePlaybackDetail(detail || {}, options.summary || {}, suppliedSession);
   const normalizedDetail = normalizeFullDetail(resolved.detail) || {};
@@ -2069,7 +2245,7 @@ async function finishPlaybackSession(options = {}) {
   if (!session) throw new Error("播放会话缺少有效线路");
   const summary = playbackSessionSummary(session, normalizedDetail);
   const fresh = await getStateInternal();
-  const canCommit = playbackRequestMatches(fresh, requestId, contextKey);
+  const canCommit = playbackRequestMatches(fresh, requestId, contextKey, requestScope);
   if (!canCommit) {
     // 旧请求仍可把结果返回给发起方，但绝不能覆盖当前页面的 active session、
     // 详情缓存或 screening 请求状态。
@@ -2125,6 +2301,7 @@ async function reconcileLocalPurchase(message, blocking, errors) {
       movieTitle: message.movieTitle,
       requestId: message.requestId,
       contextKey: message.contextKey,
+      requestScope: message.requestScope,
       detail: normalizeFullDetail(blocking.detail),
       account,
       acquisition: {
@@ -2144,6 +2321,7 @@ async function reconcileLocalPurchase(message, blocking, errors) {
       movieTitle: message.movieTitle,
       requestId: message.requestId,
       contextKey: message.contextKey,
+      requestScope: message.requestScope,
       detail,
       account,
       acquisition: {
@@ -2172,13 +2350,21 @@ async function createPlaybackSession(message = {}) {
   const pageKey = String(message.pageKey || "");
   const pageEpoch = Number.isFinite(Number(message.pageEpoch)) ? Number(message.pageEpoch) : 0;
   const contextKey = String(message.contextKey || `${pageKey || "background"}#${pageEpoch}:${movieId}`);
-  const requestContext = { requestId, contextKey };
-  latestPlaybackRequest = { requestId, contextKey, movieId };
+  const requestScope = message.requestScope === "cinema" ? "cinema" : "page";
+  if (requestScope === "page" && latestCinemaPlaybackRequest?.active) {
+    return { ok: true, stale: true, requestId, state: sanitizeState(await getStateInternal()) };
+  }
+  const requestContext = { requestId, contextKey, requestScope };
+  if (requestScope === "cinema") {
+    latestCinemaPlaybackRequest = { requestId, contextKey, movieId, active: true };
+  } else {
+    latestPlaybackRequest = { requestId, contextKey, movieId };
+  }
   const movieTitle = String(message.movieTitle || "");
   let state = await getStateInternal();
   state.screening = {
     ...normalizeScreeningState(state.screening, state.fullDetails),
-    request: { phase: "resolving", requestId, movieId, pageKey, pageEpoch, contextKey, startedAt: nowIso(), error: "" }
+    request: { phase: "resolving", requestId, movieId, movieTitle, pageKey, pageEpoch, contextKey, startedAt: nowIso(), error: "" }
   };
   await saveState(state);
 
@@ -2343,13 +2529,35 @@ async function createPlaybackSession(message = {}) {
     }
   } catch (error) {
     const fresh = await getStateInternal();
-    if (!playbackRequestMatches(fresh, requestId, contextKey)) throw error;
+    if (!playbackRequestMatches(fresh, requestId, contextKey, requestScope)) throw error;
     fresh.screening = {
       ...normalizeScreeningState(fresh.screening, fresh.fullDetails),
-      request: { phase: "error", requestId, movieId, pageKey, pageEpoch, contextKey, error: error?.message || String(error), startedAt: fresh.screening?.request?.startedAt || nowIso() }
+      request: { phase: "error", requestId, movieId, movieTitle, pageKey, pageEpoch, contextKey, error: error?.message || String(error), startedAt: fresh.screening?.request?.startedAt || nowIso() }
     };
     await saveState(fresh);
     throw error;
+  }
+}
+
+/** 影院开映使用独立上下文键，不受目标网页当前 Vlog 卡片代次约束。 */
+async function openCinemaPlayback(message = {}) {
+  const movieId = String(message.movieId || message.id || "").trim();
+  if (!movieId) throw playbackBusinessError("缺少视频编号 movieId", "MOVIE_ID_REQUIRED", 400);
+  const requestId = String(message.requestId || crypto.randomUUID());
+  try {
+    return await createPlaybackSession({
+      ...message,
+      movieId,
+      requestId,
+      requestScope: "cinema",
+      pageKey: "cinema",
+      pageEpoch: 0,
+      contextKey: `cinema:${movieId}:${requestId}`
+    });
+  } finally {
+    if (String(latestCinemaPlaybackRequest?.requestId || "") === requestId) {
+      latestCinemaPlaybackRequest = null;
+    }
   }
 }
 
@@ -4816,6 +5024,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: true, state: sanitizeState(await getStateInternal()) });
       return;
     }
+    if (message?.type === "fetchCinemaCatalog") {
+      sendResponse(await fetchCinemaCatalog(message));
+      return;
+    }
     if (message?.type === "updateLibraryEntry") {
       sendResponse(await updateLibraryExperience(message));
       return;
@@ -4951,6 +5163,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "createPlaybackSession") {
       sendResponse(await createPlaybackSession(message));
+      return;
+    }
+    if (message?.type === "openCinemaPlayback") {
+      sendResponse(await openCinemaPlayback(message));
       return;
     }
     if (message?.type === "planFullVideoDownload") {

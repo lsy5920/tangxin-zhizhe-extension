@@ -3,6 +3,7 @@ import { AlertTriangle, X } from "lucide-react";
 import { listenBridgeState, notifyUiReady, sendUiAction } from "./bridge";
 import type { AccountsPageIntent, BridgeState, Page, SettingsPageIntent } from "./types";
 import { OverviewPage } from "./components/OverviewPage";
+import { CinemaPage } from "./components/CinemaPage";
 import { AccountsPage } from "./components/AccountsPage";
 import { PlaybackPage } from "./components/PlaybackPage";
 import { DownloadsPage } from "./components/DownloadsPage";
@@ -279,6 +280,8 @@ export default function App() {
     // 每个业务页包一层错误边界：单页崩溃时保留悬浮球与面板外壳，避免整站 UI 消失。
     const body = page === "overview"
       ? <OverviewPage state={bridgeState} onAction={action} onPage={setPage} />
+      : page === "cinema"
+        ? <CinemaPage state={bridgeState} onAction={action} onPage={setPage} />
       : page === "accounts"
         ? <AccountsPage state={bridgeState} onAction={action} intent={accountsIntent} onIntentHandled={() => setAccountsIntent({})} />
         : page === "playback"

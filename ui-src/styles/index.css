@@ -1841,3 +1841,92 @@
     animation: none !important;
   }
 }
+
+/* 独立糖心影院：目录使用深色放映厅，仍由同一 Shadow DOM 主题与尺寸基准承载。 */
+.txzz-cinema-page {
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 14% -8%, rgba(208, 82, 170, 0.14), transparent 34rem),
+    radial-gradient(circle at 96% 18%, rgba(115, 94, 210, 0.15), transparent 30rem),
+    #0e0914;
+}
+
+.txzz-cinema-hero {
+  animation: txzz-cinema-reveal 0.42s ease-out both;
+}
+
+.txzz-cinema-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 174px 326px;
+}
+
+.txzz-cinema-shelf,
+.txzz-cinema-filter-strip {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(216, 180, 254, 0.28) transparent;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: x proximity;
+}
+
+.txzz-cinema-shelf > * {
+  scroll-snap-align: start;
+}
+
+.txzz-cinema-shelf::-webkit-scrollbar,
+.txzz-cinema-filter-strip::-webkit-scrollbar {
+  height: 5px;
+}
+
+.txzz-cinema-shelf::-webkit-scrollbar-thumb,
+.txzz-cinema-filter-strip::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(216, 180, 254, 0.28);
+}
+
+.txzz-cinema-star {
+  animation: txzz-cinema-twinkle 2.8s ease-in-out infinite;
+}
+
+.txzz-cinema-star--delay {
+  animation-delay: -1.35s;
+}
+
+@keyframes txzz-cinema-reveal {
+  from { opacity: 0; transform: translateY(7px) scale(0.993); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes txzz-cinema-twinkle {
+  0%, 100% { opacity: 0.35; transform: scale(0.85) rotate(-8deg); }
+  50% { opacity: 1; transform: scale(1.2) rotate(8deg); }
+}
+
+@media (max-width: 359px) {
+  .txzz-app-mobile-nav button {
+    min-width: 0;
+    font-size: 9px !important;
+  }
+
+  .txzz-app-mobile-nav button > span:first-child {
+    width: 40px !important;
+  }
+
+  .txzz-cinema-grid {
+    gap: 0.55rem !important;
+  }
+
+  .txzz-cinema-card > div:last-child {
+    padding: 0.6rem !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .txzz-cinema-hero,
+  .txzz-cinema-star {
+    animation: none !important;
+  }
+
+  .txzz-cinema-card img {
+    transition: none !important;
+  }
+}

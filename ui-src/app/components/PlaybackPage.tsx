@@ -26,14 +26,21 @@ export function PlaybackPage({ state, onAction }: Props) {
   const [mediaStats, setMediaStats] = useState({ currentTime: 0, duration: 0 });
   const [bookmarkCommand, setBookmarkCommand] = useState<PlaybackBookmarkCommand | null>(null);
   const activeSession = screening.activeSession;
-  const selectedSession = screening.history.find((item) => item.id === selectedSessionId) || activeSession;
+  const resolvingDifferentMovie = screening.request.phase === "resolving"
+    && Boolean(screening.request.movieId)
+    && String(screening.request.movieId) !== String(activeSession?.movieId || "");
+  const selectedSession = resolvingDifferentMovie
+    ? null
+    : screening.history.find((item) => item.id === selectedSessionId) || activeSession;
   const libraryEntry = selectedSession ? state.experience?.library?.[selectedSession.movieId] || null : null;
   const bookmarks = selectedSession ? state.experience?.bookmarks?.[selectedSession.movieId] || [] : [];
 
   useEffect(() => {
     if (!activeSession?.id) return;
-    setSelectedSessionId((current) => current && screening.history.some((item) => item.id === current) ? current : activeSession.id);
-  }, [activeSession?.id, screening.history]);
+    // active session 身份变化意味着一次新检票已经完成，应切到新片；普通状态刷新不会
+    // 打断用户在足迹抽屉中手动选择的旧会话。
+    setSelectedSessionId(activeSession.id);
+  }, [activeSession?.id]);
 
   useEffect(() => {
     setMediaStats({ currentTime: 0, duration: 0 });
@@ -84,7 +91,17 @@ export function PlaybackPage({ state, onAction }: Props) {
 
       <div className="txzz-playback-workspace relative grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(19rem,.72fr)]">
         <main className="txzz-player-card min-w-0 overflow-hidden rounded-[1.7rem] border border-white/70 bg-white/72 p-2.5 shadow-[0_24px_70px_rgba(75,45,108,.16)] backdrop-blur-xl sm:p-3">
-          {selectedSession ? (
+          {resolvingDifferentMovie ? (
+            <div className="relative flex min-h-[19rem] aspect-video items-center justify-center overflow-hidden rounded-[1.35rem] bg-[radial-gradient(circle_at_50%_20%,#35294c_0%,#17131f_48%,#09080d_100%)] p-6 text-center text-white">
+              <span className="absolute left-[12%] top-[18%] text-amber-200/70">✦</span><span className="absolute right-[16%] top-[28%] text-fuchsia-200/70">✦</span>
+              <div className="relative max-w-sm">
+                <div className="txzz-ticket-mascot mx-auto flex h-24 w-24 items-center justify-center rounded-[2rem] border border-white/12 bg-white/8 text-5xl shadow-2xl backdrop-blur">🎟️</div>
+                <h2 className="mt-5 text-[17px] font-black">糖糖正在为新片检票</h2>
+                <p className="mt-2 text-[11px] leading-5 text-white/55">{screening.request.movieTitle || `影片 ${screening.request.movieId}`}<br />旧影片已收起，完整线路送达前不会误显示或自动播放。</p>
+                <div className="mx-auto mt-4 h-1.5 w-40 overflow-hidden rounded-full bg-white/10"><span className="block h-full w-1/2 animate-pulse rounded-full bg-gradient-to-r from-fuchsia-400 to-violet-400" /></div>
+              </div>
+            </div>
+          ) : selectedSession ? (
             <ScreeningStage
               key={selectedSession.id}
               session={selectedSession}

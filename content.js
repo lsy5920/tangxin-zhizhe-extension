@@ -155,6 +155,7 @@
     remote: null,
     fullDetails: [],
     screening: { schemaVersion: 2, activeSession: null, history: [], request: { phase: "idle" } },
+    cinemaCatalog: { schemaVersion: 1, mode: "discover", phase: "idle", requestId: "", query: "", queryKey: "", filters: {}, sections: [], items: [], page: 0, pageSize: 24, hasMore: false, fetchedAt: "", error: "" },
     downloadTasks: {},
     downloadSnapshots: [],
     experience: { library: {}, bookmarks: {}, alerts: [], downloadPolicy: {}, accountPatrol: { records: {} }, storageAudit: null }
@@ -184,6 +185,8 @@
   let pageContextTransitioning = false;
   let authoritativePageContext = null;
   let latestFullDetailToken = null;
+  let latestCinemaCatalogRequestId = "";
+  let latestCinemaPlaybackRequestId = "";
   const FLOW_BADGE_TITLES = [
     "展示覆盖",
     "远程账号池",
@@ -1605,6 +1608,7 @@
         selectedFullAccountId: state.selectedFullAccountId,
         fullDetails: state.fullDetails.slice(-40),
         screening: state.screening,
+        cinemaCatalog: state.cinemaCatalog,
         downloadTasks: state.downloadTasks || {},
         downloadSnapshots: state.downloadSnapshots || [],
         experience: state.experience || {},
@@ -2225,6 +2229,9 @@
     state.screening = saved.screening && typeof saved.screening === "object"
       ? saved.screening
       : { schemaVersion: 2, activeSession: null, history: [], request: { phase: "idle" } };
+    state.cinemaCatalog = saved.cinemaCatalog && typeof saved.cinemaCatalog === "object"
+      ? saved.cinemaCatalog
+      : { schemaVersion: 1, mode: "discover", phase: "idle", sections: [], items: [], page: 0, pageSize: 24, hasMore: false };
     state.downloadTasks = saved.downloadTasks && typeof saved.downloadTasks === "object" ? saved.downloadTasks : {};
     state.downloadSnapshots = Array.isArray(saved.downloadSnapshots) ? saved.downloadSnapshots : [];
     state.experience = saved.experience && typeof saved.experience === "object" ? saved.experience : state.experience || {};
@@ -2276,6 +2283,9 @@
     state.screening = saved.screening && typeof saved.screening === "object"
       ? saved.screening
       : { schemaVersion: 2, activeSession: null, history: [], request: { phase: "idle" } };
+    state.cinemaCatalog = saved.cinemaCatalog && typeof saved.cinemaCatalog === "object"
+      ? saved.cinemaCatalog
+      : { schemaVersion: 1, mode: "discover", phase: "idle", sections: [], items: [], page: 0, pageSize: 24, hasMore: false };
     state.downloadTasks = saved.downloadTasks && typeof saved.downloadTasks === "object" ? saved.downloadTasks : {};
     state.downloadSnapshots = Array.isArray(saved.downloadSnapshots) ? saved.downloadSnapshots : [];
     state.experience = saved.experience && typeof saved.experience === "object" ? saved.experience : {};
@@ -2865,6 +2875,116 @@
     }
   }
 
+  async function loadCinemaCatalog(payload = {}, append = false) {
+    const requestId = `cinema_catalog_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    latestCinemaCatalogRequestId = requestId;
+    const previous = state.cinemaCatalog && typeof state.cinemaCatalog === "object"
+      ? state.cinemaCatalog
+      : { schemaVersion: 1, mode: "discover", sections: [], items: [], page: 0, pageSize: 24, hasMore: false };
+    const requestedMode = ["discover", "browse", "search"].includes(payload.mode) ? payload.mode : "discover";
+    state.cinemaCatalog = {
+      ...previous,
+      mode: requestedMode,
+      phase: append ? "loading-more" : "loading",
+      requestId,
+      query: String(payload.query || "").trim(),
+      filters: payload.filters && typeof payload.filters === "object" ? payload.filters : {},
+      error: ""
+    };
+    publishState();
+    try {
+      const bootstrapSession = await collectSession();
+      if (latestCinemaCatalogRequestId !== requestId) return;
+      const currentPage = Number(previous.page || 0);
+      const response = await sendRuntime("fetchCinemaCatalog", {
+        mode: requestedMode,
+        query: payload.query || "",
+        filters: payload.filters || {},
+        pageSize: Number(payload.pageSize || previous.pageSize || 24),
+        page: append ? currentPage + 1 : 1,
+        append,
+        forceRefresh: payload.forceRefresh === true,
+        requestId,
+        bootstrapSession
+      }, 45000);
+      if (latestCinemaCatalogRequestId !== requestId || response.stale) return;
+      syncSavedState(response.state || {});
+      emitFlow(
+        "糖心影院",
+        append
+          ? `已追加 ${response.catalog?.items?.length || state.cinemaCatalog?.items?.length || 0} 部目录影片`
+          : `目录已更新，共 ${response.catalog?.items?.length || state.cinemaCatalog?.items?.length || 0} 部影片`,
+        "ok"
+      );
+    } catch (error) {
+      if (latestCinemaCatalogRequestId !== requestId) return;
+      if (error?.response?.state) syncSavedState(error.response.state);
+      state.cinemaCatalog = {
+        ...state.cinemaCatalog,
+        phase: "error",
+        requestId,
+        error: error?.message || String(error)
+      };
+      publishState();
+      throw error;
+    }
+  }
+
+  async function openCinemaPlayback(payload = {}) {
+    const movieId = String(payload.movieId || "").trim();
+    if (!movieId) throw new Error("影院影片缺少视频编号");
+    const requestId = `cinema_playback_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    latestCinemaPlaybackRequestId = requestId;
+    state.screening = {
+      ...(state.screening || { schemaVersion: 2, activeSession: null, history: [] }),
+      request: {
+        phase: "resolving",
+        requestId,
+        movieId,
+        movieTitle: String(payload.movieTitle || payload.title || ""),
+        pageKey: "cinema",
+        pageEpoch: 0,
+        contextKey: `cinema:${movieId}:${requestId}`,
+        startedAt: new Date().toISOString(),
+        error: ""
+      }
+    };
+    publishState();
+    emitFlow("影院检票", `正在为影片 ${movieId} 获取完整线路`, "running");
+    try {
+      const bootstrapSession = await collectSession();
+      if (latestCinemaPlaybackRequestId !== requestId) return;
+      const response = await sendRuntime("openCinemaPlayback", {
+        movieId,
+        movieTitle: String(payload.movieTitle || payload.title || ""),
+        requestId,
+        forceRefresh: payload.forceRefresh === true,
+        accountId: state.selectedFullAccountId,
+        bootstrapSession
+      });
+      if (latestCinemaPlaybackRequestId !== requestId || response.stale) return;
+      if (response.state) syncSavedState(response.state);
+      emitFlow("影院检票", `影片 ${movieId} 已取得完整线路，等待手动开映`, "ok");
+    } catch (error) {
+      if (latestCinemaPlaybackRequestId !== requestId) return;
+      if (error?.response?.state) syncSavedState(error.response.state);
+      state.screening = {
+        ...(state.screening || { schemaVersion: 2, activeSession: null, history: [] }),
+        request: {
+          phase: "error",
+          requestId,
+          movieId,
+          pageKey: "cinema",
+          pageEpoch: 0,
+          contextKey: `cinema:${movieId}:${requestId}`,
+          error: error?.message || String(error)
+        }
+      };
+      publishState();
+      throw error;
+    }
+  }
+
   async function handleTxzzAction(action, payload = {}) {
     if (!action) return;
     syncActionPayloadToFields(payload);
@@ -2946,6 +3066,9 @@
       if (action === "reconcile-purchase") await reconcilePurchase(payload);
       if (action === "upload-account-remote") await uploadAccountRemote(payload);
       if (action === "upload-local-account-remote") await uploadLocalAccountRemote(accountId);
+      if (action === "load-cinema-catalog") await loadCinemaCatalog(payload, false);
+      if (action === "load-more-cinema-catalog") await loadCinemaCatalog(payload, true);
+      if (action === "open-cinema-playback") await openCinemaPlayback(payload);
       if (action === "refresh-full-detail") await refreshFullDetail(payload.movieId || currentMovieId());
       if (action === "refresh-playback-session") await refreshFullDetail(payload.movieId || currentMovieId());
       if (action === "open-library-playback") {

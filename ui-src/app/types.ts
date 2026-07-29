@@ -1,6 +1,7 @@
 import type { ScreeningState } from "./playback/types";
+import type { CinemaCatalogState } from "./cinema/types";
 
-export type Page = "overview" | "accounts" | "playback" | "downloads" | "settings";
+export type Page = "overview" | "cinema" | "accounts" | "playback" | "downloads" | "settings";
 
 /** 远程版本清单中的单条更新记录 */
 export type UpdateChangelogItem = {
@@ -455,6 +456,7 @@ export type BridgeState = {
   selectedFullAccountId?: string;
   fullDetails?: FullDetail[];
   screening?: ScreeningState;
+  cinemaCatalog?: CinemaCatalogState;
   downloadTasks?: Record<string, DownloadTask>;
   downloadSnapshots?: unknown[];
   downloadPlanner?: DownloadPlannerState | null;
