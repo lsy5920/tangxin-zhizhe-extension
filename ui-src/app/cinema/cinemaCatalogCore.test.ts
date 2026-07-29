@@ -107,6 +107,31 @@ describe("cinema catalog core", () => {
     });
   });
 
+  it("plans only the two read-only catalog endpoints and strips playback inputs", () => {
+    expect(core.buildCatalogRequest({ mode: "discover", endpoint: "/movie/doBuy" })).toEqual({
+      mode: "discover",
+      endpoint: "/movie/block",
+      data: { position: "app_home_tj" }
+    });
+    const search = core.buildCatalogRequest({
+      mode: "search",
+      query: "cos",
+      page: 2,
+      pageSize: 24,
+      filters: {
+        order: "hot",
+        play_url: "https://media.invalid/full.m3u8",
+        token: "must-not-pass"
+      }
+    });
+    expect(search).toEqual({
+      mode: "search",
+      endpoint: "/movie/search",
+      data: { keywords: "cos", order: "hot", page: 2, page_size: 24 }
+    });
+    expect(JSON.stringify(search)).not.toMatch(/detail|doBuy|playback|m3u8|token/i);
+  });
+
   it("appends pages in stable order and reports the final page", () => {
     const first = core.normalizeSearchResponse({ list: [rawMovie("1"), rawMovie("2")], total: 3 }, { page: 1, pageSize: 2 });
     const second = core.normalizeSearchResponse({ data: { list: [rawMovie("2"), rawMovie("3")] }, total: 3 }, { page: 2, pageSize: 2 });

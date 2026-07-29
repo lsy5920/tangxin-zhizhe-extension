@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.4.1",
-  "build": "2026-07-30-0240",
-  "releasedAt": "2026-07-30 02:40",
+  "version": "5.4.2",
+  "build": "2026-07-30-0255",
+  "releasedAt": "2026-07-30 02:55",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-30-0255",
+      "type": "修复",
+      "title": "影院海报性能与发布门禁加固",
+      "detail": "加密海报改为一次 Web Crypto CBC 解密后线性异或还原 ECB，消除逐块异步调用和平方级拼接；后台禁止海报重定向并继续拒绝内网、整数/八进制 IPv4 与 IPv4 映射地址。目录网络计划抽成纯核心，固定只允许 /movie/block 与 /movie/search，并新增播放字段注入回归测试。npm run pack 现在写出 CRX 后立即重新执行完整签名、哈希、CRX3、ZIP 与逐文件一致性门禁，不再只依赖外层 release 命令。",
+      "releasedAt": "2026-07-30 02:55"
+    },
     {
       "id": "2026-07-30-0240",
       "type": "修复",
@@ -235,11 +242,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 727670,
-  "packageSha256": "959a797cf822d49b8779fb77b34edc041a56e2050229b1d844dae1caaff3a895",
+  "packageSize": 728247,
+  "packageSha256": "064572000c33f499ea68de162df87a26ce0129736ae14e2536d3ded13456293f",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "PSn2rMI/7QV/x0Yq3KJuNM2wKO5G6h+6VvvrxBCAWvB3S0tBkmWSauZQpTS/DmfzM2w3lIvs2ylrtDvWjmM6JTk43l4Wg0eBNjA2AuVtpvjJeJob8kaKEJbthzdZC2YmO6FzvKxdFEMRi5r3imk5c0hz+Q3bKlioqQFMM0hax30W81tLn8u4MRX/A3+reDcGXFqQEkxwn6A/gNDE/qwelCCG84MqSbzoL/NsAJ39s5RxKD7jsbZWIddDwsQPUTWcviLIiAkyTCi/nIDJLLd6e2SglnKLmseQlvMIjRJ3yql4Xh5iaTSVnxsDb1oNbomszN9BWbwJm6k/KHcuZ8ZLEQ=="
+    "value": "QVO6/XQDNwq0xyPk1vtT4M6ErqZN57tw5DwN0gm266G2Hzu5VYDh7Amlh7oIgvMful6vbLCfYDAQxPKyX45G9qGnnld/7npeqUhelYZLSysi4cjDrb+oUYFU4oHOtrRZ3UWWToDwtWs4GJ07+Gmq6BTDtFgjDFh22vmpVaXsSnsTY5POsNGb5O8WC6egVaBgaf806CV/C7BQW9wksPvvNcjdMB6vipjo0lZykkgCbSIKFFSTBPiESfbqbK11L8h0+0b21/mKZV8Xobxaqz8b+iTNd0CbcxV1QYGcrHVK+4lzDzWdiWWBJL4nwQU6Ku/V2aDDbWnfq1T5KTSMVpSWiw=="
   }
 }

@@ -132,7 +132,7 @@ const CINEMA_POSTER_CACHE_TTL_MS = 30 * 60 * 1000;
 const CINEMA_POSTER_CACHE_MAX_ITEMS = 64;
 const CINEMA_POSTER_CACHE_MAX_BYTES = 24 * 1024 * 1024;
 
-const LOCAL_UPDATE_BUILD = "2026-07-30-0240";
+const LOCAL_UPDATE_BUILD = "2026-07-30-0255";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1350,7 +1350,8 @@ async function downloadAndDecryptCinemaPoster(descriptor) {
     const response = await fetch(descriptor.url, {
       cache: "force-cache",
       credentials: "omit",
-      redirect: "follow",
+      // 海报地址已经由目录白名单授权；禁止重定向，避免公开 CDN 把高权限 fetch 引向内网。
+      redirect: "error",
       referrerPolicy: "no-referrer",
       signal: controller.signal
     });
@@ -1473,18 +1474,19 @@ async function fetchCinemaCatalog(message = {}) {
     let normalized = message.forceRefresh === true ? null : await readCinemaCatalogCache(cacheKey);
     if (!normalized) {
       const session = await cinemaCatalogSession(message);
-      if (mode === "discover") {
-        const raw = await apiRequest("/movie/block", { position: "app_home_tj" }, session);
+      const requestPlan = cinemaCatalogCore.buildCatalogRequest({
+        mode,
+        query,
+        filters,
+        page,
+        pageSize
+      });
+      if (requestPlan.endpoint === "/movie/block") {
+        const raw = await apiRequest(requestPlan.endpoint, requestPlan.data, session);
         const result = cinemaCatalogCore.normalizeDiscoverResponse(raw);
         normalized = { sections: result.sections, items: result.items, page: 1, hasMore: false };
       } else {
-        const params = cinemaCatalogCore.buildSearchParams({
-          ...filters,
-          keywords: query,
-          page,
-          page_size: pageSize
-        });
-        const raw = await apiRequest("/movie/search", params, session);
+        const raw = await apiRequest(requestPlan.endpoint, requestPlan.data, session);
         const result = cinemaCatalogCore.normalizeSearchResponse(raw, { page, pageSize });
         normalized = {
           sections: [],

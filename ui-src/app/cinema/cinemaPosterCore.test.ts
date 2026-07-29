@@ -18,6 +18,9 @@ describe("cinema poster core", () => {
     });
     expect(core.describeEncryptedPosterUrl("http://cdn.example/cover.bnc?ext=.jpg")).toBeNull();
     expect(core.describeEncryptedPosterUrl("https://127.0.0.1/cover.bnc?ext=.jpg")).toBeNull();
+    expect(core.describeEncryptedPosterUrl("https://2130706433/cover.bnc?ext=.jpg")).toBeNull();
+    expect(core.describeEncryptedPosterUrl("https://0177.0.0.1/cover.bnc?ext=.jpg")).toBeNull();
+    expect(core.describeEncryptedPosterUrl("https://[::ffff:127.0.0.1]/cover.bnc?ext=.jpg")).toBeNull();
     expect(core.describeEncryptedPosterUrl("https://192.168.1.8/cover.bnc?ext=.jpg")).toBeNull();
     expect(core.describeEncryptedPosterUrl("https://cdn.example/cover.svg")).toBeNull();
     expect(core.describeEncryptedPosterUrl("https://cdn.example/cover.bnc?ext=.svg")).toBeNull();

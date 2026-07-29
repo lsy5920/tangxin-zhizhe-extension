@@ -122,12 +122,12 @@ type CinemaCatalogState = {
 `cinema_poster_core.js` 使用 Web Crypto 的 AES-CBC 单块构造实现等价 ECB 解密，随后严格检查 PKCS7 和 JPEG、PNG、GIF、WebP 魔数。后台 `fetchCinemaPoster` 还会强制执行：
 
 1. `movieId + posterUrl` 必须与当前 `cinemaCatalog` 中的影片精确匹配，不能充当任意 URL 代理。
-2. 只接受公开网络主机上的 HTTPS `.bnc` 地址和受支持的输出扩展名，拒绝 localhost、内网 IPv4、链路本地与 IPv6 字面量。
+2. 只接受公开网络主机上的 HTTPS `.bnc` 地址和受支持的输出扩展名，拒绝 localhost、内网 IPv4、整数/八进制 IPv4、链路本地、IPv4 映射和 IPv6 字面量；网络层禁止重定向。
 3. 密文不能超过 6 MiB，网络请求 12 秒超时。
 4. 解密结果只保存在后台与 React 的有限 LRU 内存缓存中，绝不写入 `txzzState`、收藏或目录缓存。
 5. 海报卡片使用 `IntersectionObserver` 提前 360 像素加载；Hero 和已打开的详情弹层立即加载。
 
-真实样本验证：密文 `122544` 字节解密为 `122538` 字节 JPEG，文件头为 `FF D8 FF E0 00 10 4A 46 49 46`，文件尾为 `FF D9`。
+真实样本验证：密文 `122544` 字节解密为 `122538` 字节 JPEG，文件头为 `FF D8 FF E0 00 10 4A 46 49 46`，文件尾为 `FF D9`。实现只执行一次 Web Crypto CBC 解密，再按前一密文块线性异或还原 ECB，时间与内存复制复杂度保持 O(n)。
 
 ## 开映边界
 
@@ -178,3 +178,4 @@ type CinemaCatalogState = {
 
 [2026-07-30 01:38] 新增独立糖心影院目录、字段白名单、目标站发现/搜索适配、5 分钟查询缓存、旧响应隔离与按需开映链路。
 [2026-07-30 02:40] 新增加密海报后台解密、严格目录归属和图片格式校验、视口懒加载、会话级查询缓存恢复、组合筛选与非阻塞错误提示。
+[2026-07-30 02:55] 海报解密改为单次 CBC 解密与线性异或还原 ECB，并禁止重定向；目录网络计划固定为 block/search 两个只读端点，补齐播放字段注入测试与独立 pack 完整门禁。

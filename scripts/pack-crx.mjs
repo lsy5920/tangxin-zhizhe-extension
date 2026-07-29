@@ -240,6 +240,14 @@ async function packCrx() {
     "utf8"
   );
 
+  // `npm run pack` 也必须是可独立信任的发布入口，不能只依赖 `npm run release`
+  // 在外层补跑门禁；这里立即重新打开刚写出的清单和 CRX，验证签名、哈希与包内逐文件一致性。
+  console.log("[pack-crx] 重新打开发布产物并执行完整门禁…");
+  execFileSync(process.execPath, [path.join(ROOT, "scripts", "check-release.mjs")], {
+    cwd: ROOT,
+    stdio: "inherit"
+  });
+
   // 清理临时目录
   rmrf(path.join(ROOT, "build"));
 

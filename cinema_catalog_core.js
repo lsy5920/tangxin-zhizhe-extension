@@ -276,6 +276,31 @@
     }, {}))}`;
   }
 
+  /**
+   * 把目录网络计划固定为两个只读列表端点。后台只消费这里返回的 endpoint/data，
+   * 因此 UI 传入 detail、购买或播放字段也不会改变目录阶段的调用边界。
+   */
+  function buildCatalogRequest(input = {}) {
+    const mode = ["discover", "browse", "search"].includes(input.mode) ? input.mode : "discover";
+    if (mode === "discover") {
+      return {
+        mode,
+        endpoint: "/movie/block",
+        data: { position: "app_home_tj" }
+      };
+    }
+    return {
+      mode,
+      endpoint: "/movie/search",
+      data: buildSearchParams({
+        ...(input.filters || {}),
+        keywords: input.query,
+        page: input.page,
+        page_size: input.pageSize
+      })
+    };
+  }
+
   function defaultCatalogState() {
     return {
       schemaVersion: CATALOG_SCHEMA_VERSION,
@@ -330,6 +355,7 @@
     DEFAULT_PAGE_SIZE,
     MAX_ITEMS,
     appendUniqueMovies,
+    buildCatalogRequest,
     buildSearchParams,
     catalogQueryKey,
     containsPlaybackField,

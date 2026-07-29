@@ -95,23 +95,30 @@
     return input.slice(0, input.length - padding);
   }
 
-  async function decryptEcbBlock(subtle, key, block) {
-    // Web Crypto 没有 AES-ECB。构造一个第二密文块，使 CBC 解密后的第二明文块
-    // 恰好是完整 PKCS7 填充；浏览器移除它后，留下的第一块就是 ECB 解密结果。
+  async function decryptEcbCiphertext(subtle, key, encrypted) {
+    // Web Crypto 没有 AES-ECB。先追加一个 CBC 密文块，使最后一块明文恰好是完整
+    // PKCS7 填充；一次 CBC 解密即可处理整张海报，再异或前一密文块还原每个 ECB 明文块。
     const paddingBlock = new Uint8Array(AES_BLOCK_BYTES);
     paddingBlock.fill(AES_BLOCK_BYTES);
+    const lastBlock = encrypted.slice(-AES_BLOCK_BYTES);
     const encryptedPadding = new Uint8Array(await subtle.encrypt(
-      { name: "AES-CBC", iv: block },
+      { name: "AES-CBC", iv: lastBlock },
       key,
       paddingBlock
     )).slice(0, AES_BLOCK_BYTES);
-    const decrypted = new Uint8Array(await subtle.decrypt(
+    const cbcPlain = new Uint8Array(await subtle.decrypt(
       { name: "AES-CBC", iv: new Uint8Array(AES_BLOCK_BYTES) },
       key,
-      concatBytes(block, encryptedPadding)
+      concatBytes(encrypted, encryptedPadding)
     ));
-    if (decrypted.length !== AES_BLOCK_BYTES) throw new Error("海报 AES 数据块长度异常");
-    return decrypted;
+    if (cbcPlain.length !== encrypted.length) throw new Error("海报 AES 数据块长度异常");
+    const ecbPlain = new Uint8Array(cbcPlain.length);
+    for (let index = 0; index < cbcPlain.length; index += 1) {
+      ecbPlain[index] = index < AES_BLOCK_BYTES
+        ? cbcPlain[index]
+        : cbcPlain[index] ^ encrypted[index - AES_BLOCK_BYTES];
+    }
+    return ecbPlain;
   }
 
   async function decryptPosterBytes(value, cryptoProvider = root.crypto) {
@@ -128,13 +135,7 @@
       false,
       ["encrypt", "decrypt"]
     );
-    let decrypted = new Uint8Array();
-    for (let offset = 0; offset < encrypted.length; offset += AES_BLOCK_BYTES) {
-      decrypted = concatBytes(
-        decrypted,
-        await decryptEcbBlock(subtle, key, encrypted.slice(offset, offset + AES_BLOCK_BYTES))
-      );
-    }
+    const decrypted = await decryptEcbCiphertext(subtle, key, encrypted);
     const plain = removePkcs7Padding(decrypted);
     const mimeType = sniffImageMimeType(plain);
     if (!mimeType) throw new Error("海报解密成功但图片格式不受支持");
