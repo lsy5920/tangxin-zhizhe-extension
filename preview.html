@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>糖心志者界面预览</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23fff1f5'/%3E%3Ccircle cx='32' cy='34' r='18' fill='%23fb7185'/%3E%3Ccircle cx='25' cy='32' r='2.5' fill='%23fff'/%3E%3Ccircle cx='39' cy='32' r='2.5' fill='%23fff'/%3E%3Cpath d='M25 41c4 4 10 4 14 0' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
     <style>
       * { box-sizing: border-box; }
       body { margin: 0; min-height: 100vh; color: #402250; font-family: "Microsoft YaHei", sans-serif; background: linear-gradient(145deg, #fff7fb, #f6f0ff); }
@@ -177,7 +178,7 @@
         },
         downloadPlanner: null,
         purchaseReconciliation: { items: previewReconciliationItems, loading: false, checkedAt: new Date().toISOString() },
-        repositoryUpdate: { ok: true, checkPhase: "success", downloadPhase: "idle", checkedAt: new Date().toISOString(), updateAvailable: false, local: { version: "5.2.0", build: "2026-07-29-1810" }, remote: { version: "5.2.0", build: "2026-07-29-1810" } },
+        repositoryUpdate: { ok: true, checkPhase: "success", downloadPhase: "idle", checkedAt: new Date().toISOString(), updateAvailable: false, local: { version: "5.2.1", build: "2026-07-29-1929" }, remote: { version: "5.2.1", build: "2026-07-29-1929" } },
         adCleaner: { enabled: true, version: "v3", total: 12, removed: 8, blockedClicks: 3, splashHits: 1, countdownHits: 1, selectors: 1, lastRunAt: new Date().toISOString() },
         flow: [{ title: "本地预览", detail: `糖果影院确定性场景：${previewScenario}`, level: "ok", ts: new Date().toISOString() }]
       };
@@ -327,6 +328,34 @@
         window.dispatchEvent(new CustomEvent("txzz:state", { detail: window.__txzzBridgeState }));
       });
     </script>
-    <script type="module" src="/ui-src/main.tsx"></script>
+    <script>
+      // 默认验证与 CRX 完全相同的 dist IIFE；只有显式 runtime=source 才启用 Vite HMR。
+      // 这样日常改 UI 可以不反复构建，发布前又不会被源码预览的额外 CSS 注入掩盖问题。
+      const previewRuntime = new URLSearchParams(location.search).get("runtime") === "source"
+        ? "source"
+        : "production";
+      document.documentElement.dataset.txzzPreviewRuntime = previewRuntime;
+      document.documentElement.dataset.txzzPreviewUiLoad = "loading";
+
+      const previewUiScript = document.createElement("script");
+      if (previewRuntime === "source") {
+        previewUiScript.type = "module";
+        previewUiScript.src = "/ui-src/main.tsx";
+      } else {
+        previewUiScript.src = `/dist-ui/txzz-ui.js?preview=${Date.now()}`;
+      }
+      previewUiScript.addEventListener("load", () => {
+        document.documentElement.dataset.txzzPreviewUiLoad = "ready";
+      }, { once: true });
+      previewUiScript.addEventListener("error", () => {
+        document.documentElement.dataset.txzzPreviewUiLoad = "error";
+        console.error(
+          previewRuntime === "production"
+            ? "正式 UI 产物加载失败，请先执行 npm run build；快速开发请使用 ?runtime=source。"
+            : "源码 UI 加载失败，请确认 Vite 开发服务器正在运行。"
+        );
+      }, { once: true });
+      document.body.appendChild(previewUiScript);
+    </script>
   </body>
 </html>

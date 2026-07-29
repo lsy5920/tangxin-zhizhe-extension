@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.2.0",
-  "build": "2026-07-29-1810",
-  "releasedAt": "2026-07-29 18:10",
+  "version": "5.2.1",
+  "build": "2026-07-29-1929",
+  "releasedAt": "2026-07-29 19:29",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-29-1929",
+      "type": "修复",
+      "title": "Shadow DOM 样式与本地预览完全一致",
+      "detail": "修复 Tailwind 4 注册型自定义属性在 Chrome Shadow DOM 中未生效，导致正式扩展批量丢失边框、横线、渐变、阴影、位移和部分动画的问题。影子树现在显式初始化完整属性基线并校验样式节点完整性；同构建号的残缺 ShadowRoot 会自动重建。本地 preview 默认加载正式 dist 产物，runtime=source 则提供无需反复构建的 Vite HMR 快速开发路径。",
+      "releasedAt": "2026-07-29 19:29"
+    },
     {
       "id": "2026-07-29-1810",
       "type": "experience",
@@ -200,11 +207,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 590044,
-  "packageSha256": "08a7df663afc6a4433b2b8d0cb0912531e8abe3fdecf6ce97ac8b93b2a454684",
+  "packageSize": 590903,
+  "packageSha256": "0ce47e887a59d3aea949b27ce2de897b66087eca894c8f8c3d21c71ce6c294cb",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "RWYBRJH7iE/Rp4wKQaowBWlJQ/+2cuLoISsYkpROfNGqhBMHyDYa3EvgbM3ohg9aNT3ZXvpXoxXVephuAQDfS74cFKRJ+aIovT9+4AoenH+P79ZzDgEa2aTKNXlLYnW8pbV+0zbax5dJt+88ww7SFQhkefKZicMYxA39SRonBQEFSzX0GF6zrANssuHtraGaLxoEdYPBwhkeQMudtKimRQ7+zGitB4GwASTrjmxP2FUnMCfCZNermD1DU1Zp+K1+PGrY1mfLGWVdpcZIdJ+0wx5To7hVgjzMM9XndjkFw/gpTr01649TEMsxql9pnu44You4i4BtwMbXGSL+USPUpA=="
+    "value": "iGzkhuT6pbql4llXztyWWaUT51061+eodBSpPESfDKJ8OvD8fUwbywrWEo8+PLL5hhRevtkR5bIGUeLqhO/ZFLn2YMgM3WPZjHskvAHyTD9BxL+4xYAtXB+QFsClLkgHFQ1BeDAKWkDDGf+PNH0VF6XlxQQbZPveJE+e6rbNdhd7K9N1gel3ZkPzHTvHwDTDZoxGy33gPZJtL8iqON19cgjRId9JKMuaLokwkIwk1cANHjd3VaEUatKWcjy3qe4hW3voHHl7UC1M+t1vGqlRNioURb4UzgdrkYC3GFvgEFKJu9WV4y1PQ0mUOmzABGrTARJrcVM0qOF1627CIB4SFQ=="
   }
 }

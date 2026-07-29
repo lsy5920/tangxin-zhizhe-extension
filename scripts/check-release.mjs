@@ -380,11 +380,18 @@ for (const runtimeFile of [
 expect(RELEASE_INCLUDE_PATHS.includes("icons"), "发布文件列表缺少通知图标目录 icons");
 expect(manifest.permissions?.includes("alarms"), "manifest 缺少智能调度和巡检所需 alarms 权限");
 expect(manifest.optional_permissions?.includes("notifications"), "manifest 缺少可选 notifications 权限");
-for (const marker of [".txzz-stat-ornament", "@keyframes txzz-stat-float", "@keyframes txzz-companion-breathe"]) {
+for (const marker of [
+  "--txzz-shadow-property-fallback",
+  ".txzz-stat-ornament",
+  "@keyframes txzz-stat-float",
+  "@keyframes txzz-companion-breathe"
+]) {
   expect(uiStyleText.includes(marker), `正式 UI CSS 缺少插画/动画标记：${marker}`);
+  expect(uiScriptText.includes(marker), `正式 UI 内联 CSS 兜底缺少关键标记：${marker}`);
 }
 expect(uiScriptText.includes("txzz-app-style"), "正式 UI 脚本缺少 Shadow DOM 内联样式兜底");
 expect(uiScriptText.includes("txzzUiBuild"), "正式 UI 脚本缺少构建代次标记，旧 ShadowRoot 可能被复用");
+expect(uiScriptText.includes("txzzStyleIntegrity"), "正式 UI 脚本缺少 ShadowRoot 样式完整性自检");
 expect(backgroundText.includes('getURL(`save.html#token='), "background.js 未打开扩展安全保存页");
 expect(!contentText.includes("clientSave"), "content.js 不得再通过 runtime 消息接收整包 CRX 字节");
 expect(!RELEASE_INCLUDE_PATHS.includes("update.json"), "发布文件列表不得包含 update.json");
@@ -392,6 +399,9 @@ const accessibleResources = (manifest.web_accessible_resources || []).flatMap((i
 expect(!accessibleResources.includes("update.json"), "manifest web_accessible_resources 不得暴露 update.json");
 expect(!packScriptText.includes("generateKeyPairSync"), "打包脚本不得在私钥缺失时自动生成新身份");
 expect(previewText.includes(`version: "${version}"`) && previewText.includes(`build: "${constantsBuild}"`), "preview.html 的源码版本或构建号未同步");
+expect(previewText.includes('dataset.txzzPreviewRuntime = previewRuntime'), "preview.html 缺少运行路径标记");
+expect(previewText.includes('previewRuntime === "source"'), "preview.html 未保留显式源码 HMR 模式");
+expect(previewText.includes('/dist-ui/txzz-ui.js?preview='), "preview.html 默认路径未加载正式 dist UI");
 expect(readmeText.includes(`\`${version}\``), `README.md 未记录当前版本 ${version}`);
 const buildDisplay = constantsBuild.replace(/^(\d{4}-\d{2}-\d{2})-(\d{2})(\d{2})$/, "$1 $2:$3");
 expect(readmeText.includes(constantsBuild) || readmeText.includes(buildDisplay), `README.md 未记录当前构建时间 ${constantsBuild}`);

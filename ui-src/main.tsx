@@ -10,6 +10,46 @@ const HOST_ID = "txzz-candy-ui-root";
 const ROOT_ID = "txzz-candy-ui";
 const ARTPLAYER_STYLE_ID = "txzz-artplayer-style";
 const APP_STYLE_ID = "txzz-app-style";
+const APP_STYLE_MARKERS = [
+  "--txzz-shadow-property-fallback",
+  ".txzz-stat-ornament",
+  "@keyframes txzz-stat-float",
+  "@keyframes txzz-companion-breathe"
+] as const;
+
+function resolveUiStylesheetHref() {
+  const getRuntimeUrl = globalThis.chrome?.runtime?.getURL;
+  const rawHref = typeof getRuntimeUrl === "function"
+    ? getRuntimeUrl("dist-ui/txzz-ui.css")
+    : "./dist-ui/txzz-ui.css";
+  const stylesheetUrl = new URL(rawHref, document.baseURI);
+  stylesheetUrl.searchParams.set("build", APP_BUILD);
+  return stylesheetUrl.href;
+}
+
+function hasCompleteAppStyle(style: HTMLElement | null) {
+  if (!(style instanceof HTMLStyleElement)) return false;
+  if (style.dataset.txzzUiBuild !== APP_BUILD) return false;
+  const css = style.textContent || "";
+  return APP_STYLE_MARKERS.every((marker) => css.includes(marker));
+}
+
+function canReuseShadowRoot(host: HTMLElement, shadow: ShadowRoot, styleHref: string) {
+  const appStyle = shadow.getElementById(APP_STYLE_ID);
+  const artStyle = shadow.getElementById(ARTPLAYER_STYLE_ID);
+  const externalStyle = shadow.querySelector<HTMLLinkElement>('link[data-txzz-ui-stylesheet="external"]');
+  const root = shadow.getElementById(ROOT_ID);
+
+  return host.dataset.txzzUiBuild === APP_BUILD
+    && hasCompleteAppStyle(appStyle)
+    && artStyle instanceof HTMLStyleElement
+    && artStyle.dataset.txzzUiBuild === APP_BUILD
+    && (artStyle.textContent || "").includes(".art-video-player")
+    && externalStyle instanceof HTMLLinkElement
+    && externalStyle.dataset.txzzUiBuild === APP_BUILD
+    && externalStyle.href === styleHref
+    && root instanceof HTMLDivElement;
+}
 
 function syncHostVisualViewport(host: HTMLElement) {
   const visual = window.visualViewport;
@@ -45,13 +85,17 @@ Artplayer.MOBILE_CLICK_PLAY = false;
 Artplayer.MOBILE_DBCLICK_PLAY = false;
 
 function createHost() {
+  const styleHref = resolveUiStylesheetHref();
   let existed = document.getElementById(HOST_ID);
-  if (existed?.shadowRoot) {
-    if (existed.dataset.txzzUiBuild === APP_BUILD) {
+  if (existed) {
+    if (existed.shadowRoot && canReuseShadowRoot(existed, existed.shadowRoot, styleHref)) {
+      existed.dataset.txzzStyleIntegrity = "verified";
       bindHostVisualViewport(existed);
       return existed.shadowRoot;
     }
-    // 页面未刷新但扩展已升级时，旧 ShadowRoot 不能复用，否则会继续保留旧插画与动画。
+    // 页面未刷新但扩展已升级，或样式节点被缓存/页面脚本破坏时，必须整体重建。
+    // 只比较构建号会永久复用残缺 ShadowRoot，表现为边框、背景和动画成片消失。
+    existed.dataset.txzzStyleIntegrity = "rebuilding";
     existed.remove();
     existed = null;
   }
@@ -71,19 +115,17 @@ function createHost() {
   if (!existed) document.documentElement.appendChild(host);
   host.dataset.txzzUiVersion = APP_VERSION;
   host.dataset.txzzUiBuild = APP_BUILD;
+  host.dataset.txzzStyleIntegrity = "initializing";
   bindHostVisualViewport(host);
 
   const shadow = host.shadowRoot || host.attachShadow({ mode: "open" });
-  const getRuntimeUrl = globalThis.chrome?.runtime?.getURL;
-  const styleHref = typeof getRuntimeUrl === "function"
-    ? `${getRuntimeUrl("dist-ui/txzz-ui.css")}?build=${encodeURIComponent(APP_BUILD)}`
-    : new URL("./dist-ui/txzz-ui.css", document.baseURI).href;
 
   if (!shadow.querySelector('link[data-txzz-ui-stylesheet="external"]')) {
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = styleHref;
     link.dataset.txzzUiStylesheet = "external";
+    link.dataset.txzzUiBuild = APP_BUILD;
     link.addEventListener("load", () => {
       host.dataset.txzzExternalStyle = "ready";
     }, { once: true });
@@ -107,6 +149,7 @@ function createHost() {
   if (!shadow.getElementById(ARTPLAYER_STYLE_ID)) {
     const style = document.createElement("style");
     style.id = ARTPLAYER_STYLE_ID;
+    style.dataset.txzzUiBuild = APP_BUILD;
     style.textContent = `${Artplayer.STYLE}
 /* 真正进入浏览器 Fullscreen API 时：铺满系统全屏层，隐藏浏览器 UI 后的可视区域。 */
 :host(:fullscreen),
@@ -259,8 +302,11 @@ function createHost() {
   if (!root) {
     root = document.createElement("div");
     root.id = ROOT_ID;
+    root.dataset.txzzUiBuild = APP_BUILD;
     shadow.appendChild(root);
   }
+
+  host.dataset.txzzStyleIntegrity = canReuseShadowRoot(host, shadow, styleHref) ? "verified" : "incomplete";
 
   return shadow;
 }

@@ -8,7 +8,7 @@
 
 插件默认只显示右下角「糖糖」伙伴入口，不再向网站左上角注入流程气泡或当前卡片标签。点击伙伴后展开糖果手帐工作台：桌面端使用浅色手帐侧栏与独立工作区，移动端使用全屏面板和安全区底栏；今日总览、账号小屋、放映室、下载收纳篮和照料中心保持统一信息层级与操作反馈。
 
-当前源码版本为 `5.2.0`（构建 `2026-07-29-1810`）；正式 CRX 发布时继续使用 4.0.0 已启用并妥善保留的私钥，扩展 ID 固定为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 及 5.x 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
+当前源码版本为 `5.2.1`（构建 `2026-07-29-1929`）；正式 CRX 发布时继续使用 4.0.0 已启用并妥善保留的私钥，扩展 ID 固定为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 及 5.x 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
 
 ## 环境要求
 
@@ -370,13 +370,21 @@ npm run deps:repair
 npm run check
 ```
 
-本地可视化联调：
+本地可视化联调有两条明确路径：
 
 ```powershell
-npm run dev
+npm run dev:ui
 ```
 
-然后访问 `http://127.0.0.1:5173/preview.html`。预览页使用脱敏模拟数据，不会连接真实账号；通过 `?scenario=normal|duration-mismatch|buffering|primary-failure|double-failure|coin-unlock|history|fullscreen-failure` 可确定性复现正常、主备时长不一致、缓冲、主线失败、双线失败、金币解锁、历史和全屏故障场景。
+该命令打开 `http://127.0.0.1:5173/preview.html?runtime=source`，直接运行 `ui-src/main.tsx` 并启用 Vite HMR；修改组件或 CSS 后浏览器会自动刷新，日常开发不需要反复执行生产构建。
+
+发布前执行 `npm run build`，再运行：
+
+```powershell
+npm run preview:dist
+```
+
+不带 `runtime` 的 `http://127.0.0.1:5173/preview.html` 默认加载与 CRX 相同的 `dist-ui/txzz-ui.js`，用于生产一致性验收；不会再由源码预览额外注册的全局 CSS 掩盖 Shadow DOM 样式问题。两种模式都使用脱敏模拟数据，不会连接真实账号；通过 `scenario=normal|duration-mismatch|buffering|primary-failure|double-failure|coin-unlock|history|fullscreen-failure` 可确定性复现正常、主备时长不一致、缓冲、主线失败、双线失败、金币解锁、历史和全屏故障场景。
 
 ```powershell
 node --check .\background.js
@@ -548,8 +556,8 @@ npm run release
 
 | 组件 | 版本 |
 | --- | --- |
-| 糖心志者源码 | `5.2.0`，构建 `2026-07-29-1810` |
-| 正式签名 CRX | `5.2.0`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
+| 糖心志者源码 | `5.2.1`，构建 `2026-07-29-1929` |
+| 正式签名 CRX | `5.2.1`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
 | Manifest | `3` |
 | ArtPlayer 播放器内核 | `5.4.0` |
 | hls.js HLS 播放内核 | `1.6.16` |
@@ -559,6 +567,8 @@ npm run release
 | Wrangler 推荐版本 | `4.110.0` |
 
 ## 更新日志
+
+[2026-07-29 19:29] 【修复】升级到 `5.2.1`（构建 `2026-07-29-1929`）：修复 Tailwind 4 的 `@property` 在 Chrome Shadow DOM 中未稳定注册，导致正式扩展批量丢失边框、横线、渐变、阴影、位移和部分动画；影子树现在显式初始化完整的低优先级属性基线，同构建号的残缺样式根会自动重建。`preview.html` 默认加载正式 dist，`runtime=source` 提供无需反复构建的 HMR 快速开发路径。
 
 [2026-07-29 18:10] 【体验】升级到 `5.2.0`（构建 `2026-07-29-1810`）：新增片库收藏/稍后看、播放书签与 A-B 片段、智能下载调度、OPFS 存储管家和账号健康巡检；播放器右键菜单在 ArtPlayer 视频元素上也统一生效，书签迁移与 OPFS 全量审计更加稳健。
 

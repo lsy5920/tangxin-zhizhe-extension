@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
@@ -14,7 +14,9 @@ export default defineConfig({
     emptyOutDir: true,
     cssCodeSplit: false,
     lib: {
-      entry: resolve(__dirname, "ui-src/main.tsx"),
+      // 使用 import.meta.url 后，Vite 的 native/runner 配置加载器都可直接启动，
+      // 不再依赖为 CommonJS 模拟的 __dirname，也减少本地预览的临时构建等待。
+      entry: fileURLToPath(new URL("./ui-src/main.tsx", import.meta.url)),
       name: "TxzzCandyUi",
       formats: ["iife"],
       fileName: () => "txzz-ui.js"
