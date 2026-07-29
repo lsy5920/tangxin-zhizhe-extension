@@ -1,7 +1,8 @@
 /**
  * 发布一致性与供应链门禁。
  *
- * 源码模式检查身份、版本、签名清单结构与正式分发路径；完整模式额外验证：
+ * 源码模式检查身份、版本、签名清单结构与正式分发路径；打包前模式允许清单暂时
+ * 无签名（最终 CRX 哈希尚未产生），但仍要求源码版本与待签清单完全一致；完整模式额外验证：
  * 1. update.json 的固定公钥签名；
  * 2. CRX3 自身签名、扩展 ID、大小与 SHA-256；
  * 3. CRX 内 ZIP 中央目录、CRC32，并把每个运行时文件与当前工作区逐字节核对。
@@ -26,7 +27,8 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, "..");
-const sourceOnly = process.argv.includes("--source-only");
+const prepack = process.argv.includes("--prepack");
+const sourceOnly = process.argv.includes("--source-only") || prepack;
 const errors = [];
 
 function file(rel) {
@@ -334,7 +336,7 @@ expect(/^\d{4}-\d{2}-\d{2}-\d{4}$/.test(publishedBuild), `update.json 构建号�
 expect(packageJson.version === version, `package.json 版本 ${packageJson.version || "空"} 与 manifest ${version} 不一致`);
 expect(constantsVersion === version, `前端版本 ${constantsVersion || "空"} 与 manifest ${version} 不一致`);
 expect(backgroundBuild === constantsBuild, `后台构建 ${backgroundBuild || "空"} 与前端构建 ${constantsBuild || "空"} 不一致`);
-if (!sourceOnly) {
+if (!sourceOnly || prepack) {
   expect(updateManifest.version === version, `update.json 版本 ${updateManifest.version || "空"} 与 manifest ${version} 不一致`);
   expect(constantsBuild === publishedBuild, `前端构建 ${constantsBuild || "空"} 与 update.json ${publishedBuild} 不一致`);
 }
@@ -345,9 +347,11 @@ expect(updateManifest.changelog?.[0]?.id === publishedBuild, `update.json 首条
 expect(updateManifest.homepage === "https://github.com/lsy5920/tangxin-zhizhe-extension", "update.json homepage 必须固定为正式仓库");
 expect(updateManifest.downloadUrl === OFFICIAL_PACKAGE_URLS[0], "update.json 主下载地址不是固定正式路径");
 expect(sameStringArray(updateManifest.downloadCandidates, OFFICIAL_PACKAGE_URLS), "update.json 下载镜像必须与固定 owner/repo/branch/path 清单完全一致");
-expect(updateManifest.signature?.algorithm === UPDATE_SIGNATURE_ALGORITHM, "update.json 签名算法不正确");
-expect(updateManifest.signature?.keyId === UPDATE_PUBLIC_KEY_ID, "update.json 签名公钥标识不正确");
-expect(/^[A-Za-z0-9+/]+={0,2}$/.test(String(updateManifest.signature?.value || "")), "update.json 缺少合法 Base64 签名");
+if (!prepack) {
+  expect(updateManifest.signature?.algorithm === UPDATE_SIGNATURE_ALGORITHM, "update.json 签名算法不正确");
+  expect(updateManifest.signature?.keyId === UPDATE_PUBLIC_KEY_ID, "update.json 签名公钥标识不正确");
+  expect(/^[A-Za-z0-9+/]+={0,2}$/.test(String(updateManifest.signature?.value || "")), "update.json 缺少合法 Base64 签名");
+}
 expect(manifest.key === UPDATE_PUBLIC_KEY_SPKI_BASE64, "manifest.json key 未固定为正式扩展公钥");
 expect(extensionIdFromPublicKey(pinnedPublicDer) === EXPECTED_EXTENSION_ID, "固定公钥推导出的扩展 ID 不正确");
 expect(sha256(pinnedPublicDer) === UPDATE_PUBLIC_KEY_SHA256, "固定公钥 SHA-256 不正确");
@@ -369,6 +373,7 @@ for (const runtimeFile of [
   "state_mutation_core.js",
   "experience_core.js",
   "cinema_catalog_core.js",
+  "cinema_poster_core.js",
   "update_core.js",
   "page_context_core.js",
   "download_core.js",
@@ -478,4 +483,9 @@ if (errors.length) {
   process.exit(1);
 }
 
-console.log(`[check-release] 通过：v${version} / ${build}${sourceOnly ? `（源码检查；当前已签名发布为 v${publishedVersion} / ${publishedBuild}）` : "（签名清单 + CRX3 + ZIP 全文件一致性）"}`);
+const modeLabel = prepack
+  ? "（打包前源码与待签清单一致）"
+  : sourceOnly
+    ? `（源码检查；当前已签名发布为 v${publishedVersion} / ${publishedBuild}）`
+    : "（签名清单 + CRX3 + ZIP 全文件一致性）";
+console.log(`[check-release] 通过：v${version} / ${build}${modeLabel}`);

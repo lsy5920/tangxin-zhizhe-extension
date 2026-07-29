@@ -1,7 +1,7 @@
 {
   "name": "tangxin-zhizhe-extension",
   "private": true,
-  "version": "5.4.0",
+  "version": "5.4.1",
   "type": "module",
   "scripts": {
     "deps:check": "node scripts/check-deps.mjs",
@@ -11,9 +11,10 @@
     "precheck": "node scripts/check-deps.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "check:prepack": "node scripts/check-release.mjs --prepack",
     "check:release-source": "node scripts/check-release.mjs --source-only",
     "check:release": "node scripts/check-release.mjs",
-    "check": "tsc --noEmit && vite build && node scripts/check-release.mjs --source-only",
+    "check": "tsc --noEmit && vite build && node scripts/check-release.mjs --prepack",
     "pack": "node scripts/pack-crx.mjs",
     "release": "node scripts/check-deps.mjs && tsc --noEmit && vitest run && node scripts/pack-crx.mjs && node scripts/check-release.mjs"
   },

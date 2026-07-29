@@ -1,5 +1,6 @@
 import { Clock3, Clapperboard, Coins, Crown, Eye, Info, Play, Sparkles } from "lucide-react";
 import type { CinemaMovie } from "../../cinema/types";
+import { CinemaPoster } from "./CinemaPoster";
 
 type Props = {
   movie: CinemaMovie;
@@ -18,9 +19,14 @@ export function CinemaHero({ movie, onDetails, onPlay, resolving = false }: Prop
   const AccessIcon = movie.access === "coin" ? Coins : movie.access === "vip" ? Crown : Sparkles;
   return (
     <section className="txzz-cinema-hero relative min-h-[20rem] overflow-hidden rounded-[1.8rem] border border-white/14 bg-[#171020] shadow-[0_30px_85px_rgba(28,13,45,.36)] sm:min-h-[22rem]">
-      {movie.posterUrl && (
-        <img src={movie.posterUrl} alt="" referrerPolicy="no-referrer" className="absolute inset-0 h-full w-full object-cover object-center opacity-70" />
-      )}
+      <CinemaPoster
+        movie={movie}
+        eager
+        alt={`${movie.title} 海报`}
+        className="absolute inset-0"
+        imageClassName="h-full w-full object-cover object-center opacity-70"
+        fallback={<div className="h-full w-full bg-[radial-gradient(circle_at_72%_24%,#5f3b72_0%,#25162e_44%,#100b16_100%)]" />}
+      />
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(11,7,16,.98)_0%,rgba(18,10,25,.88)_44%,rgba(16,9,22,.32)_75%,rgba(10,7,14,.64)_100%)]" />
       <div className="absolute inset-0 bg-gradient-to-t from-[#0d0912] via-transparent to-black/20" />
       <span className="txzz-cinema-star absolute right-[15%] top-[15%] text-amber-200/80" aria-hidden="true">✦</span>

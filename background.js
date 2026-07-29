@@ -1,14 +1,16 @@
 "use strict";
 
-importScripts("state_mutation_core.js", "experience_core.js", "cinema_catalog_core.js", "update_core.js");
+importScripts("state_mutation_core.js", "experience_core.js", "cinema_catalog_core.js", "cinema_poster_core.js", "update_core.js");
 
 const stateMutationCore = globalThis.TxzzStateMutationCore;
 const experienceCore = globalThis.TxzzExperienceCore;
 const cinemaCatalogCore = globalThis.TxzzCinemaCatalogCore;
+const cinemaPosterCore = globalThis.TxzzCinemaPosterCore;
 const updateCore = globalThis.TxzzUpdateCore;
 if (!stateMutationCore) throw new Error("状态变更核心未加载");
 if (!experienceCore) throw new Error("体验状态核心未加载");
 if (!cinemaCatalogCore) throw new Error("影院目录核心未加载");
+if (!cinemaPosterCore) throw new Error("影院海报核心未加载");
 if (!updateCore) throw new Error("更新决策核心未加载");
 
 const EXPERIENCE_STORAGE_KEY = "txzzExperienceV1";
@@ -114,9 +116,23 @@ let accountPatrolInFlight = null;
 let persistedDownloadsReconciled = false;
 let persistedDownloadRecoveryInFlight = null;
 const cinemaCatalogCache = new Map();
+const CINEMA_CATALOG_CACHE_STORAGE_KEY = "txzzCinemaCatalogCacheV1";
+const CINEMA_CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+const CINEMA_CATALOG_CACHE_MAX_ITEMS = 20;
+const CINEMA_CATALOG_CACHE_MAX_PERSISTED_CHARS = 3_500_000;
+let cinemaCatalogCacheHydration = null;
+let cinemaCatalogCachePersistQueue = Promise.resolve();
 let cinemaVisitorSessionCache = null;
+const cinemaPosterCache = new Map();
+const cinemaPosterTasks = new Map();
+let cinemaPosterCacheBytes = 0;
 
-const LOCAL_UPDATE_BUILD = "2026-07-30-0138";
+const CINEMA_POSTER_TIMEOUT_MS = 12000;
+const CINEMA_POSTER_CACHE_TTL_MS = 30 * 60 * 1000;
+const CINEMA_POSTER_CACHE_MAX_ITEMS = 64;
+const CINEMA_POSTER_CACHE_MAX_BYTES = 24 * 1024 * 1024;
+
+const LOCAL_UPDATE_BUILD = "2026-07-30-0240";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1174,22 +1190,83 @@ function normalizeBootstrapSession(session = {}) {
   return userToken && deviceId ? { userToken, deviceId } : null;
 }
 
-function rememberCinemaCatalogCache(key, value) {
+function pruneCinemaCatalogCache() {
+  const now = Date.now();
+  for (const [key, entry] of cinemaCatalogCache.entries()) {
+    if (now - Number(entry?.storedAt || 0) <= CINEMA_CATALOG_CACHE_TTL_MS) continue;
+    cinemaCatalogCache.delete(key);
+  }
+  while (cinemaCatalogCache.size > CINEMA_CATALOG_CACHE_MAX_ITEMS) {
+    cinemaCatalogCache.delete(cinemaCatalogCache.keys().next().value);
+  }
+}
+
+async function hydrateCinemaCatalogCache() {
+  if (cinemaCatalogCacheHydration) return cinemaCatalogCacheHydration;
+  cinemaCatalogCacheHydration = (async () => {
+    if (!chrome.storage?.session?.get) return;
+    try {
+      const stored = await chrome.storage.session.get(CINEMA_CATALOG_CACHE_STORAGE_KEY);
+      const snapshot = stored?.[CINEMA_CATALOG_CACHE_STORAGE_KEY];
+      const entries = Array.isArray(snapshot?.entries) ? snapshot.entries : [];
+      for (const candidate of entries) {
+        const key = String(candidate?.key || "");
+        const storedAt = Number(candidate?.storedAt || 0);
+        const value = candidate?.value;
+        if (
+          !key
+          || !storedAt
+          || !value
+          || typeof value !== "object"
+          || cinemaCatalogCore.containsPlaybackField(value)
+        ) continue;
+        cinemaCatalogCache.set(key, { storedAt, value: structuredClone(value) });
+      }
+      pruneCinemaCatalogCache();
+    } catch (_) {
+      // 部分移动浏览器没有 storage.session；内存缓存与 txzzState 当前目录仍可正常工作。
+    }
+  })();
+  return cinemaCatalogCacheHydration;
+}
+
+function persistCinemaCatalogCache() {
+  if (!chrome.storage?.session?.set) return Promise.resolve();
+  const entries = Array.from(cinemaCatalogCache.entries()).map(([key, entry]) => ({
+    key,
+    storedAt: entry.storedAt,
+    value: entry.value
+  }));
+  // 缓存只提升查询切换速度；达到会话存储预算时优先保留最近查询，不影响当前目录状态。
+  while (entries.length > 1 && JSON.stringify(entries).length > CINEMA_CATALOG_CACHE_MAX_PERSISTED_CHARS) {
+    entries.shift();
+  }
+  const snapshot = { schemaVersion: 1, entries };
+  cinemaCatalogCachePersistQueue = cinemaCatalogCachePersistQueue
+    .catch(() => {})
+    .then(() => chrome.storage.session.set({ [CINEMA_CATALOG_CACHE_STORAGE_KEY]: snapshot }))
+    .catch(() => {});
+  return cinemaCatalogCachePersistQueue;
+}
+
+async function rememberCinemaCatalogCache(key, value) {
+  await hydrateCinemaCatalogCache();
   cinemaCatalogCache.delete(key);
   cinemaCatalogCache.set(key, {
     storedAt: Date.now(),
     value: structuredClone(value)
   });
-  while (cinemaCatalogCache.size > 20) {
-    cinemaCatalogCache.delete(cinemaCatalogCache.keys().next().value);
-  }
+  pruneCinemaCatalogCache();
+  await persistCinemaCatalogCache();
 }
 
-function readCinemaCatalogCache(key) {
+async function readCinemaCatalogCache(key) {
+  await hydrateCinemaCatalogCache();
   const cached = cinemaCatalogCache.get(key);
   if (!cached) return null;
-  if (Date.now() - Number(cached.storedAt || 0) > 5 * 60 * 1000) {
+  if (Date.now() - Number(cached.storedAt || 0) > CINEMA_CATALOG_CACHE_TTL_MS) {
     cinemaCatalogCache.delete(key);
+    await persistCinemaCatalogCache();
     return null;
   }
   // 命中后移到 Map 末尾，以近似 LRU 的方式保留最近查询。
@@ -1210,6 +1287,126 @@ async function cinemaCatalogSession(message = {}) {
     expiresAt: Date.now() + 30 * 60 * 1000
   };
   return session;
+}
+
+function catalogMovieById(catalog, movieId) {
+  const candidates = [
+    ...(Array.isArray(catalog?.items) ? catalog.items : []),
+    ...(Array.isArray(catalog?.sections)
+      ? catalog.sections.flatMap((section) => Array.isArray(section?.items) ? section.items : [])
+      : [])
+  ];
+  return candidates.find((movie) => String(movie?.id || "") === movieId) || null;
+}
+
+function evictCinemaPosterCache() {
+  const now = Date.now();
+  for (const [key, entry] of cinemaPosterCache.entries()) {
+    if (now - Number(entry?.storedAt || 0) <= CINEMA_POSTER_CACHE_TTL_MS) continue;
+    cinemaPosterCache.delete(key);
+    cinemaPosterCacheBytes -= Number(entry?.encodedBytes || 0);
+  }
+  while (
+    cinemaPosterCache.size > CINEMA_POSTER_CACHE_MAX_ITEMS
+    || cinemaPosterCacheBytes > CINEMA_POSTER_CACHE_MAX_BYTES
+  ) {
+    const oldestKey = cinemaPosterCache.keys().next().value;
+    if (!oldestKey) break;
+    const entry = cinemaPosterCache.get(oldestKey);
+    cinemaPosterCache.delete(oldestKey);
+    cinemaPosterCacheBytes -= Number(entry?.encodedBytes || 0);
+  }
+  cinemaPosterCacheBytes = Math.max(0, cinemaPosterCacheBytes);
+}
+
+function readCinemaPosterCache(key) {
+  evictCinemaPosterCache();
+  const cached = cinemaPosterCache.get(key);
+  if (!cached) return null;
+  cinemaPosterCache.delete(key);
+  cinemaPosterCache.set(key, cached);
+  return { ...cached, source: "memory-cache" };
+}
+
+function rememberCinemaPosterCache(key, value) {
+  const previous = cinemaPosterCache.get(key);
+  if (previous) cinemaPosterCacheBytes -= Number(previous.encodedBytes || 0);
+  const entry = {
+    ...value,
+    storedAt: Date.now(),
+    encodedBytes: String(value.dataUrl || "").length
+  };
+  cinemaPosterCache.delete(key);
+  cinemaPosterCache.set(key, entry);
+  cinemaPosterCacheBytes += entry.encodedBytes;
+  evictCinemaPosterCache();
+  return entry;
+}
+
+async function downloadAndDecryptCinemaPoster(descriptor) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CINEMA_POSTER_TIMEOUT_MS);
+  try {
+    const response = await fetch(descriptor.url, {
+      cache: "force-cache",
+      credentials: "omit",
+      redirect: "follow",
+      referrerPolicy: "no-referrer",
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`影院海报请求失败（HTTP ${response.status}）`);
+    const declaredLength = Number(response.headers.get("content-length") || 0);
+    if (declaredLength > cinemaPosterCore.MAX_ENCRYPTED_BYTES) throw new Error("影院海报超过 6 MiB 安全上限");
+    const encrypted = new Uint8Array(await response.arrayBuffer());
+    if (encrypted.length > cinemaPosterCore.MAX_ENCRYPTED_BYTES) throw new Error("影院海报超过 6 MiB 安全上限");
+    const decrypted = await cinemaPosterCore.decryptPosterBytes(encrypted);
+    return {
+      dataUrl: cinemaPosterCore.toDataUrl(decrypted.bytes, decrypted.mimeType),
+      mimeType: decrypted.mimeType,
+      bytes: decrypted.bytes.length,
+      source: "network"
+    };
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error("影院海报请求超时");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * 海报请求必须与当前目录中的影片和 URL 精确匹配。这样即使页面伪造消息，后台也不会
+ * 变成任意 URL 代理；解密后的 Data URL 只存在内存，不写入 txzzState 或目录缓存。
+ */
+async function fetchCinemaPoster(message = {}) {
+  const movieId = String(message.movieId || "").trim().slice(0, 80);
+  const requested = cinemaPosterCore.describeEncryptedPosterUrl(message.posterUrl);
+  if (!movieId || !requested) throw new Error("影院海报请求参数无效");
+
+  const state = await getStateInternal();
+  const catalog = cinemaCatalogCore.normalizeCatalogState(state.cinemaCatalog);
+  const movie = catalogMovieById(catalog, movieId);
+  const expected = cinemaPosterCore.describeEncryptedPosterUrl(movie?.posterUrl);
+  if (!movie || !expected || expected.url !== requested.url) {
+    throw new Error("影院海报不属于当前目录影片");
+  }
+
+  const cacheKey = `${movieId}:${requested.url}`;
+  const cached = readCinemaPosterCache(cacheKey);
+  if (cached) return { ok: true, movieId, ...cached };
+  if (cinemaPosterTasks.has(cacheKey)) return cinemaPosterTasks.get(cacheKey);
+
+  const task = (async () => {
+    const decoded = await downloadAndDecryptCinemaPoster(requested);
+    const stored = rememberCinemaPosterCache(cacheKey, decoded);
+    return { ok: true, movieId, ...stored, source: decoded.source };
+  })();
+  cinemaPosterTasks.set(cacheKey, task);
+  try {
+    return await task;
+  } finally {
+    if (cinemaPosterTasks.get(cacheKey) === task) cinemaPosterTasks.delete(cacheKey);
+  }
 }
 
 async function commitCinemaCatalogResult(requestId, patch) {
@@ -1273,7 +1470,7 @@ async function fetchCinemaCatalog(message = {}) {
   await saveState(state);
 
   try {
-    let normalized = message.forceRefresh === true ? null : readCinemaCatalogCache(cacheKey);
+    let normalized = message.forceRefresh === true ? null : await readCinemaCatalogCache(cacheKey);
     if (!normalized) {
       const session = await cinemaCatalogSession(message);
       if (mode === "discover") {
@@ -1297,7 +1494,7 @@ async function fetchCinemaCatalog(message = {}) {
           total: result.total
         };
       }
-      rememberCinemaCatalogCache(cacheKey, normalized);
+      await rememberCinemaCatalogCache(cacheKey, normalized);
     }
 
     const fresh = await getStateInternal();
@@ -5026,6 +5223,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "fetchCinemaCatalog") {
       sendResponse(await fetchCinemaCatalog(message));
+      return;
+    }
+    if (message?.type === "fetchCinemaPoster") {
+      sendResponse(await fetchCinemaPoster(message));
       return;
     }
     if (message?.type === "updateLibraryEntry") {

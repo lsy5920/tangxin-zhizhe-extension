@@ -59,6 +59,13 @@ export function CinemaPage({ state, onAction, onPage }: Props) {
   const resolvingMovieId = state.screening?.request?.phase === "resolving"
     ? String(state.screening.request.movieId || "")
     : "";
+  const liveStatus = phase === "loading"
+    ? "正在同步影院目录"
+    : phase === "loading-more"
+      ? "正在加载更多影片"
+      : phase === "error"
+        ? `影院目录更新失败：${catalog.error || "未知错误"}`
+        : `影院目录已载入 ${items.length || sections.reduce((total, section) => total + section.items.length, 0)} 部影片`;
 
   useEffect(() => {
     if (phase !== "idle" || items.length || sections.length) return;
@@ -98,7 +105,8 @@ export function CinemaPage({ state, onAction, onPage }: Props) {
   };
 
   return (
-    <div className="txzz-cinema-page txzz-page relative min-h-full overflow-hidden bg-[#0e0914] text-white">
+    <div className="txzz-cinema-page txzz-page relative min-h-full overflow-hidden bg-[#0e0914] text-white" aria-busy={loading || undefined}>
+      <p className="sr-only" role="status" aria-live="polite">{liveStatus}</p>
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         <span className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-fuchsia-600/13 blur-3xl" />
         <span className="absolute -right-28 top-36 h-80 w-80 rounded-full bg-violet-600/15 blur-3xl" />
@@ -127,6 +135,17 @@ export function CinemaPage({ state, onAction, onPage }: Props) {
           loading={loading}
           onQuery={runQuery}
         />
+
+        {phase === "error" && featured && (
+          <div className="flex flex-wrap items-center gap-3 rounded-[1.25rem] border border-amber-300/20 bg-amber-300/9 px-4 py-3" role="alert">
+            <AlertTriangle size={17} className="shrink-0 text-amber-300" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-black text-amber-100">本次更新失败，正在展示上次成功片单</p>
+              <p className="mt-0.5 truncate text-[9px] font-semibold text-white/45">{catalog.error || "目录接口暂时不可用"}</p>
+            </div>
+            <button type="button" onClick={refresh} className="min-h-9 rounded-xl border border-amber-200/20 bg-black/20 px-3 text-[10px] font-black text-amber-100 transition hover:bg-white/10">再次同步</button>
+          </div>
+        )}
 
         {phase === "loading" && !featured ? (
           <CinemaSkeleton />

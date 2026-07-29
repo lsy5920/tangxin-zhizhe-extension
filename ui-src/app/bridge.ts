@@ -41,3 +41,27 @@ export async function requestCloudDiagnostics(): Promise<CloudDiagnosticsRespons
   if (!response?.ok && response?.error) throw new Error(response.error);
   return response || {};
 }
+
+type CinemaPosterResponse = {
+  ok?: boolean;
+  dataUrl?: string;
+  mimeType?: string;
+  bytes?: number;
+  source?: string;
+  error?: string;
+};
+
+/** 海报二进制与解密密钥只在扩展后台处理，React 只接收经过魔数校验的临时 Data URL。 */
+export async function requestCinemaPoster(movieId: string, posterUrl: string): Promise<string> {
+  const response = await chrome.runtime.sendMessage({
+    type: "fetchCinemaPoster",
+    movieId,
+    posterUrl
+  }) as CinemaPosterResponse;
+  if (!response?.ok) throw new Error(response?.error || "影院海报加载失败");
+  const dataUrl = String(response.dataUrl || "");
+  if (!/^data:image\/(?:gif|jpeg|png|webp);base64,/i.test(dataUrl)) {
+    throw new Error("影院海报返回格式无效");
+  }
+  return dataUrl;
+}

@@ -9,6 +9,7 @@ export const RELEASE_INCLUDE_PATHS = [
   "state_mutation_core.js",
   "experience_core.js",
   "cinema_catalog_core.js",
+  "cinema_poster_core.js",
   "update_core.js",
   "page_context_core.js",
   "download_core.js",

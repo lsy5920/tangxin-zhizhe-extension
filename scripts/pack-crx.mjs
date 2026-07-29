@@ -85,7 +85,9 @@ function runFreshUiBuildGate() {
   const commands = [
     [path.join(ROOT, "scripts", "check-deps.mjs"), []],
     [path.join(ROOT, "node_modules", "vite", "bin", "vite.js"), ["build"]],
-    [path.join(ROOT, "scripts", "check-release.mjs"), ["--source-only"]]
+    // 此时最终 CRX 哈希尚不存在，因此 update.json 合理地处于“待签”状态；
+    // --prepack 仍校验版本、构建号与全部源码门禁，最终签名由打包后完整门禁验证。
+    [path.join(ROOT, "scripts", "check-release.mjs"), ["--prepack"]]
   ];
   console.log("[pack-crx] 重新构建 UI 并验证源码/产物一致性…");
   for (const [script, args] of commands) {

@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.4.0",
-  "build": "2026-07-30-0138",
-  "releasedAt": "2026-07-30 01:38",
+  "version": "5.4.1",
+  "build": "2026-07-30-0240",
+  "releasedAt": "2026-07-30 02:40",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-30-0240",
+      "type": "修复",
+      "title": "真实加密海报与影院查询体验补全",
+      "detail": "影院新增目标站 .bnc 海报的 AES-128-ECB/PKCS7 后台解密链路，严格校验当前目录影片、HTTPS 地址、6 MiB 上限与 JPEG/PNG/GIF/WebP 魔数；Hero、海报墙和详情弹层统一按视口懒加载并使用有限内存缓存，Data URL 不写入持久状态。搜索现在可与热门、最新、权益和画面方向组合，目录查询缓存写入 chrome.storage.session 以跨 Service Worker 重启恢复；已有片单刷新失败时保留内容并显示可重试提示。",
+      "releasedAt": "2026-07-30 02:40"
+    },
     {
       "id": "2026-07-30-0138",
       "type": "功能",
@@ -228,11 +235,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 721392,
-  "packageSha256": "4889f8f882c44ca4d23d4b7cdd06e4edbd280a900365c329bde5492f09b3deaa",
+  "packageSize": 727670,
+  "packageSha256": "959a797cf822d49b8779fb77b34edc041a56e2050229b1d844dae1caaff3a895",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "C4jFytTPQ0GNzau+76Kxil2LfPKSzTqRKZjTeoUlvXvZTBOo8swXKOqHPTbKGJ+17BztGEILCjvwK2dXAlRKyTa9bx6ALrPea48l8ahvaOqcttPz4/9qJaGR2jxpempyY5SiwUGE0mabXtdcs1fTbYuWcXWnv5q5vEeA1Mw7LUPGOUool3voU9gG5SNkNXA6ZuF9Hsv5J0ufbcku64Fx1iSQ00tpbqpg3JF9gUXTuCJL+UvSaRx6Wn8BP+HVatwc28heYOh19+hpF35WQnJ05/OqigsDEbw/vefc83BlAmnC7VbUGqHtZBwAcoQCimb1OzFWqzc65JZE9sHlgHMv4w=="
+    "value": "PSn2rMI/7QV/x0Yq3KJuNM2wKO5G6h+6VvvrxBCAWvB3S0tBkmWSauZQpTS/DmfzM2w3lIvs2ylrtDvWjmM6JTk43l4Wg0eBNjA2AuVtpvjJeJob8kaKEJbthzdZC2YmO6FzvKxdFEMRi5r3imk5c0hz+Q3bKlioqQFMM0hax30W81tLn8u4MRX/A3+reDcGXFqQEkxwn6A/gNDE/qwelCCG84MqSbzoL/NsAJ39s5RxKD7jsbZWIddDwsQPUTWcviLIiAkyTCi/nIDJLLd6e2SglnKLmseQlvMIjRJ3yql4Xh5iaTSVnxsDb1oNbomszN9BWbwJm6k/KHcuZ8ZLEQ=="
   }
 }

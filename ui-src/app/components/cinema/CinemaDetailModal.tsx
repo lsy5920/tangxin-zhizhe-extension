@@ -2,6 +2,7 @@ import { Bookmark, Check, Clock3, Coins, Crown, Heart, Info, Play, ShieldCheck, 
 import type { CinemaMovie } from "../../cinema/types";
 import type { LibraryEntry } from "../../types";
 import { ModalSheet, SoftButton } from "../ui/primitives";
+import { CinemaPoster } from "./CinemaPoster";
 
 type Props = {
   movie: CinemaMovie | null;
@@ -32,7 +33,14 @@ export function CinemaDetailModal({ movie, libraryEntry, resolving = false, onCl
       )}
     >
       <div className="relative min-h-[15rem] overflow-hidden">
-        {movie.posterUrl && <img src={movie.posterUrl} alt="" referrerPolicy="no-referrer" className="absolute inset-0 h-full w-full object-cover opacity-60" />}
+        <CinemaPoster
+          movie={movie}
+          eager
+          alt={`${movie.title} 海报`}
+          className="absolute inset-0"
+          imageClassName="h-full w-full object-cover opacity-60"
+          fallback={<div className="h-full w-full bg-[radial-gradient(circle_at_70%_20%,#5b3b70_0%,#211428_52%,#120d19_100%)]" />}
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-[#120d19] via-[#120d19]/70 to-black/20" />
         <div className="relative flex min-h-[15rem] flex-col justify-end p-5">
           <p className="text-[9px] font-black tracking-[.18em] text-fuchsia-300">CINEMA TICKET · #{movie.id}</p>

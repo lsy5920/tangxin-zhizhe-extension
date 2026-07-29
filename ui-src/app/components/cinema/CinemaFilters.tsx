@@ -22,10 +22,33 @@ const PRESETS = [
   { key: "landscape", label: "横屏", icon: MonitorPlay, mode: "browse" as const, filters: { canvas: "short" } }
 ];
 
-function presetActive(preset: (typeof PRESETS)[number], mode: CinemaCatalogMode, filters: CinemaCatalogFilters) {
-  if (preset.mode !== mode) return false;
+type QueryPreset = { mode: "discover" | "browse"; filters: CinemaCatalogFilters };
+
+export function cinemaPresetActive(preset: QueryPreset, mode: CinemaCatalogMode, filters: CinemaCatalogFilters) {
+  if (preset.mode === "discover") return mode === "discover";
+  if (mode === "discover") return false;
   const entries = Object.entries(preset.filters);
-  return entries.length === 0 ? mode === "discover" : entries.every(([key, value]) => filters[key as keyof CinemaCatalogFilters] === value);
+  return entries.every(([key, value]) => filters[key as keyof CinemaCatalogFilters] === value);
+}
+
+export function buildCinemaSearchQuery(keyword: string, filters: CinemaCatalogFilters): Query {
+  const query = keyword.trim();
+  const hasFilters = Object.values(filters).some((value) => String(value || "").trim());
+  return {
+    mode: query ? "search" : hasFilters ? "browse" : "discover",
+    query,
+    filters: hasFilters ? filters : {}
+  };
+}
+
+export function buildCinemaPresetQuery(preset: QueryPreset, keyword: string): Query {
+  if (preset.mode === "discover") return { mode: "discover", query: "", filters: {} };
+  const query = keyword.trim();
+  return {
+    mode: query ? "search" : "browse",
+    query,
+    filters: preset.filters
+  };
 }
 
 export function CinemaFilters({ query = "", mode = "discover", filters = {}, loading = false, onQuery }: Props) {
@@ -34,8 +57,7 @@ export function CinemaFilters({ query = "", mode = "discover", filters = {}, loa
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    const keyword = text.trim();
-    onQuery({ mode: keyword ? "search" : "discover", query: keyword, filters: {} });
+    onQuery(buildCinemaSearchQuery(text, filters));
   };
 
   return (
@@ -52,9 +74,9 @@ export function CinemaFilters({ query = "", mode = "discover", filters = {}, loa
       </form>
       <div className="txzz-cinema-filter-strip flex gap-1.5 overflow-x-auto pb-0.5" role="group" aria-label="影片筛选">
         {PRESETS.map((preset) => {
-          const active = presetActive(preset, mode, filters);
+          const active = cinemaPresetActive(preset, mode, filters);
           return (
-            <button key={preset.key} type="button" onClick={() => onQuery({ mode: preset.mode, query: "", filters: preset.filters })} aria-pressed={active} className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-[10px] font-extrabold transition ${active ? "border-fuchsia-300/45 bg-fuchsia-300/18 text-fuchsia-100" : "border-white/8 bg-white/5 text-violet-100/55 hover:bg-white/10 hover:text-white"}`}>
+            <button key={preset.key} type="button" onClick={() => onQuery(buildCinemaPresetQuery(preset, text))} aria-pressed={active} className={`inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-[10px] font-extrabold transition ${active ? "border-fuchsia-300/45 bg-fuchsia-300/18 text-fuchsia-100" : "border-white/8 bg-white/5 text-violet-100/55 hover:bg-white/10 hover:text-white"}`}>
               <preset.icon size={12} />{preset.label}
             </button>
           );

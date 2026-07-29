@@ -1,6 +1,6 @@
-import { useState } from "react";
 import { Clock3, Coins, Crown, Eye, Heart, Play, Sparkles } from "lucide-react";
 import type { CinemaMovie } from "../../cinema/types";
+import { CinemaPoster } from "./CinemaPoster";
 
 type Props = {
   movie: CinemaMovie;
@@ -22,7 +22,6 @@ function compactMetric(value?: string) {
 }
 
 export function CinemaMovieCard({ movie, onOpen, featured = false }: Props) {
-  const [posterFailed, setPosterFailed] = useState(false);
   const access = accessMeta(movie);
   const AccessIcon = access.icon;
   const views = compactMetric(movie.views);
@@ -36,21 +35,18 @@ export function CinemaMovieCard({ movie, onOpen, featured = false }: Props) {
       aria-label={`查看影片：${movie.title}`}
     >
       <div className="relative aspect-[3/4] overflow-hidden bg-[radial-gradient(circle_at_50%_20%,#49335d_0%,#1b1423_58%,#0d0a12_100%)]">
-        {movie.posterUrl && !posterFailed ? (
-          <img
-            src={movie.posterUrl}
-            alt=""
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            onError={() => setPosterFailed(true)}
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.045]"
-          />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center px-4 text-center text-white/50">
+        <CinemaPoster
+          movie={movie}
+          alt={`${movie.title} 海报`}
+          className="h-full w-full"
+          imageClassName="h-full w-full object-cover transition duration-500 group-hover:scale-[1.045]"
+          fallback={(
+            <div className="flex h-full w-full flex-col items-center justify-center px-4 text-center text-white/50">
             <span className="text-4xl" aria-hidden="true">🍿</span>
             <span className="mt-2 text-[10px] font-bold">海报正在补妆</span>
-          </div>
-        )}
+            </div>
+          )}
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-[#100b16] via-transparent to-black/25" />
         <span className={`absolute left-2 top-2 inline-flex min-h-7 items-center gap-1 rounded-full px-2 text-[9px] font-black shadow-lg backdrop-blur ${access.className}`}>
           <AccessIcon size={10} /> {access.label}
