@@ -1,5 +1,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { formatDuration } from "../../helpers";
+import type { PlaybackSource } from "../../playback/types";
 import { PlayerScrubPreview } from "./PlayerScrubPreview";
 
 type CtrlButtonProps = {
@@ -103,7 +104,9 @@ type ProgressProps = {
   bufferedPercent: number;
   progressPercent: number;
   previewTime: number | null;
-  previewVideo?: HTMLVideoElement | null;
+  previewSource?: PlaybackSource | null;
+  previewSessionKey: string;
+  previewFallbackVideo?: HTMLVideoElement | null;
   dragging: boolean;
   fullscreen: boolean;
   seekStep: number;
@@ -130,7 +133,9 @@ export function PlayerProgressBar({
   bufferedPercent,
   progressPercent,
   previewTime,
-  previewVideo,
+  previewSource,
+  previewSessionKey,
+  previewFallbackVideo,
   dragging,
   fullscreen,
   seekStep,
@@ -220,15 +225,24 @@ export function PlayerProgressBar({
           dragging ? "h-3.5" : fullscreen ? "h-3 hover:h-3.5" : "h-2.5 hover:h-3"
         }`}
       >
-        {previewTime !== null && duration > 0 && (
+        {duration > 0 && (
           <div
-            className="pointer-events-none absolute bottom-full z-[7] mb-3"
+            className={`pointer-events-none absolute bottom-full z-[7] mb-3 ${previewTime === null ? "invisible" : "visible"}`}
             style={{ left: `${shownPercent}%` }}
+            aria-hidden={previewTime === null}
           >
             <div className="txzz-player-progress-preview" data-align={progressPreviewAlignment(shownPercent)}>
-              <PlayerScrubPreview video={previewVideo} time={previewTime} />
+              <PlayerScrubPreview
+                source={previewSource}
+                sessionKey={previewSessionKey}
+                time={previewTime ?? currentTime}
+                active={previewTime !== null}
+                fallbackVideo={previewFallbackVideo}
+              />
             </div>
-            <span className="absolute -bottom-2 left-0 h-2 w-px bg-sky-300/90 shadow-[0_0_6px_rgba(125,211,252,.75)]" aria-hidden="true" />
+            {previewTime !== null && (
+              <span className="absolute -bottom-2 left-0 h-2 w-px bg-sky-300/90 shadow-[0_0_6px_rgba(125,211,252,.75)]" aria-hidden="true" />
+            )}
           </div>
         )}
         <div className="absolute inset-y-0 left-0 overflow-hidden rounded-full bg-white/20" style={{ width: `${bufferedPercent}%` }} />

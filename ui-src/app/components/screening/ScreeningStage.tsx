@@ -61,8 +61,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
   const controlsTimerRef = useRef<number>();
   const hudTimerRef = useRef<number>();
   const progressPreviewClearTimerRef = useRef<number>();
-  const progressPreviewSeekAtRef = useRef(0);
-  const progressPreviewStartTimeRef = useRef(0);
+  const scrubUiActiveRef = useRef(false);
   const previousRateRef = useRef(1);
   const playedRecordedRef = useRef(false);
   const endedRecordedRef = useRef(false);
@@ -118,7 +117,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
     // 切换会话、线路或 URL 后立即清理旧进度点预览，迟到定时器不得覆盖新媒体。
     setDragging(false);
     setPreviewTime(null);
-    progressPreviewSeekAtRef.current = 0;
+    scrubUiActiveRef.current = false;
     if (progressPreviewClearTimerRef.current) window.clearTimeout(progressPreviewClearTimerRef.current);
     return () => {
       if (progressPreviewClearTimerRef.current) window.clearTimeout(progressPreviewClearTimerRef.current);
@@ -255,41 +254,47 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
   const cycleOrientation = () => player.setOrientationMode(cycle(["auto", "landscape", "portrait"] as const, player.preferences.orientationMode));
 
   const seekFromRatio = (ratio: number) => Math.max(0, Math.min(player.stats.duration, player.stats.duration * ratio));
-  const seekProgressPreviewFrame = (target: number, force = false) => {
-    const now = Date.now();
-    if (!force && now - progressPreviewSeekAtRef.current < 110) return;
-    progressPreviewSeekAtRef.current = now;
-    // 使用主 video 定位目标帧：不增加第二媒体内核，同时把网络 seek 限制在约 9 次/秒。
-    player.seekTo(target);
-  };
-  const onSeekStart = (ratio: number, _event: ReactPointerEvent<HTMLDivElement>) => {
+  const updateScrubPreview = (target: number) => {
     if (progressPreviewClearTimerRef.current) window.clearTimeout(progressPreviewClearTimerRef.current);
-    progressPreviewStartTimeRef.current = player.stats.currentTime;
-    progressPreviewSeekAtRef.current = 0;
-    const target = seekFromRatio(ratio);
-    setDragging(true);
+    if (!scrubUiActiveRef.current) {
+      player.beginScrubPreview();
+      scrubUiActiveRef.current = true;
+      setDragging(true);
+    }
+    player.updateScrubPreview(target);
     setPreviewTime(target);
-    seekProgressPreviewFrame(target, true);
+    revealControls(true);
   };
-  const onSeekMove = (ratio: number) => {
-    if (!dragging) return;
-    const target = seekFromRatio(ratio);
-    setPreviewTime(target);
-    seekProgressPreviewFrame(target);
-  };
-  const onSeekEnd = (ratio: number) => {
-    const target = seekFromRatio(ratio);
-    seekProgressPreviewFrame(target, true);
+  const commitScrubPreview = (target: number) => {
+    if (!scrubUiActiveRef.current) {
+      player.seekTo(target);
+      return;
+    }
+    player.updateScrubPreview(target);
+    scrubUiActiveRef.current = false;
     setDragging(false);
     setPreviewTime(target);
+    void player.commitScrubPreview(target);
     progressPreviewClearTimerRef.current = window.setTimeout(() => setPreviewTime(null), 420);
   };
-  const onSeekCancel = () => {
-    if (dragging) player.seekTo(progressPreviewStartTimeRef.current);
+  const cancelScrubPreview = () => {
+    if (scrubUiActiveRef.current) void player.cancelScrubPreview();
+    scrubUiActiveRef.current = false;
     setDragging(false);
     setPreviewTime(null);
     if (progressPreviewClearTimerRef.current) window.clearTimeout(progressPreviewClearTimerRef.current);
   };
+  const onSeekStart = (ratio: number, _event: ReactPointerEvent<HTMLDivElement>) => {
+    updateScrubPreview(seekFromRatio(ratio));
+  };
+  const onSeekMove = (ratio: number) => {
+    if (!scrubUiActiveRef.current) return;
+    updateScrubPreview(seekFromRatio(ratio));
+  };
+  const onSeekEnd = (ratio: number) => {
+    commitScrubPreview(seekFromRatio(ratio));
+  };
+  const onSeekCancel = cancelScrubPreview;
 
   const copyCurrentLink = () => onAction("copy-play-link", { url: activeSource?.url || "", label: `${activeSource?.label || "当前线路"}完整链接` });
   const openCurrentLink = () => onAction("open-playback-url", { url: activeSource?.url || "", label: activeSource?.label || "当前线路" });
@@ -342,7 +347,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
   const handleStageContextMenuCapture = (event: ReactMouseEvent<HTMLDivElement>) => {
     const target = event.target;
     // 控件需要保留浏览器/控件自身的右键语义；视频画面则必须在捕获阶段拦截，
-    // 因为 ArtPlayer 的 video 元素可能在手势层之前停止 contextmenu 冒泡。
+    // 在捕获阶段统一接管视频区右键，避免媒体内核或浏览器默认菜单抢先消费事件。
     if (target instanceof HTMLElement && target.closest("button,input,textarea,select,[role='slider'],[contenteditable='true']")) return;
     event.preventDefault();
     event.stopPropagation();
@@ -407,8 +412,9 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           onToggleControls={(show) => show ? revealControls(true) : setControlsVisible(false)}
           onTogglePlay={() => void player.togglePlay()}
           onSeekBy={player.seekBy}
-          onSeekTo={player.seekTo}
-          onSeekPreview={player.seekTo}
+          onSeekTo={commitScrubPreview}
+          onSeekPreview={updateScrubPreview}
+          onSeekPreviewCancel={cancelScrubPreview}
           onVolume={player.setVolume}
           onBrightness={player.setBrightness}
           onHoldRateStart={(rate) => {
@@ -423,7 +429,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           onLockHint={() => setHoldHint("控制已锁定，点右下角糖果锁解开")}
           onContextMenu={(position) => { setMoreOpen(false); setContextMenu(position); }}
         />
-        <PlayerGestureHudOverlay hud={gestureHud} holdHint={holdHint} previewVideo={video} />
+        <PlayerGestureHudOverlay hud={gestureHud} holdHint={holdHint} />
         <PlayerContextMenu
           open={Boolean(contextMenu)}
           x={contextMenu?.x || 0}
@@ -455,10 +461,11 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           onBack={() => void fullscreen.exit()}
         />
         <PlayerOverlays
-          buffering={buffering}
+          // 设置面板已经承担当前交互焦点；暂停/缓冲大按钮继续悬在上方会遮住中间“观看”页签。
+          buffering={buffering && !moreOpen}
           hasUrl={hasUrl}
           error={error}
-          paused={paused}
+          paused={paused && !moreOpen}
           locked={locked}
           fullscreen={fullscreen.active}
           onPlay={() => void player.play()}
@@ -483,7 +490,9 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           progressPercent={percent(player.stats.currentTime, player.stats.duration)}
           markers={bookmarks.map((bookmark) => ({ id: bookmark.id, time: bookmark.startSeconds, label: bookmark.label }))}
           progressPreviewTime={previewTime}
-          previewVideo={video}
+          previewSource={activeSource}
+          previewSessionKey={mediaSessionKey}
+          previewFallbackVideo={video}
           isDraggingProgress={dragging}
           volume={player.preferences.volume}
           muted={player.preferences.muted}

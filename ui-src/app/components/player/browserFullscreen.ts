@@ -312,32 +312,6 @@ export function kickVideoPaint(video: HTMLVideoElement | null) {
   }
 }
 
-/** 隐藏 ArtPlayer 可能盖住画面的海报/遮罩层 */
-function hideArtCoverLayers(container: HTMLElement | null, video: HTMLVideoElement | null) {
-  const roots: Element[] = [];
-  if (container) roots.push(container);
-  if (video?.parentElement) roots.push(video.parentElement);
-  const player = video?.closest?.(".art-video-player") as HTMLElement | null;
-  if (player) roots.push(player);
-  const seen = new Set<Element>();
-  roots.forEach((root) => {
-    if (seen.has(root)) return;
-    seen.add(root);
-    root.querySelectorAll?.(".art-poster, .art-mask, .art-loading, .art-state").forEach((node) => {
-      const el = node as HTMLElement;
-      el.style.setProperty("display", "none", "important");
-      el.style.setProperty("opacity", "0", "important");
-      el.style.setProperty("visibility", "hidden", "important");
-      el.style.setProperty("pointer-events", "none", "important");
-      el.style.setProperty("background", "transparent", "important");
-    });
-    if (root instanceof HTMLElement && root.classList.contains("art-video-player")) {
-      root.style.setProperty("background", "transparent", "important");
-      root.style.setProperty("background-color", "transparent", "important");
-    }
-  });
-}
-
 /** 全屏后强制校正播放器容器与 video 尺寸，防止 0 高/被盖住/合成层丢失。 */
 export function forceFullscreenVideoVisible(params: {
   shell: HTMLElement | null;
@@ -381,8 +355,6 @@ export function forceFullscreenVideoVisible(params: {
   applyOuterBox(container, false);
   const stage = shell?.querySelector?.(".txzz-player-orientation-stage") as HTMLElement | null;
   applyOuterBox(stage, false);
-  const artPlayer = (container?.querySelector?.(".art-video-player") || video?.closest?.(".art-video-player")) as HTMLElement | null;
-  applyOuterBox(artPlayer, false);
 
   applyAdaptiveVideoLayout(video, fill);
   if (video) {
@@ -397,7 +369,6 @@ export function forceFullscreenVideoVisible(params: {
     video.style.setProperty("-webkit-filter", "none", "important");
     video.style.setProperty("object-position", "var(--txzz-player-video-position-x, 50%) 50%", "important");
   }
-  hideArtCoverLayers(container, video);
   kickVideoPaint(video);
 
   if (video && video.paused === false) {
@@ -440,9 +411,7 @@ export function clearForcedFullscreenStyles(params: {
   clearEl(shell);
   clearEl(container);
   clearEl(stage || null);
-  // forceFullscreenVideoVisible 也会校正 ArtPlayer 内层，退出时必须对称清理，避免二次全屏残留。
-  const artPlayer = (container?.querySelector?.(".art-video-player") || video?.closest?.(".art-video-player")) as HTMLElement | null;
-  clearEl(artPlayer);
+  // Shaka 直接绑定标准 video，不再存在第三方播放器内层需要额外清理。
   // video 只恢复自适应，不要保留 absolute 全屏盒模型以外的脏样式
   if (video) {
     [

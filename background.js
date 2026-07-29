@@ -110,7 +110,7 @@ let accountPatrolInFlight = null;
 let persistedDownloadsReconciled = false;
 let persistedDownloadRecoveryInFlight = null;
 
-const LOCAL_UPDATE_BUILD = "2026-07-29-2030";
+const LOCAL_UPDATE_BUILD = "2026-07-30-0014";
 
 const DEFAULT_STATE = {
   role: "guest",

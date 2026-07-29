@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const candyUiStyles = readFileSync(new URL("./index.css", import.meta.url), "utf8");
+const shadowBootstrap = readFileSync(new URL("../main.tsx", import.meta.url), "utf8");
 
 describe("Shadow DOM 样式一致性", () => {
   it("为 Tailwind 注册属性提供影子树内的确定性初值", () => {
@@ -36,5 +37,14 @@ describe("Shadow DOM 样式一致性", () => {
     expect(candyUiStyles).toContain(".txzz-player-progress-preview");
     expect(candyUiStyles).toContain('.txzz-player-progress-preview[data-align="start"]');
     expect(candyUiStyles).toContain('.txzz-player-progress-preview[data-align="end"]');
+  });
+
+  it("全屏可见性只作用于主视频，不把隐藏的预览 video 强制显示", () => {
+    // visibility 可以被子元素重新覆盖；全局 `video { visibility:visible!important }`
+    // 会穿透进度预览父层的 invisible，造成未拖动时也漏出一块缩略画面。
+    expect(candyUiStyles).toContain(".txzz-player-shell .txzz-shaka-video");
+    expect(candyUiStyles).not.toMatch(/\.txzz-player-shell\s+video\b/);
+    expect(candyUiStyles).not.toMatch(/:host\(:fullscreen\)\s+video\b/);
+    expect(shadowBootstrap).not.toMatch(/:host\(:fullscreen\)\s+video\b/);
   });
 });

@@ -13,16 +13,16 @@ const criticalFiles = [
     help: "缺少 Vite 的 Windows 启动脚本，构建命令会提示 vite 不是内部或外部命令。"
   },
   {
-    name: "hls.js ESM 入口",
-    path: join(rootDir, "node_modules", "hls.js", "dist", "hls.mjs"),
-    repairTarget: join(rootDir, "node_modules", "hls.js"),
-    help: "缺少 hls.js 的 ESM 入口文件，Vite 会无法解析 import Hls from \"hls.js\"。"
+    name: "Shaka Player HLS 内核",
+    path: join(rootDir, "node_modules", "shaka-player", "dist", "shaka-player.compiled.js"),
+    repairTarget: join(rootDir, "node_modules", "shaka-player"),
+    help: "缺少 Shaka Player 主入口，HLS/AES/ABR 播放内核无法打包。"
   },
   {
-    name: "ArtPlayer 入口",
-    path: join(rootDir, "node_modules", "artplayer", "dist", "artplayer.js"),
-    repairTarget: join(rootDir, "node_modules", "artplayer"),
-    help: "缺少 ArtPlayer 播放器入口文件，完整播放器无法打包。"
+    name: "Shaka TS 转封装 Worker",
+    path: join(rootDir, "node_modules", "shaka-player", "dist", "shaka-player.transmuxer-worker.js"),
+    repairTarget: join(rootDir, "node_modules", "shaka-player"),
+    help: "缺少 Shaka 转封装 Worker，移动端 TS 解码会退回主线程。"
   }
 ];
 

@@ -821,17 +821,14 @@
   z-index: 1 !important;
 }
 
-/* 舞台 / ArtPlayer 容器：透明底，只负责尺寸，绝不盖黑 */
+/* 舞台 / Shaka video 容器：透明底，只负责尺寸，绝不盖黑 */
 :host(.txzz-player-fullscreen-mode) .txzz-player-orientation-stage,
 :host(.txzz-player-fullscreen-mode) .txzz-player-card-body,
 :host(.txzz-player-fullscreen-mode) .txzz-player-clean,
-:host(.txzz-player-fullscreen-mode) .art-video-player,
 :host(:fullscreen) .txzz-player-orientation-stage,
 :host(:-webkit-full-screen) .txzz-player-orientation-stage,
 :host(:fullscreen) .txzz-player-card-body,
-:host(:-webkit-full-screen) .txzz-player-card-body,
-:host(:fullscreen) .art-video-player,
-:host(:-webkit-full-screen) .art-video-player {
+:host(:-webkit-full-screen) .txzz-player-card-body {
   position: absolute !important;
   inset: 0 !important;
   width: 100% !important;
@@ -895,35 +892,12 @@
   display: none !important;
 }
 
-.txzz-player-clean .art-bottom,
-.txzz-player-clean .art-settings,
-.txzz-player-clean .art-info,
-.txzz-player-clean .art-controls,
-.txzz-player-clean .art-mask,
-.txzz-player-clean .art-state {
-  display: none !important;
-}
-
-.txzz-player-clean .art-video-player {
-  width: 100% !important;
-  height: 100% !important;
-  background: #000 !important;
-}
-
 /*
- * ArtPlayer 内核整层不接收指针事件，避免内置单击/双击抢手势。
+ * Shaka 只负责媒体管线，原生 video 不接收指针事件。
  * 真正的单击显示控制层、双击暂停/快进、滑动调节，全部由 .txzz-player-gesture-surface 承接。
  */
 .txzz-player-clean,
-.txzz-player-clean .art-video-player,
-.txzz-player-clean .art-video,
-.txzz-player-clean .art-poster,
-.txzz-player-clean .art-danmuku,
-.txzz-player-clean .art-layers,
-.txzz-player-clean .art-mask,
-.txzz-player-clean .art-state,
-.txzz-player-clean .art-loading,
-.txzz-player-clean video {
+.txzz-player-clean .txzz-shaka-video {
   pointer-events: none !important;
 }
 
@@ -1052,6 +1026,15 @@
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
+  /* 矮横屏已经有工作台标题栏，隐藏重复影院 Hero，把首屏高度优先留给视频与控制栏。 */
+  .txzz-playback-hero {
+    display: none !important;
+  }
+
+  .txzz-playback-root {
+    padding-top: 0.6rem !important;
+  }
+
   .txzz-gesture-side-track {
     height: 88px;
   }
@@ -1069,9 +1052,8 @@
  * Android / Kiwi 上 filter 会导致「只听得见声音、画面全黑」。
  * 亮度改用上层遮罩 .txzz-player-brightness-mask 实现。
  */
-.txzz-player-clean .art-video,
-.txzz-player-clean video,
-.txzz-player-shell video {
+.txzz-player-clean .txzz-shaka-video,
+.txzz-player-shell .txzz-shaka-video {
   width: 100% !important;
   height: 100% !important;
   max-width: none !important;
@@ -1085,18 +1067,15 @@
   visibility: visible !important;
 }
 
-.txzz-player-fill-contain .art-video,
-.txzz-player-fill-contain video {
+.txzz-player-fill-contain .txzz-shaka-video {
   object-fit: contain !important;
 }
 
-.txzz-player-fill-cover .art-video,
-.txzz-player-fill-cover video {
+.txzz-player-fill-cover .txzz-shaka-video {
   object-fit: cover !important;
 }
 
-.txzz-player-fill-fill .art-video,
-.txzz-player-fill-fill video {
+.txzz-player-fill-fill .txzz-shaka-video {
   object-fit: fill !important;
 }
 
@@ -1129,12 +1108,10 @@
   transform: none !important;
 }
 
-/* 内层 clean / art 容器透明，只 shell 黑底 */
+/* 内层媒体容器透明，只让 shell 提供黑底。 */
 .txzz-player-fullscreen-clean,
 .txzz-player-fullscreen-shell .txzz-player-orientation-stage,
-.txzz-player-fullscreen-shell .txzz-player-card-body,
-.txzz-player-fullscreen-shell .art-video-player,
-.txzz-player-fullscreen-clean .art-video-player {
+.txzz-player-fullscreen-shell .txzz-player-card-body {
   position: absolute !important;
   inset: 0 !important;
   left: 0 !important;
@@ -1159,29 +1136,16 @@
   transform: none !important;
 }
 
-.txzz-player-fullscreen-clean .art-danmuku,
-.txzz-player-fullscreen-clean .art-layers,
-.txzz-player-fullscreen-clean .art-mask,
-.txzz-player-fullscreen-clean .art-loading,
-.txzz-player-fullscreen-clean .art-poster {
-  background: transparent !important;
-}
-
 /*
  * 全屏 video：铺满容器 + contain。
  * Android/Kiwi 在 Shadow DOM + 宿主 :fullscreen 时，若 video 被多层 fixed 黑底夹住会「只出声」。
- * 这里强制 video / art-video 可见，父级 .art-video-player 透明，并抬高合成优先级。
+ * 这里强制 Shaka 绑定的原生 video 可见，并抬高合成优先级。
  */
-.txzz-player-fullscreen-shell video,
-.txzz-player-fullscreen-shell .art-video,
-.txzz-player-fullscreen-clean video,
-.txzz-player-fullscreen-clean .art-video,
-:host(.txzz-player-fullscreen-mode) video,
-:host(.txzz-player-fullscreen-mode) .art-video,
-:host(:fullscreen) video,
-:host(:fullscreen) .art-video,
-:host(:-webkit-full-screen) video,
-:host(:-webkit-full-screen) .art-video {
+.txzz-player-fullscreen-shell .txzz-shaka-video,
+.txzz-player-fullscreen-clean .txzz-shaka-video,
+:host(.txzz-player-fullscreen-mode) .txzz-shaka-video,
+:host(:fullscreen) .txzz-shaka-video,
+:host(:-webkit-full-screen) .txzz-shaka-video {
   position: absolute !important;
   inset: 0 !important;
   left: 0 !important;
@@ -1216,30 +1180,6 @@
   -webkit-clip-path: none !important;
 }
 
-/* ArtPlayer 遮罩/海报在全屏时必须彻底隐藏，防止黑块盖住画面 */
-:host(.txzz-player-fullscreen-mode) .art-poster,
-:host(.txzz-player-fullscreen-mode) .art-mask,
-:host(.txzz-player-fullscreen-mode) .art-loading,
-:host(.txzz-player-fullscreen-mode) .art-state,
-:host(:fullscreen) .art-poster,
-:host(:fullscreen) .art-mask,
-:host(:fullscreen) .art-loading,
-:host(:fullscreen) .art-state,
-:host(:-webkit-full-screen) .art-poster,
-:host(:-webkit-full-screen) .art-mask,
-:host(:-webkit-full-screen) .art-loading,
-:host(:-webkit-full-screen) .art-state,
-.txzz-player-fullscreen-clean .art-poster,
-.txzz-player-fullscreen-clean .art-mask,
-.txzz-player-fullscreen-clean .art-loading,
-.txzz-player-fullscreen-clean .art-state {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-  background: transparent !important;
-}
-
 /* 亮度遮罩：叠在视频上，绝不给 video 本身加 filter */
 .txzz-player-brightness-mask {
   position: absolute;
@@ -1262,18 +1202,15 @@
   z-index: 12 !important;
 }
 
-.txzz-player-fullscreen-clean.txzz-player-fill-contain video,
-.txzz-player-fullscreen-clean.txzz-player-fill-contain .art-video {
+.txzz-player-fullscreen-clean.txzz-player-fill-contain .txzz-shaka-video {
   object-fit: contain !important;
 }
 
-.txzz-player-fullscreen-clean.txzz-player-fill-cover video,
-.txzz-player-fullscreen-clean.txzz-player-fill-cover .art-video {
+.txzz-player-fullscreen-clean.txzz-player-fill-cover .txzz-shaka-video {
   object-fit: cover !important;
 }
 
-.txzz-player-fullscreen-clean.txzz-player-fill-fill video,
-.txzz-player-fullscreen-clean.txzz-player-fill-fill .art-video {
+.txzz-player-fullscreen-clean.txzz-player-fill-fill .txzz-shaka-video {
   object-fit: fill !important;
 }
 
@@ -1404,9 +1341,7 @@
 
 .txzz-player-fullscreen-shell.txzz-player-css-landscape .txzz-player-orientation-stage,
 .txzz-player-fullscreen-shell.txzz-player-css-landscape .txzz-player-card-body,
-.txzz-player-fullscreen-shell.txzz-player-css-landscape .art-video-player,
-.txzz-player-fullscreen-shell.txzz-player-css-landscape video,
-.txzz-player-fullscreen-shell.txzz-player-css-landscape .art-video {
+.txzz-player-fullscreen-shell.txzz-player-css-landscape .txzz-shaka-video {
   transform: none !important;
 }
 
@@ -1851,25 +1786,6 @@
   }
 }
 
-/* Artplayer 内核样式覆写 */
-.txzz-player-shell .art-video-player {
-  width: 100% !important;
-  height: 100% !important;
-  background: #000 !important;
-}
-
-.txzz-player-shell .art-bottom,
-.txzz-player-shell .art-settings,
-.txzz-player-shell .art-info {
-  display: none !important; /* 使用自定义控制栏 */
-}
-
-.txzz-player-shell .art-video {
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: contain;
-}
-
 /* 糖果影院 5.1：奶油粉紫外壳只包围高对比黑色舞台，不污染视频画面。 */
 .txzz-playback-root {
   isolation: isolate;
@@ -1892,12 +1808,6 @@
 .txzz-screening-sidebar {
   scrollbar-width: thin;
   scrollbar-color: rgba(167, 139, 250, 0.35) transparent;
-}
-
-.txzz-player-shell[data-playback-phase="playing"] .art-poster,
-.txzz-player-shell[data-playback-phase="playing"] .art-loading,
-.txzz-player-shell[data-playback-phase="playing"] .art-state {
-  display: none !important;
 }
 
 @media (max-width: 639px) {

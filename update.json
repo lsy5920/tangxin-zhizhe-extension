@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.2.2",
-  "build": "2026-07-29-2030",
-  "releasedAt": "2026-07-29 20:30",
+  "version": "5.3.0",
+  "build": "2026-07-30-0014",
+  "releasedAt": "2026-07-30 00:14",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-30-0014",
+      "type": "重构",
+      "title": "Shaka Player 成熟内核与事务式目标帧预览",
+      "detail": "播放系统从 ArtPlayer + hls.js 完整迁移到 Shaka Player 5.2.4，统一接管 HLS、AES-128、ABR、错误恢复和 TS 转封装，并把转封装放入扩展自带 Worker。拖动进度条和横滑期间主播放器固定在手势起点，独立低码率预览会话优先读取标准缩略图轨、缺失时解码目标分片，进度点和真实小画面同步跟随，松手后只提交一次正式跳转。同步修复并发装载复活旧播放器、旧线路错误覆盖备用线路、滑回起点后预览事务未结束，以及全屏可见性规则误显示隐藏预览视频等竞态，降低移动端过量缓冲与解码负担；桌面、手机和横屏验收只使用真实安装扩展。",
+      "releasedAt": "2026-07-30 00:14"
+    },
     {
       "id": "2026-07-29-2030",
       "type": "修复",
@@ -214,11 +221,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 594657,
-  "packageSha256": "a0d1ce76ff471b3043a2eb0ee96dbf86d6f94455a9c83e445592d71dd461b059",
+  "packageSize": 701932,
+  "packageSha256": "77293f6db19588eb6d8aadde40b685935551663f0f29fa9161b5a6303dbbff3a",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "LP/V2sv8Ss0zwOQfEYfksm53SbBMmmNwDfklFzaZI3tE653+q9idbH6Sq9h5Bj0TjpR+l79plAAogziTWIYmc2TkxUSC1nfZxu7gcSYRbDhIqwNYq6lkENql6fW6+izgDHwH1xZ7ydOSTZahhQCCEEWsmzl4cjrSz1GXXHAFMYXT7YKZoxtutcnRCWedfj4+H2jNM67qGomii0+UdGocZlYZya/psuYVDYpXrjGbhgqQNzf0nkU/yrhdgF2OFvWwYSb1nfy69IDMxp9wd5zA+QMaFHLnlgilpdPYQJ471RH6BngdhIslotnLgl/1P1C+iR/oPcOtfmUleNzhzjFLIA=="
+    "value": "hlqdPGZq16XJohCEI2gfRLmFVZw3EppnZtwYfebj9TynNaEX+6fD1DmfKSvxR7cXPV473/k9hfwyqYl54gk37krg3jpUPBtQABsv52Et+QWdvOLGjHBcU83k5/L7bCKKpKLjmRG/Jg8i2Vju6KyzxqU0+GZYhoEA/ruOYdtYliFRtG+PgS8FEpEVEpWH4M1aTTuUhzM59MjiA1kCTSzFiUSzZAxKZh//QLpXnyWbPHwOuTrIt/ka29/XyEMLkNFso6YxSzNrE6VWrHrCZMspzKy04FV3TXN4AlAE4PpT1pk8CdBw/Ay45pCJzL/GCtmC3N5Ki2m4379MbUP1IEfGrg=="
   }
 }

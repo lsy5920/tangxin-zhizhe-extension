@@ -1,6 +1,5 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import Artplayer from "artplayer";
 import App from "./app/App";
 import { APP_BUILD, APP_VERSION } from "./app/constants";
 import "./styles/index.css";
@@ -8,7 +7,7 @@ import candyUiStyles from "./styles/index.css?inline";
 
 const HOST_ID = "txzz-candy-ui-root";
 const ROOT_ID = "txzz-candy-ui";
-const ARTPLAYER_STYLE_ID = "txzz-artplayer-style";
+const MEDIA_STYLE_ID = "txzz-media-style";
 const APP_STYLE_ID = "txzz-app-style";
 const APP_STYLE_MARKERS = [
   "--txzz-shadow-property-fallback",
@@ -36,15 +35,15 @@ function hasCompleteAppStyle(style: HTMLElement | null) {
 
 function canReuseShadowRoot(host: HTMLElement, shadow: ShadowRoot, styleHref: string) {
   const appStyle = shadow.getElementById(APP_STYLE_ID);
-  const artStyle = shadow.getElementById(ARTPLAYER_STYLE_ID);
+  const mediaStyle = shadow.getElementById(MEDIA_STYLE_ID);
   const externalStyle = shadow.querySelector<HTMLLinkElement>('link[data-txzz-ui-stylesheet="external"]');
   const root = shadow.getElementById(ROOT_ID);
 
   return host.dataset.txzzUiBuild === APP_BUILD
     && hasCompleteAppStyle(appStyle)
-    && artStyle instanceof HTMLStyleElement
-    && artStyle.dataset.txzzUiBuild === APP_BUILD
-    && (artStyle.textContent || "").includes(".art-video-player")
+    && mediaStyle instanceof HTMLStyleElement
+    && mediaStyle.dataset.txzzUiBuild === APP_BUILD
+    && (mediaStyle.textContent || "").includes(".txzz-player-shell")
     && externalStyle instanceof HTMLLinkElement
     && externalStyle.dataset.txzzUiBuild === APP_BUILD
     && externalStyle.href === styleHref
@@ -73,16 +72,6 @@ function bindHostVisualViewport(host: HTMLElement) {
   window.visualViewport?.addEventListener("resize", sync, { passive: true });
   window.visualViewport?.addEventListener("scroll", sync, { passive: true });
 }
-
-// 插件界面运行在 Shadow DOM 中，必须把播放器核心样式注入同一个 Shadow DOM，
-// 否则 ArtPlayer 的控制栏、全屏和网页全屏样式会被隔离在外层页面里。
-Artplayer.FULLSCREEN_WEB_IN_BODY = false;
-Artplayer.LOG_VERSION = false;
-// 关闭 ArtPlayer 内置单击播放 / 双击全屏：插件已有自定义控制层与手势，
-// 内置双击全屏在扩展 Shadow DOM 里常失败，还会误触发我们的沉浸全屏，导致面板“突然消失”。
-Artplayer.DBCLICK_FULLSCREEN = false;
-Artplayer.MOBILE_CLICK_PLAY = false;
-Artplayer.MOBILE_DBCLICK_PLAY = false;
 
 function createHost() {
   const styleHref = resolveUiStylesheetHref();
@@ -146,11 +135,12 @@ function createHost() {
     shadow.appendChild(style);
   }
 
-  if (!shadow.getElementById(ARTPLAYER_STYLE_ID)) {
+  if (!shadow.getElementById(MEDIA_STYLE_ID)) {
     const style = document.createElement("style");
-    style.id = ARTPLAYER_STYLE_ID;
+    style.id = MEDIA_STYLE_ID;
     style.dataset.txzzUiBuild = APP_BUILD;
-    style.textContent = `${Artplayer.STYLE}
+    // 浏览器 Fullscreen API 发生在 Shadow host 上，这部分结构样式必须与媒体内核无关。
+    style.textContent = `
 /* 真正进入浏览器 Fullscreen API 时：铺满系统全屏层，隐藏浏览器 UI 后的可视区域。 */
 :host(:fullscreen),
 :host(:-webkit-full-screen) {
@@ -212,9 +202,7 @@ function createHost() {
 :host(:fullscreen) .txzz-player-orientation-stage,
 :host(:-webkit-full-screen) .txzz-player-orientation-stage,
 :host(:fullscreen) .txzz-player-card-body,
-:host(:-webkit-full-screen) .txzz-player-card-body,
-:host(:fullscreen) .art-video-player,
-:host(:-webkit-full-screen) .art-video-player {
+:host(:-webkit-full-screen) .txzz-player-card-body {
   position: absolute !important;
   inset: 0 !important;
   width: 100% !important;
@@ -246,10 +234,8 @@ function createHost() {
   pointer-events: none !important;
   z-index: 8 !important;
 }
-:host(:fullscreen) video,
-:host(:-webkit-full-screen) video,
-:host(:fullscreen) .art-video,
-:host(:-webkit-full-screen) .art-video {
+:host(:fullscreen) .txzz-shaka-video,
+:host(:-webkit-full-screen) .txzz-shaka-video {
   position: absolute !important;
   inset: 0 !important;
   width: 100% !important;
@@ -265,19 +251,6 @@ function createHost() {
   background: transparent !important;
   background-color: transparent !important;
   transform: none !important;
-}
-:host(:fullscreen) .art-poster,
-:host(:-webkit-full-screen) .art-poster,
-:host(:fullscreen) .art-mask,
-:host(:-webkit-full-screen) .art-mask,
-:host(:fullscreen) .art-loading,
-:host(:-webkit-full-screen) .art-loading,
-:host(:fullscreen) .art-state,
-:host(:-webkit-full-screen) .art-state {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
 }
 :host(:fullscreen) .txzz-app-panel-backdrop,
 :host(:-webkit-full-screen) .txzz-app-panel-backdrop,

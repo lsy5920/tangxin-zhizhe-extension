@@ -2,6 +2,12 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { MediaKernel, type MediaKernelEvent, type MediaQuality, type MediaSnapshot } from "./mediaKernel";
 import { loadPlaybackPreferences, savePlaybackPreferences, type PlaybackPreferences } from "./preferences";
 import { loadPlaybackResume, savePlaybackResume } from "./resumeStore";
+import {
+  beginScrubTransaction,
+  settleScrubTransaction,
+  updateScrubTransaction,
+  type ScrubTransaction
+} from "./scrubTransaction";
 import { createPlaybackRuntimeState, playbackSessionReducer } from "./sessionReducer";
 import { nextFailoverSource, selectRecommendedSource, shouldFailover } from "./sourcePolicy";
 import type { PlaybackRuntimeAction, PlaybackSession, PlaybackSource } from "./types";
@@ -52,6 +58,9 @@ export function usePlaybackController(session: PlaybackSession | null) {
   const lastResumeWriteRef = useRef(0);
   const resumeAfterLoadRef = useRef(false);
   const pendingSnapshotRef = useRef<Partial<MediaSnapshot>>({});
+  const scrubTransactionRef = useRef<ScrubTransaction | null>(null);
+  const scrubTransactionIdRef = useRef(0);
+  const suppressScrubPauseRef = useRef(false);
   const switchSourceRef = useRef<(reason: string, automatic?: boolean, sourceId?: string) => Promise<void>>(async () => {});
   const [runtime, rawDispatch] = useReducer(playbackSessionReducer, undefined, () => createPlaybackRuntimeState());
   const [stats, setStats] = useState<MediaSnapshot>(emptyMediaSnapshot);
@@ -109,6 +118,8 @@ export function usePlaybackController(session: PlaybackSession | null) {
       return;
     }
     if (event.type === "playing") {
+      if (scrubTransactionRef.current?.generation === generation) return;
+      suppressScrubPauseRef.current = false;
       if (startupTimerRef.current) window.clearTimeout(startupTimerRef.current);
       dispatch(generationAction(generation, { type: "PLAYING" }));
       setStatus("放映中");
@@ -121,17 +132,35 @@ export function usePlaybackController(session: PlaybackSession | null) {
       return;
     }
     if (event.type === "pause") {
+      const scrubTransaction = scrubTransactionRef.current;
+      if (scrubTransaction?.generation === generation) {
+        const snapshot = kernelRef.current?.snapshot() || emptyMediaSnapshot;
+        // 内核为预览事务临时暂停，但 UI 和业务仍保持手势开始前的播放语义。
+        setStats({ ...snapshot, currentTime: scrubTransaction.originTime, paused: !scrubTransaction.wasPlaying });
+        return;
+      }
+      if (suppressScrubPauseRef.current) {
+        suppressScrubPauseRef.current = false;
+        return;
+      }
       dispatch(generationAction(generation, { type: "PAUSED" }));
       setStatus("已暂停");
       persistResume();
       return;
     }
     if (event.type === "waiting") {
+      if (scrubTransactionRef.current?.generation === generation) return;
       dispatch(generationAction(generation, { type: "BUFFERING" }));
       setStatus("糖果云缓冲中");
       return;
     }
     if (event.type === "time") {
+      const scrubTransaction = scrubTransactionRef.current;
+      if (scrubTransaction?.generation === generation) {
+        // 预览值由控制层单独显示，真实续播点在松手提交前始终固定于 originTime。
+        setStats({ ...event.snapshot, currentTime: scrubTransaction.originTime, paused: !scrubTransaction.wasPlaying });
+        return;
+      }
       setStats(event.snapshot);
       if (Date.now() - lastResumeWriteRef.current >= 5_000) persistResume(event.snapshot);
       return;
@@ -181,9 +210,6 @@ export function usePlaybackController(session: PlaybackSession | null) {
       }, 4_000);
       return;
     }
-    if (event.type === "error") {
-      void switchSourceRef.current(event.message, true);
-    }
   }, [beginStartupGuard, dispatch, persistResume]);
 
   const loadSource = useCallback(async (
@@ -213,10 +239,12 @@ export function usePlaybackController(session: PlaybackSession | null) {
     try {
       await kernel.load(source, snapshot, preferences.fillMode, preferences.networkMode);
     } catch (error) {
+      if (generation !== generationRef.current || kernelRef.current !== kernel) return;
       const message = error instanceof Error ? error.message : String(error);
-      dispatch(generationAction(generation, { type: "FAILED", message }));
-      setStatus("媒体内核装载失败");
-      throw error;
+      // 装载错误只沿一条串行业务路径切线。旧实现同时从内核事件和 Promise catch
+      // 发起切换，会让旧线路的 FAILED 覆盖已经开始装载的备用线路。
+      setStatus("当前线路装载失败，正在尝试备用线路");
+      await switchSourceRef.current(message, true);
     }
   }, [dispatch, handleKernelEvent, preferences.fillMode, preferences.networkMode]);
 
@@ -234,6 +262,10 @@ export function usePlaybackController(session: PlaybackSession | null) {
       return;
     }
     const snapshot = kernelRef.current?.snapshot() || emptyMediaSnapshot;
+    // 自动切线可能与正在进行的拖动相撞；新线路必须从真实媒体快照开始，
+    // 不能继承旧线路尚未提交的预览事务。
+    scrubTransactionRef.current = null;
+    suppressScrubPauseRef.current = false;
     persistResume(snapshot);
     clearTimers();
     await loadSource(target, snapshot, true, reason).catch(() => {});
@@ -246,6 +278,8 @@ export function usePlaybackController(session: PlaybackSession | null) {
     const previousSnapshot = kernelRef.current?.snapshot();
     const sameMovie = Boolean(session && previousSession?.movieId === session.movieId);
     sessionRef.current = session;
+    scrubTransactionRef.current = null;
+    suppressScrubPauseRef.current = false;
     clearTimers();
     kernelRef.current?.destroy();
     kernelRef.current = null;
@@ -372,6 +406,96 @@ export function usePlaybackController(session: PlaybackSession | null) {
     }
   }, [beginStartupGuard, dispatch]);
 
+  const beginScrubPreview = useCallback(() => {
+    const kernel = kernelRef.current;
+    if (!kernel) return null;
+    const generation = generationRef.current;
+    const transaction = beginScrubTransaction(
+      scrubTransactionRef.current,
+      kernel.snapshot(),
+      generation,
+      scrubTransactionIdRef.current + 1
+    );
+    if (scrubTransactionRef.current !== transaction) scrubTransactionIdRef.current = transaction.id;
+    scrubTransactionRef.current = transaction;
+    suppressScrubPauseRef.current = false;
+    // Shaka 官方 SeekBar 也会在 scrub 期间暂停；预览器独立解码，主画面因此停在原帧。
+    if (transaction.wasPlaying) kernel.pause();
+    return transaction;
+  }, []);
+
+  const updateScrubPreview = useCallback((time: number) => {
+    const transaction = updateScrubTransaction(scrubTransactionRef.current, time, generationRef.current);
+    if (!transaction) return false;
+    scrubTransactionRef.current = transaction;
+    return true;
+  }, []);
+
+  const commitScrubPreview = useCallback(async (time: number) => {
+    const kernel = kernelRef.current;
+    if (!kernel) return false;
+    const generation = generationRef.current;
+    const settlement = settleScrubTransaction(scrubTransactionRef.current, "commit", time, generation);
+    if (!settlement) {
+      kernel.seek(time);
+      return true;
+    }
+    scrubTransactionRef.current = settlement.transaction;
+    kernel.seek(settlement.targetTime);
+    const snapshot = kernel.snapshot();
+    const committedSnapshot = {
+      ...snapshot,
+      currentTime: settlement.targetTime,
+      paused: !settlement.resumePlayback
+    };
+    setStats(committedSnapshot);
+    persistResume(committedSnapshot);
+    scrubTransactionRef.current = null;
+    suppressScrubPauseRef.current = settlement.resumePlayback;
+    if (!settlement.resumePlayback) {
+      // 从 ended 状态拖回中段时必须回到 paused，否则结束遮罩会继续覆盖新的进度。
+      dispatch(generationAction(generation, { type: "PAUSED" }));
+      setStatus("已定位，等待开映");
+      return true;
+    }
+    beginStartupGuard(generation);
+    setStatus("定位完成，继续放映");
+    try {
+      await kernel.play();
+      return true;
+    } catch (error) {
+      suppressScrubPauseRef.current = false;
+      dispatch(generationAction(generation, {
+        type: "FAILED",
+        message: error instanceof Error ? error.message : String(error)
+      }));
+      return false;
+    }
+  }, [beginStartupGuard, dispatch, persistResume]);
+
+  const cancelScrubPreview = useCallback(async () => {
+    const kernel = kernelRef.current;
+    if (!kernel) return false;
+    const generation = generationRef.current;
+    const settlement = settleScrubTransaction(scrubTransactionRef.current, "cancel", 0, generation);
+    if (!settlement) return false;
+    scrubTransactionRef.current = settlement.transaction;
+    if (Math.abs(kernel.snapshot().currentTime - settlement.targetTime) > 0.1) {
+      kernel.seek(settlement.targetTime);
+    }
+    setStats({ ...kernel.snapshot(), currentTime: settlement.targetTime, paused: !settlement.resumePlayback });
+    scrubTransactionRef.current = null;
+    suppressScrubPauseRef.current = settlement.resumePlayback;
+    if (!settlement.resumePlayback) return true;
+    try {
+      await kernel.play();
+      return true;
+    } catch {
+      suppressScrubPauseRef.current = false;
+      return false;
+    }
+  }, []);
+
   const seekTo = useCallback((time: number) => kernelRef.current?.seek(time), []);
   const seekBy = useCallback((seconds: number) => {
     const current = kernelRef.current?.snapshot().currentTime || 0;
@@ -397,6 +521,10 @@ export function usePlaybackController(session: PlaybackSession | null) {
       if (kernelRef.current?.snapshot().paused) await togglePlay();
     },
     pause: () => kernelRef.current?.pause(),
+    beginScrubPreview,
+    updateScrubPreview,
+    commitScrubPreview,
+    cancelScrubPreview,
     seekTo,
     seekBy,
     switchSource: (sourceId: string) => switchSourceRef.current("手动选线", false, sourceId),

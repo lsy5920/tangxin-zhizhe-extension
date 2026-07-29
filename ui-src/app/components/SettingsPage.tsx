@@ -3,7 +3,7 @@ import { Activity, AlertTriangle, Ban, Bell, CheckCircle, Copy, Database, Extern
 import type { AccountsPageIntent, BridgeState, Page, SettingsPageIntent, SettingsSection, WorkerDiagnostics } from "../types";
 import { requestCloudDiagnostics } from "../bridge";
 import { formatRelativeTime } from "../helpers";
-import { APP_BUILD, APP_VERSION_LABEL, ART_PLAYER_VERSION, HLS_CORE_VERSION } from "../constants";
+import { APP_BUILD, APP_VERSION_LABEL, PLAYER_ENGINE_NAME, PLAYER_ENGINE_VERSION } from "../constants";
 import { UpdateCenter } from "../update/UpdateCenter";
 import {
   ModalSheet,
@@ -477,8 +477,8 @@ export function SettingsPage({ state, onAction, onPage, intent = {}, onIntentHan
             {[
               { label: "mux.js", value: "7.0.0" },
               { label: "构建", value: APP_BUILD },
-              { label: "播放器", value: ART_PLAYER_VERSION },
-              { label: "HLS", value: HLS_CORE_VERSION }
+              { label: "播放器", value: PLAYER_ENGINE_NAME },
+              { label: "内核版本", value: PLAYER_ENGINE_VERSION }
             ].map((item) => (
               <div key={item.label} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
                 <p className="text-slate-400">{item.label}</p>

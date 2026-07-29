@@ -8,7 +8,7 @@
 
 插件默认只显示右下角「糖糖」伙伴入口，不再向网站左上角注入流程气泡或当前卡片标签。点击伙伴后展开糖果手帐工作台：桌面端使用浅色手帐侧栏与独立工作区，移动端使用全屏面板和安全区底栏；今日总览、账号小屋、放映室、下载收纳篮和照料中心保持统一信息层级与操作反馈。
 
-当前源码版本为 `5.2.2`（构建 `2026-07-29-2030`）；正式 CRX 发布时继续使用 4.0.0 已启用并妥善保留的私钥，扩展 ID 固定为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 及 5.x 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
+当前源码版本为 `5.3.0`（构建 `2026-07-30-0014`）；正式 CRX 发布时继续使用 4.0.0 已启用并妥善保留的私钥，扩展 ID 固定为 `ddefadnhgebdclpkabeobjidjllkdkhm`，因此 4.0.0 及 5.x 用户可原位覆盖升级。更早的旧 ID `ghbbddahmhhmjknofkmdkcflbmplcace` 因原私钥永久丢失，仍需先移除旧扩展再安装当前版本。
 
 ## 环境要求
 
@@ -18,13 +18,13 @@
 - 本地检查工具：Node.js `22.16.0` 及以上
 - 本机验证版本：Node.js `25.8.0`，npm `11.11.0`
 - 前端界面：React `18.3.1`，React DOM `18.3.1`，lucide-react `0.487.0`
-- 播放器内核：ArtPlayer `5.4.0`（当前唯一主链路，负责完整播放器界面和交互）
-- HLS 播放内核：hls.js `1.6.16`（负责 HLS/m3u8 解析和播放）
-- 旧实验播放器：v3.0.0 起已清理 XGPlayer / xgplayer-hls 实验链路，当前构建只保留 ArtPlayer + hls.js，减少依赖冲突和构建风险
+- 播放器内核：Shaka Player `5.2.4`（统一负责 HLS、AES-128、ABR、错误恢复、清晰度与 TS 转封装）
+- 播放器界面：糖果影院自有 React 控制层，交互状态与媒体内核分离；不再依赖第三方播放器 UI
+- 目标帧预览：标准 HLS 缩略图轨优先；目标站缺少缩略图时使用隔离的 360P/900 Kbps Shaka 预览会话，主播放器在松手前不跳转
 - 构建工具：Vite `8.1.4`，@vitejs/plugin-react `6.0.3`，Tailwind CSS `4.3.2`，@tailwindcss/vite `4.3.2`，TypeScript `7.0.2`
 - 测试工具：Vitest `3.2.7`；发布前固定运行全部纯核心与打包器回归测试
 - CRX3 打包：仓库内置确定性 ZIP + RSA-SHA256 打包器，只使用 Node.js `crypto` / `zlib`，不再依赖 `crx`、`archiver` 或旧版 `glob`
-- 依赖自检：`scripts/check-deps.mjs` 会在构建前检查 Vite、hls.js、ArtPlayer 的关键入口文件
+- 依赖自检：`scripts/check-deps.mjs` 会在构建前检查 Vite、Shaka Player 主入口和 TS 转封装 Worker
 - 远程服务：Cloudflare Worker
 - 云端数据库：Supabase
 - 部署工具：Wrangler `4.110.0`
@@ -53,7 +53,7 @@
 - 远程同步：通过 Cloudflare Worker 读取 Supabase 账号池，扩展后台自动携带与 Worker 配套的内置 Bearer 访问密钥；用户只需填写服务地址，页面环境只看到脱敏摘要。
 - 云端服务体检：设置页通过扩展后台检测 `/v1/diagnostics`、`/v1/status` 和 `/v2/health`；v2 健康检查同时验证播放安全迁移是否就绪，再次打开时会按 Worker 地址展示匹配的上次体检结果。
 - 体检快捷处理：体检结果下方提供「处理账号池」「同步账号」「复制报告」三个快捷操作，可直接跳转账号池、打开失效账号视图或复制完整体检报告。
-- 播放页面：扩展只调用 Worker `POST /v2/playback/session`，把服务端线路决策、账号与获取摘要转成单一 `screening` 状态。页面编排与媒体生命周期完全分离：单 reducer 管理 `idle → resolving → ready → loading → playing/paused → buffering/switching → ended/error`，每个异步事件携带会话代次；任意时刻只保留一个 ArtPlayer `5.4.0` 和一个 hls.js `1.6.16` 实例。同一会话 URL 指纹变化时会保留进度与暂停状态后重载，同 URL 仅刷新健康元数据。9:16 视频使用受动态视口约束的黑色影院画布，画面继续按原比例完整显示；设置菜单精简为片源、观看、工具三类。支持可持久化标准/镜像双击与长按，横向滑动始终左退右进；横滑和直接拖动进度条都会显示目标时间的实时解码帧小画面，进度条预览始终跟随进度点并固定在其上方。线路错误和恢复次数按线路隔离，起播超过 8 秒、30 秒内累计 3 次 HLS 致命错误或恢复失败时只自动切一次尚未尝试的备用线路。续播按视频编号每 5 秒保存，15 秒以内、距结尾不足 30 秒或超过 30 天的记录不会恢复。完整功能矩阵见 [`docs/player-system.md`](docs/player-system.md)。
+- 播放页面：扩展只调用 Worker `POST /v2/playback/session`，把服务端线路决策、账号与获取摘要转成单一 `screening` 状态。页面编排与媒体生命周期完全分离：单 reducer 管理 `idle → resolving → ready → loading → playing/paused → buffering/switching → ended/error`，每个异步事件携带会话代次；主链路任意时刻只保留一个 Shaka Player 和一个原生 video，后发装载会使旧 `attach/load` 任务失效。同一会话 URL 指纹变化时保留进度与暂停状态后重载，同 URL 只刷新健康元数据。9:16 视频使用受动态视口约束的黑色影院画布；设置菜单固定为片源、观看、工具三类。标准/镜像双击与长按可持久化，横向滑动始终左退右进；横滑和直接拖动进度条使用独立低码率目标帧预览，主画面在手势期间固定于起点，松手后只正式跳转一次。线路错误和恢复次数按线路隔离，起播超过 8 秒、30 秒内累计 3 次 Shaka 致命错误或恢复失败时只自动切一次尚未尝试的备用线路。续播按视频编号每 5 秒保存，15 秒以内、距结尾不足 30 秒或超过 30 天的记录不会恢复。完整功能矩阵见 [`docs/player-system.md`](docs/player-system.md)。
 - 下载管理：下载前先选择线路、播放模式、清晰度和容器，并展示预计大小、耗时、可用空间及兼容性。任务以 `attemptId + sequence` 隔离旧消息，分片和成品写入 OPFS，支持暂停、继续、取消、失败重试与浏览器重启恢复；删除或清空会先中止请求再清理 OPFS。清单上限 2 MiB、单分片 128 MiB、单任务默认上限 8 GiB，请求连续 20 秒无数据即超时，分片最多重试 3 次。
 - MP4 输出：锁定 `m3u8-parser@7.2.0` 解析 AES-128 序列 IV、显式 IV、初始化段、Byte Range、密钥轮换和 discontinuity；TS 分片优先流式转封装为 MP4。直播、SAMPLE-AES 和无法安全合并的独立音轨会在规划阶段明确拒绝，不生成损坏或静音文件。
 - 购买安全对账：设置页显示云端与本地 `pending / charged / uncertain` 记录；对账只使用原购买账号重新获取详情，绝不调用 `doBuy`，成功后进入 `resolved`，失败继续保持安全阻断且只展示脱敏错误。
@@ -68,7 +68,7 @@
 ```text
 tangxin-zhizhe-extension/
 ├── manifest.json              # Chrome MV3 插件清单
-├── package.json               # React 界面、ArtPlayer 完整播放器、hls.js 播放内核和构建依赖，所有版本已固定
+├── package.json               # React 界面、Shaka Player 媒体内核和构建依赖，所有版本已固定
 ├── package-lock.json          # npm 锁定文件，保证依赖安装结果一致
 ├── vite.config.ts             # Vite 打包配置，输出扩展可加载的 dist-ui 资源
 ├── tsconfig.json              # React TypeScript 源码检查配置
@@ -106,7 +106,8 @@ tangxin-zhizhe-extension/
 │   └── styles/                # Tailwind v4 入口样式与「糖果手帐」设计令牌
 ├── dist-ui/                   # Vite 构建产物，扩展运行时直接加载
 │   ├── txzz-ui.js             # 糖果风 React 控制台脚本
-│   └── txzz-ui.css            # 糖果风 React 控制台样式
+│   ├── txzz-ui.css            # 糖果风 React 控制台样式
+│   └── shaka-player.transmuxer-worker.js # MV3 CSP 允许的本地 TS 转封装 Worker
 ├── background.js              # 后台服务，负责账号池、远程请求、播放详情和下载任务
 ├── state_mutation_core.js     # 浏览器状态三方合并与串行 mutation 纯核心
 ├── page_context_core.js       # Vlog 当前卡片交叉判定与页面代次纯核心
@@ -215,7 +216,7 @@ tangxin-zhizhe-extension/
 5. 资源就绪后默认暂停，点击中央「开映」或控制栏播放按钮才会开始；空格/K 同样可播放或暂停。
 6. 点击「重新检票」会使用新的 `requestId` 请求 Worker v2 会话，重新评估缓存、账号、线路和获取方式，不会创建下载任务。
 7. 片源抽屉提供完整链接复制、打开和下载；足迹按视频会话展示迁移后的历史，不再与播放器高频控制同权平铺。
-8. 播放器使用 ArtPlayer + hls.js；线路卡和播放器设置均可手动换线，自动切线只会选择本场尚未自动尝试过的线路。
+8. 播放器使用 Shaka Player `5.2.4`；线路卡和播放器设置均可手动换线，自动切线只会选择本场尚未自动尝试过的线路。
 9. 在插件播放页点击全屏时，会优先请求浏览器全屏；如果浏览器只能让插件宿主全屏，会自动进入播放全屏模式，隐藏面板外壳、侧栏、标题栏、底部导航和其它播放页卡片，播放器外层会同步无框覆盖整个视口，视频内容默认按原比例尽可能完整显示；如果浏览器拒绝真实全屏，会自动使用插件内沉浸全屏兜底。
 10. 播放器进入全屏后，顶部会显示全屏来源、视口覆盖率和容器贴合体检；如果出现圆角、内层视频框、裁剪或宿主全屏模式异常，可点击「诊断」在页内查看报告，报告会包含播放器容器尺寸、当前视口尺寸、覆盖率和异常原因。
 11. 播放器内置进度条可点击跳转定位；视频画面默认只显示播放/暂停、后退、前进、菜单和全屏主控按钮，全屏时会额外显示「锁定」按钮。锁定后停止全部画面手势，只保留右下角解锁按钮；播放稳定后控制层自动隐藏。
@@ -362,7 +363,7 @@ npm run check:release-source
 npm audit --json
 ```
 
-如果依赖自检提示 `vite.cmd`、`hls.mjs` 或 `artplayer.js` 缺失，说明 `node_modules` 半损坏，先执行：
+如果依赖自检提示 `vite.cmd`、`shaka-player.compiled.js` 或 `shaka-player.transmuxer-worker.js` 缺失，说明 `node_modules` 半损坏，先执行：
 
 ```powershell
 npm run deps:repair
@@ -434,11 +435,11 @@ node -e "JSON.parse(require('fs').readFileSync('.\\tangxin-zhizhe-extension\\man
 3. 执行 `npm run deps:repair` 自动修复依赖。
 4. 修复完成后重新执行 `npm run build`。
 
-### 构建提示无法解析 hls.js
+### 构建提示无法解析 Shaka Player
 
 1. 在插件目录执行 `npm run deps:check`。
-2. 如果提示缺少 `node_modules/hls.js/dist/hls.mjs`，说明 hls.js 包安装不完整。
-3. 执行 `npm run deps:repair`，脚本会移除损坏的 `hls.js` 目录并重新执行 `npm install`。
+2. 如果提示缺少 `node_modules/shaka-player/dist/shaka-player.compiled.js` 或转封装 Worker，说明 Shaka Player 包安装不完整。
+3. 执行 `npm run deps:repair`，脚本会移除损坏的 `shaka-player` 目录并重新执行 `npm install`。
 4. 修复完成后重新执行 `npm run build`。
 
 ### 远程账号池同步失败
@@ -546,17 +547,18 @@ npm run release
 
 | 组件 | 版本 |
 | --- | --- |
-| 糖心志者源码 | `5.2.2`，构建 `2026-07-29-2030` |
-| 正式签名 CRX | `5.2.2`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
+| 糖心志者源码 | `5.3.0`，构建 `2026-07-30-0014` |
+| 正式签名 CRX | `5.3.0`，扩展 ID `ddefadnhgebdclpkabeobjidjllkdkhm` |
 | Manifest | `3` |
-| ArtPlayer 播放器内核 | `5.4.0` |
-| hls.js HLS 播放内核 | `1.6.16` |
+| Shaka Player 播放内核 | `5.2.4` |
 | mux.js | `7.0.0` |
 | m3u8-parser | `7.2.0` |
 | Worker 推荐版本 | `2.1.0` |
 | Wrangler 推荐版本 | `4.110.0` |
 
 ## 更新日志
+
+[2026-07-30 00:14] 【重构】升级到 `5.3.0`（构建 `2026-07-30-0014`）：播放内核从 ArtPlayer + hls.js 完整迁移到 Shaka Player 5.2.4，统一 HLS、AES-128、ABR、错误恢复和 TS 转封装；MV3 使用扩展本地 transmux Worker。拖动进度条和横滑改为事务式预览：主视频固定在手势起点，独立低码率会话解码目标帧，进度点与小画面同步跟随，松手后只提交一次跳转；同步修复并发装载复活旧实例、装载错误覆盖备用线、滑回起点卡住播放及全屏规则误显示隐藏预览视频，并降低移动端缓冲与解码负担。
 
 [2026-07-29 20:30] 【修复】升级到 `5.2.2`（构建 `2026-07-29-2030`）：9:16 视频改用动态视口预算舞台，设置菜单精简为片源/观看/工具；修复旧会话缺少 `acquisition` 导致下载规划读取 `mode` 崩溃、旧成功缓存造成同版本误报，以及 Service Worker 调用未定义 `parseBuildStamp` 导致实时更新检查失败的问题。
 

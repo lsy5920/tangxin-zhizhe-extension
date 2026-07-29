@@ -1,10 +1,31 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
+const shakaTransmuxWorkerPath = fileURLToPath(new URL(
+  "./node_modules/shaka-player/dist/shaka-player.transmuxer-worker.js",
+  import.meta.url
+));
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: "txzz-shaka-transmux-worker",
+      generateBundle() {
+        // Library mode 会把 ?url 资源强制内联为 data: URL，而 MV3 CSP 禁止 data: Worker。
+        // 显式发布为扩展自身文件，既满足 CSP，也让主界面包少携带一份 Base64 副本。
+        this.emitFile({
+          type: "asset",
+          fileName: "shaka-player.transmuxer-worker.js",
+          source: readFileSync(shakaTransmuxWorkerPath)
+        });
+      }
+    }
+  ],
   define: {
     "process.env.NODE_ENV": JSON.stringify("production")
   },

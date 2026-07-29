@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type P
 import { ChevronLeft, ChevronRight, Lock, Pause, Play, Sun, Unlock, Volume2, VolumeX, Zap } from "lucide-react";
 import { formatDuration } from "../../helpers";
 import { gestureHoldAction, gestureSeekDirection, horizontalScrubSeconds, type PlayerGestureLayout } from "../../playback/gestureLayout";
-import { PlayerScrubPreview } from "./PlayerScrubPreview";
 
 /** 手势 HUD 类型：覆盖主流播放器全部视觉反馈。 */
 export type GestureHudKind =
@@ -30,7 +29,7 @@ export type GestureHudState = {
   sideBar?: "left" | "right" | "";
   /** HUD 箭头表示真实时间方向；镜像手势下不能再按屏幕左右猜测。 */
   direction?: "back" | "forward";
-  /** 横滑目标时间；HUD 使用主视频已解码帧生成真实小画面。 */
+  /** 横滑目标时间；进度条与独立预览器据此显示目标帧。 */
   previewTime?: number;
 };
 
@@ -57,6 +56,7 @@ export type GestureSurfaceProps = {
   onSeekBy: (seconds: number) => void;
   onSeekTo: (time: number) => void;
   onSeekPreview?: (time: number) => void;
+  onSeekPreviewCancel?: () => void;
   onVolume: (volume: number, muted?: boolean) => void;
   onBrightness: (brightness: number) => void;
   onHoldRateStart: (rate: number) => void;
@@ -124,6 +124,7 @@ export function PlayerGestureSurface({
   onSeekBy,
   onSeekTo,
   onSeekPreview,
+  onSeekPreviewCancel,
   onVolume,
   onBrightness,
   onHoldRateStart,
@@ -163,9 +164,8 @@ export function PlayerGestureSurface({
     allowMouseDrag: false
   });
   const cumulativeSeekRef = useRef(0);
-  const previewSeekAtRef = useRef(0);
-  const cleanupCallbacksRef = useRef({ onHoldRateEnd, onClearHud });
-  cleanupCallbacksRef.current = { onHoldRateEnd, onClearHud };
+  const cleanupCallbacksRef = useRef({ onHoldRateEnd, onClearHud, onSeekPreviewCancel });
+  cleanupCallbacksRef.current = { onHoldRateEnd, onClearHud, onSeekPreviewCancel };
 
   const clearHoldTimers = () => {
     const hold = holdRef.current;
@@ -185,18 +185,28 @@ export function PlayerGestureSurface({
     return wasHold;
   };
 
-  const finishSwipe = () => {
+  const finishSwipe = (commit: boolean) => {
     const swipe = swipeRef.current;
     const wasActive = swipe.active;
-    if (wasActive && swipe.mode === "seek" && swipe.seekSeconds !== 0 && duration > 0) {
+    if (wasActive && swipe.mode === "seek" && duration > 0) {
       const next = clamp(swipe.startTime + swipe.seekSeconds, 0, duration);
-      onSeekTo(next);
-      onShowHud({
-        kind: swipe.seekSeconds < 0 ? "seek-back" : "seek-forward",
-        text: `跳到 ${formatDuration(next)}`,
-        percent: percent(next, duration),
-        zone: swipe.seekSeconds < 0 ? "left" : "right"
-      }, 700);
+      if (commit) {
+        // 即便最终又滑回起点也必须提交，让控制器结束 scrub 事务并恢复原播放状态。
+        onSeekTo(next);
+        if (swipe.seekSeconds !== 0) {
+          onShowHud({
+            kind: swipe.seekSeconds < 0 ? "seek-back" : "seek-forward",
+            text: `跳到 ${formatDuration(next)}`,
+            percent: percent(next, duration),
+            zone: swipe.seekSeconds < 0 ? "left" : "right"
+          }, 700);
+        }
+      } else {
+        onSeekPreviewCancel?.();
+      }
+    } else if (wasActive && swipe.mode === "seek") {
+      // 媒体时长尚未就绪时不允许遗留一个永远无法提交的预览事务。
+      onSeekPreviewCancel?.();
     }
     swipeRef.current = {
       active: false,
@@ -223,6 +233,7 @@ export function PlayerGestureSurface({
     if (holdRef.current.active && holdRef.current.action === "rate-forward") {
       cleanupCallbacksRef.current.onHoldRateEnd();
     }
+    const cancellingSeekPreview = swipeRef.current.active && swipeRef.current.mode === "seek";
     holdRef.current = { active: false, side: "", action: "" };
     swipeRef.current = {
       ...swipeRef.current,
@@ -233,8 +244,8 @@ export function PlayerGestureSurface({
       allowMouseDrag: false
     };
     cumulativeSeekRef.current = 0;
-    previewSeekAtRef.current = 0;
     suppressClickRef.current = false;
+    if (cancellingSeekPreview) cleanupCallbacksRef.current.onSeekPreviewCancel?.();
     cleanupCallbacksRef.current.onClearHud?.();
   }, [sessionKey]);
 
@@ -341,7 +352,6 @@ export function PlayerGestureSurface({
       seekSeconds: 0,
       allowMouseDrag: isMouse || isTouch
     };
-    previewSeekAtRef.current = 0;
 
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -402,11 +412,9 @@ export function PlayerGestureSurface({
       const seekSeconds = horizontalScrubSeconds(deltaX, swipe.width, duration);
       swipe.seekSeconds = seekSeconds;
       const next = clamp(swipe.startTime + seekSeconds, 0, duration || swipe.startTime + seekSeconds);
-      const now = performance.now();
-      if (onSeekPreview && now - previewSeekAtRef.current >= 110) {
-        previewSeekAtRef.current = now;
-        onSeekPreview(next);
-      }
+      // 每个 pointermove 都更新受控预览值；独立预览器会自行合并解码任务。
+      // 主播放器不在这里 seek，松手后才由 onSeekTo 提交一次。
+      onSeekPreview?.(next);
       onShowHud({
         kind: "seek-scrub",
         // 文案尽量短，避免中央大块遮挡画面
@@ -448,13 +456,20 @@ export function PlayerGestureSurface({
   const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (swipeRef.current.pointerId !== -1 && swipeRef.current.pointerId !== event.pointerId) return;
     const held = stopHold();
-    const swiped = finishSwipe();
+    const swiped = finishSwipe(true);
     if (held || swiped) suppressClickRef.current = true;
     try {
       event.currentTarget.releasePointerCapture(event.pointerId);
     } catch {
       // 忽略
     }
+  };
+
+  const handlePointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (swipeRef.current.pointerId !== -1 && swipeRef.current.pointerId !== event.pointerId) return;
+    const held = stopHold();
+    const swiped = finishSwipe(false);
+    if (held || swiped) suppressClickRef.current = true;
   };
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
@@ -522,8 +537,8 @@ export function PlayerGestureSurface({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      onLostPointerCapture={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onLostPointerCapture={handlePointerCancel}
       onWheel={handleWheel}
       onContextMenu={handleContextMenu}
     />
@@ -533,11 +548,10 @@ export function PlayerGestureSurface({
 type GestureHudOverlayProps = {
   hud: GestureHudState;
   holdHint?: string;
-  previewVideo?: HTMLVideoElement | null;
 };
 
 /** 专业手势 HUD：紧凑中央提示 + 区域闪 + 侧边音量/亮度竖条（避免大块遮挡画面）。 */
-export function PlayerGestureHudOverlay({ hud, holdHint, previewVideo }: GestureHudOverlayProps) {
+export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProps) {
   if (holdHint) {
     return (
       <div className="pointer-events-none absolute inset-0 z-[26] flex items-center justify-center px-4">
@@ -602,10 +616,7 @@ export function PlayerGestureHudOverlay({ hud, holdHint, previewVideo }: Gesture
       {showCenter && (
         <div className="absolute inset-0 flex items-center justify-center px-6">
           {isSeek ? (
-            <div className={`txzz-player-gesture-hud flex max-w-[min(14rem,72vw)] gap-2 rounded-2xl bg-black/65 text-white shadow-lg ring-1 ring-white/12 backdrop-blur-sm ${hud.kind === "seek-scrub" ? "flex-col p-2" : "items-center px-3 py-2"}`}>
-              {hud.kind === "seek-scrub" && typeof hud.previewTime === "number" && (
-                <PlayerScrubPreview video={previewVideo} time={hud.previewTime} />
-              )}
+            <div className="txzz-player-gesture-hud flex max-w-[min(14rem,72vw)] items-center gap-2 rounded-2xl bg-black/65 px-3 py-2 text-white shadow-lg ring-1 ring-white/12 backdrop-blur-sm">
               <div className="flex min-w-0 items-center gap-2">
                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12">
                   {seekBackward && <ChevronLeft size={16} />}

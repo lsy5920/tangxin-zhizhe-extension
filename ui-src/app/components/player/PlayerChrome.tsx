@@ -15,6 +15,7 @@ import {
 import { CtrlButton, PlayerProgressBar } from "./PlayerControls";
 import { PlayerMenuSheet, type PlayerMorePanelKey, type PlayerPreviewOption } from "./PlayerMenuSheet";
 import type { PlayerGestureLayout } from "../../playback/gestureLayout";
+import type { PlaybackSource } from "../../playback/types";
 
 export { PlayerContextMenu, PlayerOverlays, PlayerTopBar } from "./PlayerStatusOverlays";
 export type { PlayerMorePanelKey, PlayerPreviewOption } from "./PlayerMenuSheet";
@@ -34,7 +35,9 @@ export type PlayerControlBarProps = {
   progressPercent: number;
   markers?: Array<{ id: string; time: number; label?: string }>;
   progressPreviewTime: number | null;
-  previewVideo?: HTMLVideoElement | null;
+  previewSource?: PlaybackSource | null;
+  previewSessionKey: string;
+  previewFallbackVideo?: HTMLVideoElement | null;
   isDraggingProgress: boolean;
   volume: number;
   muted: boolean;
@@ -105,7 +108,7 @@ export type PlayerControlBarProps = {
 export function PlayerControlBar(props: PlayerControlBarProps) {
   const {
     visible, locked, disabled, fullscreen, controlsTone, iconSize, buttonSize, compact = false,
-    paused, currentTime, duration, bufferedPercent, progressPercent, markers, progressPreviewTime, previewVideo,
+    paused, currentTime, duration, bufferedPercent, progressPercent, markers, progressPreviewTime, previewSource, previewSessionKey, previewFallbackVideo,
     isDraggingProgress, volume, muted, rate, seekStep, qualityLabel, fillLabel, fitLabel,
     orientationLabel, brightness, moreOpen, morePanel, previewOptions, activePreviewKey,
     previewSourceLabel, playerStatus, currentLineLabel, fullscreenDiagnosticLabel,
@@ -188,7 +191,9 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
         bufferedPercent={bufferedPercent}
         progressPercent={progressPercent}
         previewTime={progressPreviewTime}
-        previewVideo={previewVideo}
+        previewSource={previewSource}
+        previewSessionKey={previewSessionKey}
+        previewFallbackVideo={previewFallbackVideo}
         dragging={isDraggingProgress}
         fullscreen={fullscreen || compact}
         seekStep={seekStep}

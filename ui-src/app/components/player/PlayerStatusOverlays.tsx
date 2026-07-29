@@ -137,7 +137,7 @@ export type PlayerContextMenuProps = {
   loopActive: boolean;
 };
 
-/** 右键菜单由 React 手势层承接，避免 ArtPlayer 禁用指针后入口失效。 */
+/** 右键菜单由 React 手势层统一承接，媒体内核保持无 UI、无菜单。 */
 export function PlayerContextMenu({
   open,
   x,
