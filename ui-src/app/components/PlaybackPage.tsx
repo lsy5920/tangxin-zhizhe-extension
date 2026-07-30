@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Film, RefreshCw, Sparkles, Ticket, WandSparkles } from "lucide-react";
 import type { BridgeState, Page, PlaybackBookmark } from "../types";
 import { reconcileScreeningState } from "../playback/migration";
@@ -7,6 +7,8 @@ import { ScreeningStage, type PlaybackBookmarkCommand } from "./screening/Screen
 import { ScreeningSidebar } from "./screening/ScreeningSidebar";
 import { ScreeningDrawer } from "./screening/ScreeningDrawer";
 import { APP_VERSION } from "../constants";
+import { resolveEpisodePlayback } from "../cinema/episodePlayback";
+import type { CinemaMovie } from "../cinema/types";
 
 const cinemaVersion = APP_VERSION.split(".").slice(0, 2).join(".");
 
@@ -14,9 +16,10 @@ type Props = {
   state: BridgeState;
   onAction: (action: string, payload?: Record<string, unknown>) => void;
   onPage?: (page: Page) => void;
+  variant?: "workspace" | "cinema";
 };
 
-export function PlaybackPage({ state, onAction }: Props) {
+export function PlaybackPage({ state, onAction, variant = "workspace" }: Props) {
   const screening = useMemo(
     () => reconcileScreeningState(state.screening, state.fullDetails || []),
     [state.fullDetails, state.screening]
@@ -25,6 +28,8 @@ export function PlaybackPage({ state, onAction }: Props) {
   const [playing, setPlaying] = useState(false);
   const [mediaStats, setMediaStats] = useState({ currentTime: 0, duration: 0 });
   const [bookmarkCommand, setBookmarkCommand] = useState<PlaybackBookmarkCommand | null>(null);
+  const [autoNextEnabled, setAutoNextEnabled] = useState(true);
+  const [pendingAutoPlayMovieId, setPendingAutoPlayMovieId] = useState("");
   const activeSession = screening.activeSession;
   const resolvingDifferentMovie = screening.request.phase === "resolving"
     && Boolean(screening.request.movieId)
@@ -34,6 +39,11 @@ export function PlaybackPage({ state, onAction }: Props) {
     : screening.history.find((item) => item.id === selectedSessionId) || activeSession;
   const libraryEntry = selectedSession ? state.experience?.library?.[selectedSession.movieId] || null : null;
   const bookmarks = selectedSession ? state.experience?.bookmarks?.[selectedSession.movieId] || [] : [];
+  const cinemaApp = variant === "cinema";
+  const episodePlayback = useMemo(
+    () => resolveEpisodePlayback(state.cinemaCollection, selectedSession?.movieId || ""),
+    [selectedSession?.movieId, state.cinemaCollection]
+  );
 
   useEffect(() => {
     if (!activeSession?.id) return;
@@ -67,15 +77,27 @@ export function PlaybackPage({ state, onAction }: Props) {
     setBookmarkCommand({ nonce: Date.now() + Math.random(), type, bookmark });
   };
 
+  const openEpisode = useCallback((episode: CinemaMovie) => {
+    if (!episode.id || episode.id === selectedSession?.movieId) return;
+    // 画面选集与自然续播都经过现有可见检票流程，不复用上一集的签名 URL。
+    setPendingAutoPlayMovieId(episode.id);
+    onAction("open-cinema-playback", { movieId: episode.id, movieTitle: episode.title });
+  }, [onAction, selectedSession?.movieId]);
+
+  const consumeAutoPlay = useCallback(() => {
+    const currentMovieId = selectedSession?.movieId || "";
+    setPendingAutoPlayMovieId((pending) => pending === currentMovieId ? "" : pending);
+  }, [selectedSession?.movieId]);
+
   return (
-    <div className="txzz-playback-root txzz-page relative mx-auto w-full max-w-[1180px] overflow-hidden p-3 pb-6 sm:p-5 lg:p-6">
-      <div className={`txzz-playback-hidden-during-fullscreen pointer-events-none absolute inset-x-3 top-2 h-44 overflow-hidden rounded-[2rem] transition-opacity duration-300 ${playing ? "opacity-0" : "opacity-100"}`} aria-hidden="true">
+    <div className={`txzz-playback-root txzz-page relative mx-auto w-full overflow-hidden ${cinemaApp ? "max-w-[1600px] p-2 pb-5 sm:p-4 lg:p-5" : "max-w-[1180px] p-3 pb-6 sm:p-5 lg:p-6"}`}>
+      {!cinemaApp && <div className={`txzz-playback-hidden-during-fullscreen pointer-events-none absolute inset-x-3 top-2 h-44 overflow-hidden rounded-[2rem] transition-opacity duration-300 ${playing ? "opacity-0" : "opacity-100"}`} aria-hidden="true">
         <span className="absolute left-[8%] top-8 h-2 w-2 rounded-full bg-fuchsia-300/70 shadow-[0_0_18px_6px_rgba(240,171,252,.35)]" />
         <span className="absolute right-[12%] top-16 h-1.5 w-1.5 rounded-full bg-violet-300/80 shadow-[0_0_16px_5px_rgba(196,181,253,.38)]" />
         <span className="absolute left-[45%] top-3 text-lg text-amber-300/75">✦</span>
-      </div>
+      </div>}
 
-      <header className="txzz-playback-hero txzz-playback-hidden-during-fullscreen relative mb-4 overflow-hidden rounded-[1.65rem] border border-white/80 bg-gradient-to-r from-white/88 via-[#fff6fb]/88 to-[#f3efff]/88 px-4 py-4 shadow-[0_18px_55px_rgba(113,70,160,.10)] backdrop-blur-xl sm:px-5">
+      {!cinemaApp && <header className="txzz-playback-hero txzz-playback-hidden-during-fullscreen relative mb-4 overflow-hidden rounded-[1.65rem] border border-white/80 bg-gradient-to-r from-white/88 via-[#fff6fb]/88 to-[#f3efff]/88 px-4 py-4 shadow-[0_18px_55px_rgba(113,70,160,.10)] backdrop-blur-xl sm:px-5">
         <span className="pointer-events-none absolute -right-8 -top-12 h-32 w-32 rounded-full bg-fuchsia-200/35 blur-2xl" />
         <div className="relative flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -87,10 +109,10 @@ export function PlaybackPage({ state, onAction }: Props) {
             <RefreshCw size={14} className={screening.request.phase === "resolving" ? "animate-spin" : ""} />{screening.request.phase === "resolving" ? "检票中" : "重新检票"}
           </button>
         </div>
-      </header>
+      </header>}
 
       <div className="txzz-playback-workspace relative grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(19rem,.72fr)]">
-        <main className="txzz-player-card min-w-0 overflow-hidden rounded-[1.7rem] border border-white/70 bg-white/72 p-2.5 shadow-[0_24px_70px_rgba(75,45,108,.16)] backdrop-blur-xl sm:p-3">
+        <main className={`txzz-player-card min-w-0 overflow-hidden rounded-[1.7rem] p-2.5 backdrop-blur-xl sm:p-3 ${cinemaApp ? "border border-white/10 bg-white/[.035] shadow-[0_24px_70px_rgba(0,0,0,.32)]" : "border border-white/70 bg-white/72 shadow-[0_24px_70px_rgba(75,45,108,.16)]"}`}>
           {resolvingDifferentMovie ? (
             <div className="relative flex min-h-[19rem] aspect-video items-center justify-center overflow-hidden rounded-[1.35rem] bg-[radial-gradient(circle_at_50%_20%,#35294c_0%,#17131f_48%,#09080d_100%)] p-6 text-center text-white">
               <span className="absolute left-[12%] top-[18%] text-amber-200/70">✦</span><span className="absolute right-[16%] top-[28%] text-fuchsia-200/70">✦</span>
@@ -110,6 +132,14 @@ export function PlaybackPage({ state, onAction }: Props) {
               bookmarks={bookmarks}
               bookmarkCommand={bookmarkCommand}
               onMediaStatsChange={setMediaStats}
+              episodes={episodePlayback.episodes}
+              currentEpisodeIndex={episodePlayback.currentIndex}
+              nextEpisode={episodePlayback.nextEpisode}
+              autoNextEnabled={autoNextEnabled}
+              autoPlayRequested={pendingAutoPlayMovieId === selectedSession.movieId}
+              onSelectEpisode={openEpisode}
+              onAutoNextEnabledChange={setAutoNextEnabled}
+              onAutoPlayConsumed={consumeAutoPlay}
             />
           ) : (
             <div className="relative flex min-h-[19rem] aspect-video items-center justify-center overflow-hidden rounded-[1.35rem] bg-[radial-gradient(circle_at_50%_20%,#35294c_0%,#17131f_48%,#09080d_100%)] p-6 text-center text-white">
@@ -132,6 +162,13 @@ export function PlaybackPage({ state, onAction }: Props) {
             libraryEntry={libraryEntry}
             onToggleFavorite={() => updateCurrentLibrary({ favorite: !libraryEntry?.favorite })}
             onToggleWatchLater={() => updateCurrentLibrary({ watchLater: !libraryEntry?.watchLater })}
+            onPlanDownload={() => selectedSession && onAction("plan-full-video-download", {
+              movieId: selectedSession.movieId,
+              movieTitle: selectedSession.title,
+              sourceId: selectedSession.decision.recommendedSourceId,
+              lineKey: selectedSession.decision.recommendedSourceId || "auto"
+            })}
+            playing={playing}
           />
         </div>
       </div>
@@ -149,7 +186,7 @@ export function PlaybackPage({ state, onAction }: Props) {
         />
       </div>
 
-      <footer className="txzz-playback-hidden-during-fullscreen mt-3 flex items-center justify-center gap-2 text-[9px] font-semibold text-violet-400/75">
+      <footer className={`txzz-playback-hidden-during-fullscreen mt-3 flex items-center justify-center gap-2 text-[9px] font-semibold ${cinemaApp ? "text-violet-200/42" : "text-violet-400/75"}`}>
         <Film size={11} /> Shaka Player · AES/HLS 自适应 · 单次自动切线 · 30 天续播
       </footer>
     </div>

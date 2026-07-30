@@ -156,6 +156,7 @@
     fullDetails: [],
     screening: { schemaVersion: 2, activeSession: null, history: [], request: { phase: "idle" } },
     cinemaCatalog: { schemaVersion: 1, mode: "discover", phase: "idle", requestId: "", query: "", queryKey: "", filters: {}, sections: [], items: [], page: 0, pageSize: 24, hasMore: false, fetchedAt: "", error: "" },
+    cinemaCollection: { phase: "idle", requestId: "", parentMovieId: "", title: "", items: [], fetchedAt: "", error: "" },
     downloadTasks: {},
     downloadSnapshots: [],
     experience: { library: {}, bookmarks: {}, alerts: [], downloadPolicy: {}, accountPatrol: { records: {} }, storageAudit: null }
@@ -186,6 +187,7 @@
   let authoritativePageContext = null;
   let latestFullDetailToken = null;
   let latestCinemaCatalogRequestId = "";
+  let latestCinemaCollectionRequestId = "";
   let latestCinemaPlaybackRequestId = "";
   const FLOW_BADGE_TITLES = [
     "展示覆盖",
@@ -1609,6 +1611,7 @@
         fullDetails: state.fullDetails.slice(-40),
         screening: state.screening,
         cinemaCatalog: state.cinemaCatalog,
+        cinemaCollection: state.cinemaCollection,
         downloadTasks: state.downloadTasks || {},
         downloadSnapshots: state.downloadSnapshots || [],
         experience: state.experience || {},
@@ -2738,24 +2741,40 @@
   async function planFullVideo(movieId = currentMovieId(), options = {}) {
     const id = String(movieId || currentMovieId()).trim();
     if (!id) throw new Error("当前页面未识别到正在播放的视频（请先让 Vlog 当前卡片完成加载）");
-    emitFlow("下载规划", `正在探测视频 ${id} 的线路、清晰度与空间`);
-    const bootstrapSession = await collectSession();
-    const response = await sendRuntime("planFullVideoDownload", {
-      movieId: id,
-      movieTitle: currentMovieTitle(),
-      accountId: state.selectedFullAccountId,
-      bootstrapSession,
-      lineKey: options.lineKey || options.line || "auto",
-      sourceId: options.sourceId || "",
-      url: options.url || "",
-      networkMode: options.networkMode || "balanced",
-      qualityHeight: Number(options.qualityHeight || 0),
-      viewportHeight: Math.max(window.innerHeight || 0, window.innerWidth || 0, 720)
-    });
-    uiState.downloadPlanner = { ...response, open: true };
+    const movieTitle = String(options.movieTitle || options.title || currentMovieTitle() || `视频 ${id}`).trim();
+    // 先发布可见的探测状态：影院详情页的下载按钮不会在网络等待期间看起来像“没有响应”。
+    uiState.downloadPlanner = { open: true, phase: "probing", movieId: id, movieTitle };
     publishState();
-    emitFlow("下载规划", "探测完成，请确认线路、清晰度、容器与空间", "ok");
-    return response;
+    emitFlow("下载规划", `正在探测视频 ${id} 的线路、清晰度与空间`);
+    try {
+      const bootstrapSession = await collectSession();
+      const response = await sendRuntime("planFullVideoDownload", {
+        movieId: id,
+        movieTitle,
+        accountId: state.selectedFullAccountId,
+        bootstrapSession,
+        lineKey: options.lineKey || options.line || "auto",
+        sourceId: options.sourceId || "",
+        url: options.url || "",
+        networkMode: options.networkMode || "balanced",
+        qualityHeight: Number(options.qualityHeight || 0),
+        viewportHeight: Math.max(window.innerHeight || 0, window.innerWidth || 0, 720)
+      });
+      uiState.downloadPlanner = { ...response, open: true, phase: "ready" };
+      publishState();
+      emitFlow("下载规划", "探测完成，请确认线路、清晰度、容器与空间", "ok");
+      return response;
+    } catch (error) {
+      uiState.downloadPlanner = {
+        open: true,
+        phase: "error",
+        movieId: id,
+        movieTitle,
+        error: error?.message || String(error)
+      };
+      publishState();
+      throw error;
+    }
   }
 
   function togglePanel(force) {
@@ -2985,6 +3004,63 @@
     }
   }
 
+  async function loadCinemaCollection(payload = {}) {
+    const movieId = String(payload.movieId || "").trim();
+    if (!movieId) throw new Error("合集影片缺少编号");
+    const requestId = `cinema_collection_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    latestCinemaCollectionRequestId = requestId;
+    const previousCollection = state.cinemaCollection && typeof state.cinemaCollection === "object"
+      ? state.cinemaCollection
+      : { phase: "idle", parentMovieId: "", items: [] };
+    const previousItems = Array.isArray(previousCollection.items) ? previousCollection.items : [];
+    const sameCollection = String(previousCollection.parentMovieId || "") === movieId
+      || previousItems.some((item) => String(item?.id || "") === movieId);
+    state.cinemaCollection = {
+      ...(sameCollection ? previousCollection : {}),
+      phase: "loading",
+      requestId,
+      parentMovieId: movieId,
+      title: String(payload.movieTitle || payload.title || ""),
+      // 刷新合集时保留上次可用分集，失败后也不让选集区瞬间变空。
+      items: sameCollection ? previousItems : [],
+      fetchedAt: sameCollection ? String(previousCollection.fetchedAt || "") : "",
+      error: ""
+    };
+    publishState();
+    try {
+      const bootstrapSession = await collectSession();
+      if (latestCinemaCollectionRequestId !== requestId) return;
+      const response = await sendRuntime("fetchCinemaCollection", {
+        movieId,
+        requestId,
+        forceRefresh: payload.forceRefresh === true,
+        bootstrapSession
+      }, 45000);
+      if (latestCinemaCollectionRequestId !== requestId) return;
+      state.cinemaCollection = {
+        phase: "ready",
+        requestId,
+        parentMovieId: String(response.collection?.parentMovieId || movieId),
+        title: String(response.collection?.title || payload.movieTitle || "影片合集"),
+        items: Array.isArray(response.collection?.items) ? response.collection.items : [],
+        fetchedAt: String(response.collection?.fetchedAt || new Date().toISOString()),
+        error: ""
+      };
+      publishState();
+      emitFlow("影院合集", `已载入 ${state.cinemaCollection.items.length} 集，选中分集后再检票`, "ok");
+    } catch (error) {
+      if (latestCinemaCollectionRequestId !== requestId) return;
+      state.cinemaCollection = {
+        ...state.cinemaCollection,
+        phase: "error",
+        requestId,
+        parentMovieId: movieId,
+        error: error?.message || String(error)
+      };
+      publishState();
+    }
+  }
+
   async function handleTxzzAction(action, payload = {}) {
     if (!action) return;
     syncActionPayloadToFields(payload);
@@ -3068,6 +3144,7 @@
       if (action === "upload-local-account-remote") await uploadLocalAccountRemote(accountId);
       if (action === "load-cinema-catalog") await loadCinemaCatalog(payload, false);
       if (action === "load-more-cinema-catalog") await loadCinemaCatalog(payload, true);
+      if (action === "load-cinema-collection") await loadCinemaCollection(payload);
       if (action === "open-cinema-playback") await openCinemaPlayback(payload);
       if (action === "refresh-full-detail") await refreshFullDetail(payload.movieId || currentMovieId());
       if (action === "refresh-playback-session") await refreshFullDetail(payload.movieId || currentMovieId());

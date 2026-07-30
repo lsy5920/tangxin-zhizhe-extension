@@ -1930,3 +1930,137 @@
     transition: none !important;
   }
 }
+
+/* 5.5 影视 App 壳：与浅色工具台分离，直接覆盖扩展的完整可视区。 */
+.txzz-cinema-app-overlay {
+  pointer-events: auto;
+  width: var(--txzz-vvw, 100vw);
+  height: var(--txzz-vvh, 100dvh);
+  transform: translate(var(--txzz-vleft, 0), var(--txzz-vtop, 0));
+  overflow: hidden;
+}
+
+.txzz-cinema-app-shell {
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 12% -12%, rgba(194, 65, 168, 0.16), transparent 32rem),
+    radial-gradient(circle at 96% 26%, rgba(102, 79, 190, 0.15), transparent 34rem),
+    #08060c;
+}
+
+.txzz-cinema-app-sidebar {
+  box-shadow: 18px 0 60px rgba(0, 0, 0, 0.14);
+}
+
+.txzz-cinema-app-main {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(216, 180, 254, 0.23) transparent;
+  scroll-behavior: smooth;
+}
+
+.txzz-cinema-app-main::-webkit-scrollbar {
+  width: 7px;
+}
+
+.txzz-cinema-app-main::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(216, 180, 254, 0.2);
+}
+
+.txzz-cinema-app-shelf {
+  content-visibility: auto;
+  contain-intrinsic-size: 248px 380px;
+}
+
+.txzz-cinema-episode-grid {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(216, 180, 254, 0.24) transparent;
+  overscroll-behavior: contain;
+}
+
+.txzz-cinema-episode-grid::-webkit-scrollbar {
+  width: 5px;
+}
+
+.txzz-cinema-episode-grid::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(216, 180, 254, 0.24);
+}
+
+.txzz-player-episode-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(216, 180, 254, 0.28) transparent;
+  overscroll-behavior: contain;
+}
+
+.txzz-player-episode-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.txzz-player-episode-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(216, 180, 254, 0.28);
+}
+
+.txzz-cinema-app-shell.is-playback .txzz-playback-root {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(101, 76, 132, 0.12), transparent 30rem),
+    #08060c;
+}
+
+.txzz-cinema-app-shell.is-playback .txzz-screening-sidebar,
+.txzz-cinema-app-shell.is-playback .txzz-screening-drawer {
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.2);
+}
+
+@media (max-width: 1023px) {
+  .txzz-cinema-app-main {
+    padding-bottom: 0;
+  }
+}
+
+@media (max-width: 359px) {
+  .txzz-cinema-app-header {
+    padding-inline: 0.35rem !important;
+  }
+
+  .txzz-cinema-app-mobile-nav button {
+    font-size: 8px !important;
+  }
+
+  .txzz-cinema-app-mobile-nav button > span:first-child {
+    width: 2.1rem !important;
+  }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .txzz-cinema-app-header {
+    min-height: 3.35rem !important;
+    padding-top: max(0.15rem, env(safe-area-inset-top)) !important;
+  }
+
+  .txzz-cinema-app-mobile-nav {
+    min-height: 3.8rem !important;
+  }
+
+  .txzz-cinema-app-mobile-nav button {
+    min-height: 2.9rem !important;
+  }
+
+  .txzz-cinema-episode-grid {
+    max-height: 12.5rem !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .txzz-cinema-app-main,
+  .txzz-cinema-app-shell *,
+  .txzz-cinema-app-shell *::before,
+  .txzz-cinema-app-shell *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

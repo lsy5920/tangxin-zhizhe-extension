@@ -12,6 +12,7 @@ const APP_STYLE_ID = "txzz-app-style";
 const APP_STYLE_MARKERS = [
   "--txzz-shadow-property-fallback",
   ".txzz-stat-ornament",
+  ".txzz-cinema-app-shell",
   "@keyframes txzz-stat-float",
   "@keyframes txzz-companion-breathe"
 ] as const;
@@ -165,7 +166,11 @@ function createHost() {
 :host(:fullscreen) .txzz-app-panel-frame,
 :host(:-webkit-full-screen) .txzz-app-panel-frame,
 :host(:fullscreen) .txzz-app-main,
-:host(:-webkit-full-screen) .txzz-app-main {
+:host(:-webkit-full-screen) .txzz-app-main,
+:host(:fullscreen) .txzz-cinema-app-shell,
+:host(:-webkit-full-screen) .txzz-cinema-app-shell,
+:host(:fullscreen) .txzz-cinema-app-main,
+:host(:-webkit-full-screen) .txzz-cinema-app-main {
   position: fixed !important;
   inset: 0 !important;
   width: 100% !important;
@@ -260,6 +265,12 @@ function createHost() {
 :host(:-webkit-full-screen) .txzz-app-header,
 :host(:fullscreen) .txzz-app-mobile-nav,
 :host(:-webkit-full-screen) .txzz-app-mobile-nav,
+:host(:fullscreen) .txzz-cinema-app-header,
+:host(:-webkit-full-screen) .txzz-cinema-app-header,
+:host(:fullscreen) .txzz-cinema-app-sidebar,
+:host(:-webkit-full-screen) .txzz-cinema-app-sidebar,
+:host(:fullscreen) .txzz-cinema-app-mobile-nav,
+:host(:-webkit-full-screen) .txzz-cinema-app-mobile-nav,
 :host(:fullscreen) .txzz-playback-hidden-during-fullscreen,
 :host(:-webkit-full-screen) .txzz-playback-hidden-during-fullscreen,
 :host(:fullscreen) .txzz-player-card-title,

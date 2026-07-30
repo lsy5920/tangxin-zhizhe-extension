@@ -1,4 +1,4 @@
-import { Check, Clock3, Coins, Film, Heart, ListPlus, Route, ShieldCheck, Sparkles, Ticket, UserRound } from "lucide-react";
+import { Check, Clock3, Coins, Download, Film, Heart, ListPlus, Route, ShieldCheck, Sparkles, Ticket, UserRound } from "lucide-react";
 import type { PlaybackSession, ScreeningState } from "../../playback/types";
 import type { LibraryEntry } from "../../types";
 
@@ -9,6 +9,8 @@ type Props = {
   libraryEntry?: LibraryEntry | null;
   onToggleFavorite: () => void;
   onToggleWatchLater: () => void;
+  onPlanDownload: () => void;
+  playing?: boolean;
 };
 
 function acquisitionLabel(mode?: PlaybackSession["acquisition"]["mode"]) {
@@ -18,7 +20,7 @@ function acquisitionLabel(mode?: PlaybackSession["acquisition"]["mode"]) {
   return "账号直取";
 }
 
-export function ScreeningSidebar({ session, request, onRefresh, libraryEntry, onToggleFavorite, onToggleWatchLater }: Props) {
+export function ScreeningSidebar({ session, request, onRefresh, libraryEntry, onToggleFavorite, onToggleWatchLater, onPlanDownload, playing = false }: Props) {
   const resolving = request.phase === "resolving";
   const requestedMovieId = String(request.movieId || "");
   const requestedTitle = String(request.movieTitle || (requestedMovieId ? `影片 ${requestedMovieId}` : ""));
@@ -40,7 +42,7 @@ export function ScreeningSidebar({ session, request, onRefresh, libraryEntry, on
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-1 text-[10px] font-black tracking-[.16em] text-violet-500"><Sparkles size={11} /> TANGTANG CHECK-IN</p>
             <h2 className="mt-1 line-clamp-2 text-[16px] font-black leading-snug text-slate-900">{session?.title || requestedTitle || "糖糖检票员等你入场"}</h2>
-            <p className="mt-1 text-[11px] leading-5 text-slate-500">{session ? "资源已备好，但不会自动播放。点画面中央“开映”才会正式放映。" : resolving ? "正在检查账号与完整线路；旧影片已经收起，不会串场。" : "从糖心影院选片，或打开网站影片详情，糖糖就会开始检票。"}</p>
+            <p className="mt-1 text-[11px] leading-5 text-slate-500">{session ? playing ? "本集正在放映；合集可在画面中选集，影片也可直接进入下载规划。" : "资源已备好，默认保持暂停；点画面中央“开映”即可放映。" : resolving ? "正在检查账号与完整线路；旧影片已经收起，不会串场。" : "从糖心影院选片，或打开网站影片详情，糖糖就会开始检票。"}</p>
           </div>
         </div>
         <div className="relative mt-3 flex flex-wrap gap-1.5">
@@ -55,6 +57,9 @@ export function ScreeningSidebar({ session, request, onRefresh, libraryEntry, on
             </button>
             <button type="button" aria-pressed={libraryEntry?.watchLater === true} onClick={onToggleWatchLater} className={`min-h-10 rounded-xl border text-[10px] font-extrabold transition ${libraryEntry?.watchLater ? "border-violet-200 bg-violet-600 text-white" : "border-white/80 bg-white/75 text-violet-600 hover:bg-white"}`}>
               <ListPlus size={13} className="mr-1 inline" />{libraryEntry?.watchLater ? "已加入稍后看" : "稍后观看"}
+            </button>
+            <button type="button" onClick={onPlanDownload} className="col-span-2 min-h-11 rounded-xl bg-gradient-to-r from-fuchsia-500 to-violet-600 text-[10px] font-extrabold text-white shadow-lg shadow-violet-500/15 transition hover:-translate-y-0.5">
+              <Download size={13} className="mr-1 inline" />下载完整视频
             </button>
           </div>
         )}

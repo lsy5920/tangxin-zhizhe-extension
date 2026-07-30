@@ -6,6 +6,9 @@ node_modules/
 # 本地打包临时目录
 build/
 
+# 真实 CDP 验收生成的截图、网络响应与目标站调试材料
+artifacts/
+
 # CRX 签名私钥（丢失会导致扩展 ID 变化，必须本地备份，禁止提交）
 keys/*.pem
 keys/*.key

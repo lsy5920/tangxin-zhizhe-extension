@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import type { Page } from "../types";
 import { isPage } from "../model/navigation";
+import { isCinemaPrimaryRoute, type CinemaPrimaryRoute } from "../cinema/appModel";
 
 const UI_PREFERENCES_KEY = "txzzUiPreferencesV1";
 const LAUNCHER_SIZE = 64;
 
 export type UiPreferences = {
   page?: Page;
+  cinemaRoute?: CinemaPrimaryRoute;
   ballPos?: { x: number; y: number };
 };
 
@@ -27,6 +29,7 @@ function persistPreferences(preferences: UiPreferences) {
 
 export function useUiPreferences() {
   const [page, setPage] = useState<Page>("overview");
+  const [cinemaRoute, setCinemaRoute] = useState<CinemaPrimaryRoute>("home");
   const [ballPos, setBallPos] = useState({ x: 0, y: 0 });
   const [ready, setReady] = useState(false);
 
@@ -35,7 +38,10 @@ export function useUiPreferences() {
     chrome.storage.local.get(UI_PREFERENCES_KEY).then((stored) => {
       if (!alive) return;
       const preferences = (stored?.[UI_PREFERENCES_KEY] || {}) as UiPreferences;
-      if (isPage(preferences.page)) setPage(preferences.page);
+      // 5.4.x 曾把影院当作工具页持久化；5.5 起影院改为点击后单独进入的 App，
+      // 因此旧值 cinema 需回落总览，避免下次打开伙伴入口时跳过原工具台。
+      if (isPage(preferences.page)) setPage(preferences.page === "cinema" ? "overview" : preferences.page);
+      if (isCinemaPrimaryRoute(preferences.cinemaRoute)) setCinemaRoute(preferences.cinemaRoute);
       if (preferences.ballPos) setBallPos(clampLauncherPosition(preferences.ballPos));
       setReady(true);
     }).catch(() => setReady(true));
@@ -44,8 +50,8 @@ export function useUiPreferences() {
 
   useEffect(() => {
     if (!ready) return;
-    void persistPreferences({ page, ballPos });
-  }, [page, ready]);
+    void persistPreferences({ page, cinemaRoute, ballPos });
+  }, [cinemaRoute, page, ready]);
 
   useEffect(() => {
     const onResize = () => setBallPos((current) => clampLauncherPosition(current));
@@ -60,13 +66,15 @@ export function useUiPreferences() {
   const saveBallPosition = (position: { x: number; y: number }) => {
     const next = clampLauncherPosition(position);
     setBallPos(next);
-    void persistPreferences({ page, ballPos: next });
+    void persistPreferences({ page, cinemaRoute, ballPos: next });
     return next;
   };
 
   return {
     page,
     setPage,
+    cinemaRoute,
+    setCinemaRoute,
     ballPos,
     setBallPos,
     saveBallPosition,

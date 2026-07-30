@@ -6,6 +6,7 @@
   const MAX_PAGE_SIZE = 48;
   const MAX_SECTIONS = 24;
   const MAX_SECTION_ITEMS = 40;
+  const MAX_COLLECTION_ITEMS = 120;
   const MAX_ITEMS = 600;
   const PLAYBACK_FIELD_PATTERN = /(play(?:back)?[_-]?(?:link|url)|backup[_-]?(?:link|url)|m3u8|media[_-]?url|stream[_-]?url|sign(?:ed)?[_-]?url)/i;
   const ORDER_VALUES = new Set(["new", "hot", "click", "love", "favorite", "score"]);
@@ -127,7 +128,46 @@
       favorites: safeText(raw.favorite ?? raw.favorites, 40),
       score: safeText(raw.score, 24),
       publishedAt: safeText(raw.publishedAt ?? raw.time ?? raw.created_at ?? raw.published_at, 48),
-      badge: safeText(raw.icon ?? raw.badge, 48)
+      badge: safeText(raw.icon ?? raw.badge, 48),
+      isCollection: raw.isCollection === true || safeText(raw.is_episode ?? raw.isEpisode, 8).toLowerCase() === "y"
+    };
+  }
+
+  function collectionTitle(value) {
+    const title = safeText(value, 180)
+      .replace(/(?:\s*[-—:：]?\s*)第\s*[0-9一-龥]+\s*集\s*$/u, "")
+      .trim();
+    return title || "影片合集";
+  }
+
+  /**
+   * /movie/detail 会同时返回播放字段与 groups。合集视图只可消费这里重建的
+   * 白名单对象，绝不展开原始详情，避免签名 URL 混入目录状态。
+   */
+  function normalizeCollectionResponse(raw = {}, parentMovie = {}) {
+    const detail = raw?.data && !Array.isArray(raw.data) ? raw.data : raw;
+    const parent = normalizeMovie({ ...parentMovie, ...detail, isCollection: true });
+    if (!parent) return { parentMovieId: "", title: "", items: [] };
+    // 正式站当前使用 groups，同时兼容其历史 list/items 包装；
+    // 所有分集仍然必须经过 normalizeMovie 白名单，不展开详情原对象。
+    const groups = [detail?.groups, detail?.list, detail?.items, raw?.groups, raw?.list, raw?.items]
+      .find((candidate) => Array.isArray(candidate)) || [];
+    let items = appendUniqueMovies([], groups.map((item) => ({
+      ...item,
+      nickname: parent.creator,
+      orientation: parent.orientation,
+      isCollection: true
+    })), MAX_COLLECTION_ITEMS);
+
+    if (!items.some((item) => item.id === parent.id)) {
+      // 合集超过上限时仍保留用户正在查看的父集，否则详情页会失去当前集高亮。
+      items = items.slice(0, Math.max(0, MAX_COLLECTION_ITEMS - 1));
+      items.push(parent);
+    }
+    return {
+      parentMovieId: parent.id,
+      title: collectionTitle(parent.title),
+      items
     };
   }
 
@@ -354,6 +394,7 @@
     CATALOG_SCHEMA_VERSION,
     DEFAULT_PAGE_SIZE,
     MAX_ITEMS,
+    MAX_COLLECTION_ITEMS,
     appendUniqueMovies,
     buildCatalogRequest,
     buildSearchParams,
@@ -362,6 +403,7 @@
     defaultCatalogState,
     formatDuration,
     normalizeCatalogState,
+    normalizeCollectionResponse,
     normalizeDiscoverResponse,
     normalizeMovie,
     normalizeSearchResponse,

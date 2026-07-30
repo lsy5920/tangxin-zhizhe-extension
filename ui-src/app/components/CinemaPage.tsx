@@ -1,23 +1,51 @@
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, Clapperboard, Film, LoaderCircle, RefreshCw, SearchX, ShieldCheck, Sparkles } from "lucide-react";
-import type { CinemaCatalogFilters, CinemaCatalogMode, CinemaMovie } from "../cinema/types";
-import type { BridgeState, Page } from "../types";
-import { CinemaDetailModal } from "./cinema/CinemaDetailModal";
-import { CinemaFilters } from "./cinema/CinemaFilters";
-import { CinemaHero } from "./cinema/CinemaHero";
-import { CinemaMovieCard } from "./cinema/CinemaMovieCard";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
+import {
+  collectCinemaMovieIndex,
+  createCinemaRouteStack,
+  libraryEntryToCinemaMovie,
+  navigateCinemaPrimary,
+  popCinemaRoute,
+  pushCinemaRoute,
+  selectCinemaHistory,
+  selectCinemaLibrary,
+  type CinemaPrimaryRoute,
+  type CinemaRoute
+} from "../cinema/appModel";
+import type {
+  CinemaCatalogFilters,
+  CinemaCatalogMode,
+  CinemaCatalogState,
+  CinemaCollectionState,
+  CinemaMovie
+} from "../cinema/types";
+import type { BridgeState } from "../types";
+import { getPluginHost, PLAYER_FULLSCREEN_HOST_CLASS } from "./player/browserFullscreen";
+import { CinemaAppShell } from "./cinema/CinemaAppShell";
+import { CinemaDetailPage } from "./cinema/CinemaDetailPage";
+import { CinemaExploreView, CinemaHomeView, type CinemaQuery } from "./cinema/CinemaCatalogViews";
+import { CinemaHistoryView, CinemaLibraryView } from "./cinema/CinemaLibraryViews";
+import { PlaybackPage } from "./PlaybackPage";
+
+type Toast = { text: string; level: string } | null;
 
 type Props = {
+  panelRef: RefObject<HTMLDivElement>;
   state: BridgeState;
+  initialRoute?: CinemaPrimaryRoute;
+  toast?: Toast;
   onAction: (action: string, payload?: Record<string, unknown>) => void;
-  onPage: (page: Page) => void;
+  onPrimaryRouteChange?: (route: CinemaPrimaryRoute) => void;
+  onExitWorkspace: () => void;
+  onClose: () => void;
+  onDismissToast?: () => void;
 };
 
-const EMPTY_CATALOG = {
-  mode: "discover" as CinemaCatalogMode,
+const EMPTY_CATALOG: CinemaCatalogState = {
+  mode: "discover",
   phase: "idle",
   query: "",
-  filters: {} as CinemaCatalogFilters,
+  filters: {},
   sections: [],
   items: [],
   page: 0,
@@ -27,72 +55,196 @@ const EMPTY_CATALOG = {
   error: ""
 };
 
-function formatFetchedAt(value?: string) {
-  const timestamp = Date.parse(value || "");
-  if (!Number.isFinite(timestamp)) return "尚未同步";
-  return new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit" }).format(timestamp);
+function isPrimaryRoute(route: CinemaRoute): route is { name: CinemaPrimaryRoute } {
+  return ["home", "discover", "search", "library", "history"].includes(route.name);
 }
 
-function CinemaSkeleton() {
-  return (
-    <div className="space-y-5" aria-label="正在加载影院目录" aria-busy="true">
-      <div className="h-[20rem] animate-pulse rounded-[1.8rem] border border-white/10 bg-white/6" />
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {Array.from({ length: 10 }, (_, index) => <div key={index} className="aspect-[3/4] animate-pulse rounded-[1.35rem] border border-white/8 bg-white/5" />)}
-      </div>
-    </div>
-  );
-}
-
-export function CinemaPage({ state, onAction, onPage }: Props) {
+export function CinemaPage({
+  panelRef,
+  state,
+  initialRoute = "home",
+  toast = null,
+  onAction,
+  onPrimaryRouteChange = () => undefined,
+  onExitWorkspace,
+  onClose,
+  onDismissToast = () => undefined
+}: Props) {
   const catalog = state.cinemaCatalog || EMPTY_CATALOG;
-  const sections = catalog.sections || [];
-  const items = catalog.items || [];
-  const [selectedId, setSelectedId] = useState("");
-  const selectedMovie = useMemo(
-    () => items.find((movie) => movie.id === selectedId) || sections.flatMap((section) => section.items).find((movie) => movie.id === selectedId) || null,
-    [items, sections, selectedId]
+  const collection = state.cinemaCollection || null;
+  const [routeStack, setRouteStack] = useState<CinemaRoute[]>(() => createCinemaRouteStack(initialRoute));
+  const route = routeStack[routeStack.length - 1];
+  const rememberedMovies = useRef(new Map<string, CinemaMovie>());
+  const scrollPositions = useRef(new Map<string, number>());
+  const movieIndex = useMemo(() => collectCinemaMovieIndex(catalog, collection), [catalog, collection]);
+  const library = state.experience?.library || {};
+  const history = useMemo(() => selectCinemaHistory(state.screening, movieIndex, library), [library, movieIndex, state.screening]);
+  const [libraryFilter, setLibraryFilter] = useState<"all" | "favorite" | "watchLater">("all");
+  const [libraryKeyword, setLibraryKeyword] = useState("");
+  const allLibraryItems = useMemo(() => selectCinemaLibrary(library, movieIndex), [library, movieIndex]);
+  const libraryItems = useMemo(
+    () => selectCinemaLibrary(library, movieIndex, libraryFilter, libraryKeyword),
+    [library, libraryFilter, libraryKeyword, movieIndex]
   );
-  const featured = items[0] || sections[0]?.items?.[0] || null;
-  const phase = catalog.phase || "idle";
-  const loading = phase === "loading" || phase === "loading-more";
   const resolvingMovieId = state.screening?.request?.phase === "resolving"
     ? String(state.screening.request.movieId || "")
     : "";
-  const liveStatus = phase === "loading"
-    ? "正在同步影院目录"
-    : phase === "loading-more"
-      ? "正在加载更多影片"
-      : phase === "error"
-        ? `影院目录更新失败：${catalog.error || "未知错误"}`
-        : `影院目录已载入 ${items.length || sections.reduce((total, section) => total + section.items.length, 0)} 部影片`;
+
+  const resolveMovie = (movieId: string) => rememberedMovies.current.get(movieId)
+    || movieIndex.get(movieId)
+    || (library[movieId] ? libraryEntryToCinemaMovie(library[movieId]) : null)
+    || history.find((item) => item.movie.id === movieId)?.movie
+    || null;
+  const selectedMovie = "movieId" in route ? resolveMovie(route.movieId) : null;
+  const activeCollection = useMemo<CinemaCollectionState | null>(() => {
+    if (!selectedMovie || !collection) return null;
+    const containsSelected = (collection.items || []).some((item) => item.id === selectedMovie.id);
+    return collection.parentMovieId === selectedMovie.id || containsSelected ? collection : null;
+  }, [collection, selectedMovie]);
+  const collectionMovieIds = useMemo(
+    () => new Set((activeCollection?.items || []).map((movie) => movie.id)),
+    [activeCollection]
+  );
+  const routeScrollKey = route.name === "detail" && activeCollection?.parentMovieId
+    ? `detail:collection:${activeCollection.parentMovieId}`
+    : "movieId" in route ? `${route.name}:${route.movieId}` : route.name;
+  const related = selectedMovie
+    ? [...movieIndex.values()].filter((movie) => movie.id !== selectedMovie.id && !collectionMovieIds.has(movie.id))
+      .sort((left, right) => Number(right.orientation === selectedMovie.orientation) - Number(left.orientation === selectedMovie.orientation))
+      .slice(0, 12)
+    : [];
 
   useEffect(() => {
-    if (phase !== "idle" || items.length || sections.length) return;
-    onAction("load-cinema-catalog", { mode: "discover" });
-  }, [items.length, onAction, phase, sections.length]);
+    // 存储偏好异步恢复时，只在还没进入详情/播放的情况下同步首页签。
+    setRouteStack((current) => current.length === 1 && isPrimaryRoute(current[0]) && current[0].name !== initialRoute
+      ? createCinemaRouteStack(initialRoute)
+      : current);
+  }, [initialRoute]);
 
-  const runQuery = ({ mode, query, filters }: { mode: CinemaCatalogMode; query: string; filters: CinemaCatalogFilters }) => {
-    setSelectedId("");
-    onAction("load-cinema-catalog", { mode, query, filters, forceRefresh: false });
+  useEffect(() => {
+    if (isPrimaryRoute(route)) onPrimaryRouteChange(route.name);
+  }, [onPrimaryRouteChange, route]);
+
+  useEffect(() => {
+    for (const movie of collection?.items || []) rememberedMovies.current.set(movie.id, movie);
+  }, [collection?.items]);
+
+  useEffect(() => {
+    const scroller = panelRef.current?.querySelector<HTMLElement>(".txzz-cinema-app-main");
+    if (!scroller) return;
+    const frame = window.requestAnimationFrame(() => {
+      scroller.scrollTo({ top: scrollPositions.current.get(routeScrollKey) || 0, behavior: "auto" });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      // 借鉴 Harbor 的视图记忆：详情、片库与发现页各自恢复浏览位置。
+      scrollPositions.current.set(routeScrollKey, scroller.scrollTop);
+    };
+  }, [panelRef, routeScrollKey]);
+
+  useEffect(() => {
+    const empty = !(catalog.items?.length || catalog.sections?.length);
+    if (catalog.phase === "idle" && empty) {
+      onAction("load-cinema-catalog", { mode: "discover" });
+      return;
+    }
+    // 首页必须恢复原始发现分区，不能把上一次搜索结果冒充首页推荐。
+    if (route.name === "home" && catalog.phase !== "loading" && catalog.mode !== "discover") {
+      onAction("load-cinema-catalog", { mode: "discover", query: "", filters: {}, forceRefresh: false });
+    }
+  }, [catalog.items?.length, catalog.mode, catalog.phase, catalog.sections?.length, onAction, route.name]);
+
+  const goPrimary = (target: CinemaPrimaryRoute) => {
+    setRouteStack(navigateCinemaPrimary(target));
+    onPrimaryRouteChange(target);
+    if (target === "home" && catalog.mode !== "discover") {
+      onAction("load-cinema-catalog", { mode: "discover", query: "", filters: {}, forceRefresh: false });
+    } else if (target === "discover" && catalog.mode === "search") {
+      const filters = catalog.filters || {};
+      onAction("load-cinema-catalog", {
+        mode: Object.values(filters).some(Boolean) ? "browse" : "discover",
+        query: "",
+        filters,
+        forceRefresh: false
+      });
+    }
+  };
+
+  const goBack = () => {
+    setRouteStack((current) => popCinemaRoute(current));
+  };
+
+  const rememberMovie = (movie: CinemaMovie) => {
+    rememberedMovies.current.set(movie.id, movie);
+  };
+
+  const openMovie = (movie: CinemaMovie) => {
+    rememberMovie(movie);
+    const collectionAlreadyLoaded = collection?.parentMovieId === movie.id
+      || (collection?.items || []).some((item) => item.id === movie.id);
+    if (movie.isCollection && !collectionAlreadyLoaded) {
+      // 打开合集详情只读取 groups 元数据，完整线路仍由后续“开映”手势触发。
+      onAction("load-cinema-collection", { movieId: movie.id, movieTitle: movie.title });
+    }
+    const selectingEpisode = route.name === "detail"
+      && Boolean(activeCollection?.items?.some((item) => item.id === movie.id));
+    setRouteStack((current) => selectingEpisode
+      // 切集是同一详情层的内部状态，替换栈顶可避免返回键逐集倒退。
+      ? [...current.slice(0, -1), { name: "detail", movieId: movie.id }]
+      : pushCinemaRoute(current, { name: "detail", movieId: movie.id }));
+  };
+
+  const refreshCollection = (movie: CinemaMovie) => {
+    onAction("load-cinema-collection", {
+      movieId: movie.id,
+      movieTitle: movie.title,
+      forceRefresh: true
+    });
   };
 
   const openPlayback = (movie: CinemaMovie) => {
-    setSelectedId("");
+    rememberMovie(movie);
+    // 用户手势是完整线路请求的唯一入口；路由切换本身绝不解析或预购买。
     onAction("open-cinema-playback", { movieId: movie.id, movieTitle: movie.title });
-    onPage("playback");
+    setRouteStack((current) => pushCinemaRoute(current, { name: "playback", movieId: movie.id }));
+  };
+
+  const planDownload = (movie: CinemaMovie) => {
+    rememberMovie(movie);
+    // 下载与开映一样必须由明确手势触发；规划器自行检票并展示线路、画质、空间和队列选项。
+    onAction("plan-full-video-download", {
+      movieId: movie.id,
+      movieTitle: movie.title,
+      lineKey: "auto"
+    });
   };
 
   const updateLibrary = (movie: CinemaMovie, patch: { favorite?: boolean; watchLater?: boolean }) => {
-    const current = state.experience?.library?.[movie.id];
+    const current = library[movie.id];
     onAction("update-library-entry", {
       movieId: movie.id,
       title: movie.title,
+      posterUrl: movie.posterUrl,
+      creator: movie.creator,
+      durationSeconds: movie.durationSeconds,
+      durationLabel: movie.durationLabel,
+      orientation: movie.orientation,
+      access: movie.access,
+      price: movie.price,
+      isCollection: movie.isCollection === true,
       favorite: patch.favorite ?? current?.favorite ?? false,
       watchLater: patch.watchLater ?? current?.watchLater ?? false,
       tags: current?.tags || [],
       note: current?.note || ""
     });
+  };
+
+  const runQuery = ({ mode, query, filters }: CinemaQuery) => {
+    if (mode === "search" && route.name !== "search") {
+      setRouteStack(navigateCinemaPrimary("search"));
+      onPrimaryRouteChange("search");
+    }
+    onAction("load-cinema-catalog", { mode, query, filters, forceRefresh: false });
   };
 
   const refresh = () => {
@@ -104,130 +256,70 @@ export function CinemaPage({ state, onAction, onPage }: Props) {
     });
   };
 
+  const loadMore = () => {
+    onAction("load-more-cinema-catalog", {
+      mode: catalog.mode || "browse",
+      query: catalog.query || "",
+      filters: catalog.filters || {},
+      pageSize: catalog.pageSize || 24
+    });
+  };
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      const root = panelRef.current?.getRootNode();
+      if (root instanceof ShadowRoot && root.querySelector('[data-txzz-modal-sheet="true"]')) return;
+      const host = getPluginHost();
+      if (document.fullscreenElement || host?.classList.contains(PLAYER_FULLSCREEN_HOST_CLASS)) return;
+      event.preventDefault();
+      if (routeStack.length > 1) goBack();
+      else onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose, panelRef, routeStack.length]);
+
+  const commonCatalogProps = {
+    catalog,
+    resolvingMovieId,
+    onMovie: openMovie,
+    onPlay: openPlayback,
+    onQuery: runQuery,
+    onLoadMore: loadMore,
+    onRefresh: refresh
+  };
+
+  const body = route.name === "home"
+    ? <CinemaHomeView {...commonCatalogProps} history={history} onNavigate={goPrimary} />
+    : route.name === "discover"
+      ? <CinemaExploreView {...commonCatalogProps} />
+      : route.name === "search"
+        ? <CinemaExploreView {...commonCatalogProps} searchOnly />
+        : route.name === "library"
+          ? <CinemaLibraryView items={libraryItems} allItems={allLibraryItems} filter={libraryFilter} keyword={libraryKeyword} onFilter={setLibraryFilter} onKeyword={setLibraryKeyword} onMovie={openMovie} onNavigate={goPrimary} />
+          : route.name === "history"
+            ? <CinemaHistoryView items={history} onMovie={openMovie} onPlay={openPlayback} onNavigate={goPrimary} />
+            : route.name === "detail"
+              ? <CinemaDetailPage movie={selectedMovie} collection={activeCollection} libraryEntry={selectedMovie ? library[selectedMovie.id] || null : null} resolving={Boolean(selectedMovie && resolvingMovieId === selectedMovie.id)} related={related} onOpenPlayback={openPlayback} onPlanDownload={planDownload} onRefreshCollection={refreshCollection} onToggleFavorite={(movie) => updateLibrary(movie, { favorite: !library[movie.id]?.favorite })} onToggleWatchLater={(movie) => updateLibrary(movie, { watchLater: !library[movie.id]?.watchLater })} onMovie={openMovie} onBack={goBack} />
+              : <PlaybackPage state={state} onAction={onAction} variant="cinema" />;
+
   return (
-    <div className="txzz-cinema-page txzz-page relative min-h-full overflow-hidden bg-[#0e0914] text-white" aria-busy={loading || undefined}>
-      <p className="sr-only" role="status" aria-live="polite">{liveStatus}</p>
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <span className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-fuchsia-600/13 blur-3xl" />
-        <span className="absolute -right-28 top-36 h-80 w-80 rounded-full bg-violet-600/15 blur-3xl" />
-        <span className="absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-amber-400/7 blur-3xl" />
-      </div>
-
-      <div className="relative mx-auto w-full max-w-[1180px] space-y-4 p-3 pb-7 sm:p-5 lg:p-6">
-        <header className="flex flex-wrap items-end justify-between gap-3 rounded-[1.5rem] border border-white/10 bg-white/5 px-4 py-4 backdrop-blur sm:px-5">
-          <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-[9px] font-black tracking-[.2em] text-fuchsia-300"><Sparkles size={11} /> CANDY CINEMA CATALOG</p>
-            <h1 className="mt-1 flex items-center gap-2 text-[20px] font-black tracking-[-.035em] text-white sm:text-[23px]"><Clapperboard size={20} className="text-violet-300" />今晚想看什么？</h1>
-            <p className="mt-1 max-w-2xl text-[10px] font-medium leading-5 text-white/42">全部片单实时来自目标网站；浏览目录不会预取线路，也不会在后台触发购买。</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="hidden items-center gap-1 rounded-full border border-emerald-300/15 bg-emerald-300/8 px-2.5 py-1.5 text-[9px] font-bold text-emerald-200 sm:inline-flex"><ShieldCheck size={11} />目录安全边界</span>
-            <button type="button" onClick={refresh} disabled={loading} className="inline-flex min-h-10 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/7 px-3 text-[10px] font-black text-white/70 transition hover:bg-white/12 hover:text-white disabled:opacity-45">
-              <RefreshCw size={13} className={loading ? "animate-spin" : ""} />刷新
-            </button>
-          </div>
-        </header>
-
-        <CinemaFilters
-          query={catalog.query}
-          mode={catalog.mode}
-          filters={catalog.filters}
-          loading={loading}
-          onQuery={runQuery}
-        />
-
-        {phase === "error" && featured && (
-          <div className="flex flex-wrap items-center gap-3 rounded-[1.25rem] border border-amber-300/20 bg-amber-300/9 px-4 py-3" role="alert">
-            <AlertTriangle size={17} className="shrink-0 text-amber-300" />
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-black text-amber-100">本次更新失败，正在展示上次成功片单</p>
-              <p className="mt-0.5 truncate text-[9px] font-semibold text-white/45">{catalog.error || "目录接口暂时不可用"}</p>
-            </div>
-            <button type="button" onClick={refresh} className="min-h-9 rounded-xl border border-amber-200/20 bg-black/20 px-3 text-[10px] font-black text-amber-100 transition hover:bg-white/10">再次同步</button>
-          </div>
-        )}
-
-        {phase === "loading" && !featured ? (
-          <CinemaSkeleton />
-        ) : phase === "error" && !featured ? (
-          <div className="rounded-[1.7rem] border border-rose-300/18 bg-rose-300/8 px-5 py-10 text-center">
-            <AlertTriangle size={30} className="mx-auto text-rose-300" />
-            <h2 className="mt-3 text-[15px] font-black">影院目录暂时没有到场</h2>
-            <p className="mx-auto mt-2 max-w-md text-[11px] font-medium leading-5 text-white/45">{catalog.error || "目录接口返回异常，请稍后重试。"}</p>
-            <button type="button" onClick={refresh} className="mt-4 min-h-11 rounded-2xl bg-white px-4 text-[11px] font-black text-[#27172f]">重新同步</button>
-          </div>
-        ) : featured ? (
-          <>
-            <CinemaHero movie={featured} onDetails={(movie) => setSelectedId(movie.id)} onPlay={openPlayback} resolving={resolvingMovieId === featured.id} />
-
-            {catalog.mode === "discover" && sections.length > 0 ? (
-              <div className="space-y-5">
-                {sections.map((section) => (
-                  <section key={section.id} className="rounded-[1.55rem] border border-white/9 bg-white/[.035] p-3.5 sm:p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[9px] font-black tracking-[.15em] text-violet-300/70">CURATED SHELF</p>
-                        <h2 className="mt-0.5 truncate text-[15px] font-black text-white">{section.title}</h2>
-                      </div>
-                      {Object.keys(section.filter || {}).length > 0 && (
-                        <button type="button" onClick={() => runQuery({ mode: "browse", query: "", filters: section.filter })} className="inline-flex min-h-9 shrink-0 items-center gap-1 rounded-xl px-2.5 text-[10px] font-black text-fuchsia-200 transition hover:bg-white/8">查看全部<ArrowRight size={12} /></button>
-                      )}
-                    </div>
-                    <div className="txzz-cinema-shelf flex gap-3 overflow-x-auto pb-2">
-                      {section.items.map((movie) => <CinemaMovieCard key={movie.id} movie={movie} featured onOpen={(item) => setSelectedId(item.id)} />)}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            ) : (
-              <section className="rounded-[1.55rem] border border-white/9 bg-white/[.035] p-3.5 sm:p-4">
-                <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-                  <div>
-                    <p className="text-[9px] font-black tracking-[.15em] text-violet-300/70">{catalog.mode === "search" ? "SEARCH RESULTS" : "CINEMA BROWSE"}</p>
-                    <h2 className="mt-0.5 text-[15px] font-black text-white">{catalog.mode === "search" ? `“${catalog.query || "全部"}” 的搜索结果` : "本次筛选片单"}</h2>
-                  </div>
-                  <span className="text-[9px] font-bold text-white/35">已载入 {items.length} 部 · {formatFetchedAt(catalog.fetchedAt)}</span>
-                </div>
-                {items.length ? (
-                  <div className="txzz-cinema-grid grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                    {items.map((movie) => <CinemaMovieCard key={movie.id} movie={movie} onOpen={(item) => setSelectedId(item.id)} />)}
-                  </div>
-                ) : (
-                  <div className="rounded-[1.25rem] border border-dashed border-white/12 py-10 text-center text-white/45">
-                    <SearchX size={28} className="mx-auto" /><p className="mt-2 text-[12px] font-black">没有找到匹配影片</p>
-                  </div>
-                )}
-                {catalog.hasMore && (
-                  <div className="mt-4 flex justify-center">
-                    <button type="button" disabled={loading} onClick={() => onAction("load-more-cinema-catalog", { mode: catalog.mode, query: catalog.query || "", filters: catalog.filters || {}, pageSize: catalog.pageSize || 24 })} className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-white/12 bg-white/7 px-5 text-[11px] font-black text-white transition hover:bg-white/12 disabled:opacity-45">
-                      {phase === "loading-more" ? <LoaderCircle size={14} className="animate-spin" /> : <Film size={14} />}{phase === "loading-more" ? "正在接片" : "继续加载"}
-                    </button>
-                  </div>
-                )}
-              </section>
-            )}
-          </>
-        ) : (
-          <div className="rounded-[1.7rem] border border-dashed border-white/12 bg-white/4 py-12 text-center text-white/45">
-            <SearchX size={30} className="mx-auto" /><p className="mt-3 text-[13px] font-black">本期片单为空</p>
-          </div>
-        )}
-
-        <footer className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-[9px] font-semibold text-white/30">
-          <span className="inline-flex items-center gap-1"><ShieldCheck size={10} />目录不含完整播放 URL</span>
-          <span>·</span><span>开映前不轮换账号</span><span>·</span><span>资源就绪后默认暂停</span>
-        </footer>
-      </div>
-
-      <CinemaDetailModal
-        movie={selectedMovie}
-        libraryEntry={selectedMovie ? state.experience?.library?.[selectedMovie.id] || null : null}
-        resolving={Boolean(selectedMovie && resolvingMovieId === selectedMovie.id)}
-        onClose={() => setSelectedId("")}
-        onOpenPlayback={openPlayback}
-        onToggleFavorite={(movie) => updateLibrary(movie, { favorite: !state.experience?.library?.[movie.id]?.favorite })}
-        onToggleWatchLater={(movie) => updateLibrary(movie, { watchLater: !state.experience?.library?.[movie.id]?.watchLater })}
-      />
-    </div>
+    <CinemaAppShell
+      panelRef={panelRef}
+      route={route}
+      canGoBack={routeStack.length > 1}
+      libraryCount={Object.keys(library).length}
+      historyCount={history.length}
+      resolving={Boolean(resolvingMovieId)}
+      toast={toast}
+      onNavigate={goPrimary}
+      onBack={goBack}
+      onExitWorkspace={onExitWorkspace}
+      onClose={onClose}
+      onDismissToast={onDismissToast}
+    >
+      {body}
+    </CinemaAppShell>
   );
 }

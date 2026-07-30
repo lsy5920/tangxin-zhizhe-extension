@@ -116,10 +116,13 @@ let accountPatrolInFlight = null;
 let persistedDownloadsReconciled = false;
 let persistedDownloadRecoveryInFlight = null;
 const cinemaCatalogCache = new Map();
+const cinemaCollectionCache = new Map();
 const CINEMA_CATALOG_CACHE_STORAGE_KEY = "txzzCinemaCatalogCacheV1";
 const CINEMA_CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
 const CINEMA_CATALOG_CACHE_MAX_ITEMS = 20;
 const CINEMA_CATALOG_CACHE_MAX_PERSISTED_CHARS = 3_500_000;
+const CINEMA_COLLECTION_CACHE_TTL_MS = 5 * 60 * 1000;
+const CINEMA_COLLECTION_CACHE_MAX_ITEMS = 160;
 let cinemaCatalogCacheHydration = null;
 let cinemaCatalogCachePersistQueue = Promise.resolve();
 let cinemaVisitorSessionCache = null;
@@ -132,7 +135,7 @@ const CINEMA_POSTER_CACHE_TTL_MS = 30 * 60 * 1000;
 const CINEMA_POSTER_CACHE_MAX_ITEMS = 64;
 const CINEMA_POSTER_CACHE_MAX_BYTES = 24 * 1024 * 1024;
 
-const LOCAL_UPDATE_BUILD = "2026-07-30-0255";
+const LOCAL_UPDATE_BUILD = "2026-07-30-1122";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -988,12 +991,31 @@ async function stateResponseWithExperience(extra = {}) {
 }
 
 async function updateLibraryExperience(message = {}) {
+  const movieId = String(message.movieId || "").trim();
+  const currentState = await getStateInternal();
+  const catalogMovie = catalogMovieById(
+    cinemaCatalogCore.normalizeCatalogState(currentState.cinemaCatalog),
+    movieId
+  );
   const patch = {
-    movieId: message.movieId,
-    title: message.title || message.movieTitle
+    movieId,
+    title: catalogMovie?.title || message.title || message.movieTitle
   };
+  if (catalogMovie) {
+    // 海报与展示字段必须由后台当前已归一化的目录项派生，不信任页面事件传入的 URL。
+    for (const key of ["posterUrl", "creator", "durationSeconds", "durationLabel", "orientation", "access", "price", "isCollection"]) {
+      patch[key] = catalogMovie[key];
+    }
+  }
   // 只传递调用方真正提供的字段；把 undefined 写入会误清另一项收藏标记或已有备注。
-  for (const key of ["favorite", "watchLater", "tags", "note", "lastPlayedAt", "watchedAt"]) {
+  for (const key of [
+    "favorite",
+    "watchLater",
+    "tags",
+    "note",
+    "lastPlayedAt",
+    "watchedAt"
+  ]) {
     if (Object.prototype.hasOwnProperty.call(message, key)) patch[key] = message[key];
   }
   await mutateExperience((experience) => experienceCore.updateLibraryEntry(experience, patch));
@@ -1299,6 +1321,43 @@ function catalogMovieById(catalog, movieId) {
   return candidates.find((movie) => String(movie?.id || "") === movieId) || null;
 }
 
+function pruneCinemaCollectionCache() {
+  const now = Date.now();
+  for (const [movieId, entry] of cinemaCollectionCache.entries()) {
+    if (now - Number(entry?.storedAt || 0) <= CINEMA_COLLECTION_CACHE_TTL_MS) continue;
+    cinemaCollectionCache.delete(movieId);
+  }
+  while (cinemaCollectionCache.size > CINEMA_COLLECTION_CACHE_MAX_ITEMS) {
+    cinemaCollectionCache.delete(cinemaCollectionCache.keys().next().value);
+  }
+}
+
+function rememberCinemaCollection(collection) {
+  pruneCinemaCollectionCache();
+  const entry = { storedAt: Date.now(), value: structuredClone(collection) };
+  for (const movie of collection?.items || []) {
+    const movieId = String(movie?.id || "");
+    if (!movieId) continue;
+    cinemaCollectionCache.delete(movieId);
+    cinemaCollectionCache.set(movieId, entry);
+  }
+  pruneCinemaCollectionCache();
+}
+
+function readCinemaCollection(movieId) {
+  pruneCinemaCollectionCache();
+  const cached = cinemaCollectionCache.get(String(movieId || ""));
+  if (!cached) return null;
+  cinemaCollectionCache.delete(String(movieId));
+  cinemaCollectionCache.set(String(movieId), cached);
+  return structuredClone(cached.value);
+}
+
+function cachedCinemaCollectionMovie(movieId) {
+  const collection = readCinemaCollection(movieId);
+  return collection?.items?.find((movie) => String(movie?.id || "") === String(movieId || "")) || null;
+}
+
 function evictCinemaPosterCache() {
   const now = Date.now();
   for (const [key, entry] of cinemaPosterCache.entries()) {
@@ -1387,9 +1446,11 @@ async function fetchCinemaPoster(message = {}) {
   const state = await getStateInternal();
   const catalog = cinemaCatalogCore.normalizeCatalogState(state.cinemaCatalog);
   const movie = catalogMovieById(catalog, movieId);
-  const expected = cinemaPosterCore.describeEncryptedPosterUrl(movie?.posterUrl);
-  if (!movie || !expected || expected.url !== requested.url) {
-    throw new Error("影院海报不属于当前目录影片");
+  const libraryMovie = experienceCore.normalizeExperienceState(state.experience).library?.[movieId];
+  const collectionMovie = cachedCinemaCollectionMovie(movieId);
+  const expected = cinemaPosterCore.describeEncryptedPosterUrl(movie?.posterUrl || libraryMovie?.posterUrl || collectionMovie?.posterUrl);
+  if (!expected || expected.url !== requested.url) {
+    throw new Error("影院海报不属于当前目录、片库或合集");
   }
 
   const cacheKey = `${movieId}:${requested.url}`;
@@ -1532,6 +1593,41 @@ async function fetchCinemaCatalog(message = {}) {
       error: error?.message || String(error)
     };
   }
+}
+
+/**
+ * 合集元数据只在用户打开已知目录影片后读取。上游 detail 响应可能同时含播放字段，
+ * 但返回 UI 前必须经过 normalizeCollectionResponse 重建，不保存、不返回任何完整线路。
+ */
+async function fetchCinemaCollection(message = {}) {
+  const movieId = String(message.movieId || "").trim().slice(0, 80);
+  if (!movieId) throw new Error("合集请求缺少影片编号");
+  if (message.forceRefresh !== true) {
+    const cached = readCinemaCollection(movieId);
+    if (cached) return { ok: true, collection: cached, cached: true };
+  }
+
+  const state = await getStateInternal();
+  const catalog = cinemaCatalogCore.normalizeCatalogState(state.cinemaCatalog);
+  const library = experienceCore.normalizeExperienceState(state.experience).library || {};
+  const knownMovie = catalogMovieById(catalog, movieId) || library[movieId] || cachedCinemaCollectionMovie(movieId);
+  if (!knownMovie) throw new Error("合集影片不属于当前目录或片库");
+
+  const session = await cinemaCatalogSession(message);
+  const raw = await apiRequest("/movie/detail", { id: movieId }, session);
+  const normalized = cinemaCatalogCore.normalizeCollectionResponse(raw, knownMovie);
+  if (!normalized.parentMovieId || !normalized.items.length) {
+    throw new Error("上游未返回可用的合集分集");
+  }
+  const collection = {
+    ...normalized,
+    fetchedAt: nowIso()
+  };
+  if (cinemaCatalogCore.containsPlaybackField(collection)) {
+    throw new Error("合集字段白名单校验失败");
+  }
+  rememberCinemaCollection(collection);
+  return { ok: true, collection, cached: false };
 }
 
 async function loginByAccount(account, bootstrapSession = null) {
@@ -2431,6 +2527,7 @@ async function finishPlaybackSession(options = {}) {
   const resolved = await resolvePlaybackDetail(detail || {}, options.summary || {}, suppliedSession);
   const normalizedDetail = normalizeFullDetail(resolved.detail) || {};
   const constructed = legacyDetailToPlaybackSession(normalizedDetail, resolved.summary, account, { movieId, movieTitle, acquisition });
+  const requestedTitle = String(movieTitle || "").trim();
   const mergedSources = suppliedSession
     ? [
       ...constructed.sources,
@@ -2438,7 +2535,13 @@ async function finishPlaybackSession(options = {}) {
     ]
     : constructed.sources;
   const baseSession = suppliedSession
-    ? normalizeStoredPlaybackSession({ ...suppliedSession, sources: mergedSources })
+    ? normalizeStoredPlaybackSession({
+      ...suppliedSession,
+      // 影院目录持有用户真正选中的标题；云端或旧缓存里的“视频 + 编号”占位符
+      // 不应反向覆盖这份明确上下文，否则播放器、下载文件名和媒体中心都会退化。
+      title: requestedTitle || suppliedSession.title || constructed.title,
+      sources: mergedSources
+    })
     : constructed;
   const session = await ensurePlaybackSessionCompleteness(baseSession);
   if (!session) throw new Error("播放会话缺少有效线路");
@@ -5229,6 +5332,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === "fetchCinemaPoster") {
       sendResponse(await fetchCinemaPoster(message));
+      return;
+    }
+    if (message?.type === "fetchCinemaCollection") {
+      sendResponse(await fetchCinemaCollection(message));
       return;
     }
     if (message?.type === "updateLibraryEntry") {

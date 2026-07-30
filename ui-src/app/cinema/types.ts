@@ -20,6 +20,7 @@ export type CinemaMovie = {
   score?: string;
   publishedAt?: string;
   badge?: string;
+  isCollection?: boolean;
 };
 
 export type CinemaCatalogFilters = {
@@ -51,6 +52,16 @@ export type CinemaCatalogState = {
   page?: number;
   pageSize?: number;
   hasMore?: boolean;
+  fetchedAt?: string;
+  error?: string;
+};
+
+export type CinemaCollectionState = {
+  phase?: "idle" | "loading" | "ready" | "error";
+  requestId?: string;
+  parentMovieId?: string;
+  title?: string;
+  items?: CinemaMovie[];
   fetchedAt?: string;
   error?: string;
 };

@@ -70,6 +70,16 @@
     return {
       movieId: id,
       title: safeText(raw.title, 180),
+      // 片库只保留目录阶段元数据，用于脱离当前搜索页后仍能恢复影视 App 卡片。
+      // 完整播放 URL 不在此白名单中，点击开映仍必须新建播放会话。
+      posterUrl: safeText(raw.posterUrl, 2000),
+      creator: safeText(raw.creator, 180),
+      durationSeconds: Math.max(0, finiteNumber(raw.durationSeconds)),
+      durationLabel: safeText(raw.durationLabel, 40),
+      orientation: ["landscape", "portrait", "square"].includes(raw.orientation) ? raw.orientation : "landscape",
+      access: ["free", "vip", "coin"].includes(raw.access) ? raw.access : "free",
+      price: Math.max(0, finiteNumber(raw.price)),
+      isCollection: raw.isCollection === true,
       favorite: raw.favorite === true,
       watchLater: raw.watchLater === true,
       tags: normalizeTags(raw.tags),

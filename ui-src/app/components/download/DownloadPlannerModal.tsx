@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, Clock3, Database, Download, Film, Gauge, HardDrive, ListOrdered, X } from "lucide-react";
+import { AlertTriangle, CalendarClock, Clock3, Database, Download, Film, Gauge, HardDrive, ListOrdered, LoaderCircle, RefreshCw, X } from "lucide-react";
 import type { DownloadPlannerState } from "../../types";
 import { portalIntoPluginUi, SoftButton, useModalFocusTrap } from "../ui/primitives";
 
@@ -58,6 +58,7 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
 
   const replan = () => onAction("plan-full-video-download", {
     movieId: planner.movieId || "",
+    movieTitle: planner.movieTitle || "",
     sourceId,
     lineKey: sourceId || planner.lineKey || "auto",
     networkMode,
@@ -77,6 +78,20 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
           <button ref={closeButtonRef} type="button" onClick={closePlanner} className="grid size-11 place-items-center rounded-2xl bg-white text-slate-500 shadow-sm" aria-label="关闭下载规划"><X size={18} /></button>
         </header>
 
+        {planner.phase === "probing" ? (
+          <div className="mt-6 flex min-h-56 flex-col items-center justify-center rounded-[1.5rem] border border-violet-100 bg-gradient-to-br from-violet-50 to-pink-50 px-5 text-center" role="status" aria-live="polite">
+            <span className="grid size-14 place-items-center rounded-2xl bg-white text-violet-500 shadow-sm"><LoaderCircle size={24} className="animate-spin" /></span>
+            <strong className="mt-4 text-sm font-black text-slate-800">正在检票并规划下载</strong>
+            <p className="mt-2 max-w-sm text-xs font-medium leading-5 text-slate-500">正在确认完整线路、清晰度、分片兼容性与可用空间。探测完成后再由你确认是否放入可恢复队列。</p>
+          </div>
+        ) : planner.phase === "error" ? (
+          <div className="mt-6 rounded-[1.5rem] border border-rose-100 bg-rose-50 p-5 text-center" role="alert">
+            <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-white text-rose-500 shadow-sm"><AlertTriangle size={21} /></span>
+            <strong className="mt-3 block text-sm font-black text-rose-700">下载规划失败</strong>
+            <p className="mx-auto mt-2 max-w-md break-words text-xs font-medium leading-5 text-rose-600/80">{planner.error || "线路或清单探测没有完成，请重新尝试。"}</p>
+            <SoftButton icon={RefreshCw} className="mt-4" onClick={replan}>重新探测</SoftButton>
+          </div>
+        ) : (<>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <label className="rounded-2xl bg-violet-50 p-3 text-xs font-bold text-slate-600">
             <span className="mb-2 flex items-center gap-2 text-violet-600"><Gauge size={14} />片源线路</span>
@@ -143,6 +158,7 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
             notBefore: scheduleMode === "scheduled" && scheduledAt ? new Date(scheduledAt).toISOString() : ""
           })}>{scheduleMode === "scheduled" ? "按计划放进下载队列" : "放进可恢复下载队列"}</SoftButton>
         </div>
+        </>)}
       </section>
     </div>
   );

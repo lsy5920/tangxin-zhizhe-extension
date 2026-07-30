@@ -1,4 +1,4 @@
-import { Clock3, Coins, Crown, Eye, Heart, Play, Sparkles } from "lucide-react";
+import { Clock3, Coins, Crown, Eye, Heart, Layers3, Play, Sparkles } from "lucide-react";
 import type { CinemaMovie } from "../../cinema/types";
 import { CinemaPoster } from "./CinemaPoster";
 
@@ -53,7 +53,7 @@ export function CinemaMovieCard({ movie, onOpen, featured = false }: Props) {
         </span>
         {movie.badge && <span className="absolute right-2 top-2 max-w-[55%] truncate rounded-full bg-black/55 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">{movie.badge}</span>}
         <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">
-          <Clock3 size={10} /> {movie.durationLabel}
+          {movie.isCollection ? <Layers3 size={10} /> : <Clock3 size={10} />} {movie.isCollection ? "合集" : movie.durationLabel}
         </span>
         <span className="absolute bottom-2 left-2 flex h-9 w-9 translate-y-2 items-center justify-center rounded-full bg-white/95 text-fuchsia-600 opacity-0 shadow-xl transition group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
           <Play size={15} fill="currentColor" />

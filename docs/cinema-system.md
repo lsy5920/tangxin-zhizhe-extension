@@ -1,13 +1,13 @@
-# 糖心影院目录系统
+# 糖心影院应用与目录系统 5.5
 
 ## 目标
 
-糖心影院是扩展 `5.4.x` 的独立资源目录。它解决两个不同阶段被混在一起的问题：用户浏览片单时只需要标题、海报和分类；完整线路、账号轮换与金币安全流程只有在用户明确选择影片后才需要运行。
+糖心影院是扩展 `5.5.0` 的独立沉浸式影视 App。它保留原工作台全部能力，同时以自己的首页、发现、搜索、片库、足迹、详情和播放路由承载选片体验。系统严格分离“浏览原始目录”和“取得完整媒体”：用户浏览时只需要标题、海报、分类与合集元数据；完整线路、账号轮换、金币安全与下载规划只有在用户明确点击开映或下载后才运行。
 
 系统因此固定为两段式：
 
 1. **目录阶段**：读取目标站原始列表元数据，展示发现、搜索、筛选和分页结果。
-2. **开映阶段**：用户点击「获取完整线路并开映」后，复用现有完整播放会话和放映室。
+2. **消费阶段**：用户点击开映或下载后，复用现有完整播放会话、线路决策和 OPFS 下载规划器。
 
 这条边界既减少无意义请求，也保证在海报墙停留、搜索或快速切换详情时不会产生后台购买行为。
 
@@ -15,7 +15,7 @@
 
 ```mermaid
 flowchart LR
-  UI["CinemaPage\n发现 / 搜索 / 详情"] -->|"load-cinema-catalog"| Content["content.js\n会话收集与请求代次"]
+  UI["CinemaPage\n首页 / 发现 / 搜索 / 片库 / 足迹 / 详情"] -->|"load-cinema-catalog"| Content["content.js\n会话收集与请求代次"]
   Content -->|"fetchCinemaCatalog"| Background["background.js\n目录缓存与接口适配"]
   Background -->|"POST /h5/movie/block"| Discover["目标站发现区块"]
   Background -->|"POST /h5/movie/search"| Search["目标站搜索 / 分页"]
@@ -25,9 +25,13 @@ flowchart LR
   State --> UI
   UI -->|"海报进入视口"| Poster["cinema_poster_core.js\nAES-ECB 解密与魔数校验"]
   Poster --> UI
+  UI -->|"打开合集详情"| Groups["fetchCinemaCollection\n只读 groups 元数据"]
+  Groups --> UI
   UI -->|"用户点击开映"| Open["openCinemaPlayback"]
   Open --> Session["现有 createPlaybackSession\nWorker v2 / 本地兜底"]
   Session --> Player["PlaybackPage\nShaka Player"]
+  UI -->|"用户点击下载"| Plan["planFullVideoDownload\n同一线路决策"]
+  Plan --> Download["OPFS 规划 / 调度 / 保存"]
 ```
 
 ## 目标站目录契约
@@ -61,6 +65,12 @@ POST /h5/movie/search
 
 `page_size` 固定限制为 `1～48`。未知字段、token、播放地址或调用方自带的任意额外参数不会向上游传递。
 
+### 合集与分集
+
+影片详情中的 `groups / list / items` 经过同一字段白名单归一化为 `CinemaCollectionState`。最多保留 120 集，并始终保留当前父集；刷新失败时保留上一次可用选集，不用空错误覆盖内容。打开合集只获取分集编号、标题、封面、时长、权益和顺序，不解析完整线路，也不触发购买。
+
+在详情页选择分集会替换当前详情栈顶，而不是不断追加返回历史；播放器内选择分集则重新调用 `openCinemaPlayback`，禁止沿用上一集的签名 URL。
+
 ## 目录字段白名单
 
 `cinema_catalog_core.js` 使用显式字段构造 `CinemaMovie`：
@@ -69,6 +79,7 @@ POST /h5/movie/search
 - 海报、创作者与头像
 - 时长、画面方向
 - 免费 / VIP / 金币类型和金币价格
+- 是否为合集，以及归一化后的合集分集关系
 - 浏览、喜欢、收藏、评分、发布时间和普通徽标
 
 不会从原始对象展开未知字段。下列内容不会进入 `cinemaCatalog`：
@@ -85,7 +96,7 @@ POST /h5/movie/search
 
 ## 状态与请求代次
 
-目录状态保存在 `txzzState.cinemaCatalog`：
+目录状态保存在 `txzzState.cinemaCatalog`，合集使用独立的 `txzzState.cinemaCollection`：
 
 ```ts
 type CinemaCatalogState = {
@@ -101,6 +112,16 @@ type CinemaCatalogState = {
   page: number;
   pageSize: number;
   hasMore: boolean;
+  fetchedAt: string;
+  error: string;
+};
+
+type CinemaCollectionState = {
+  phase: "idle" | "loading" | "ready" | "error";
+  requestId: string;
+  parentMovieId: string;
+  title: string;
+  items: CinemaMovie[];
   fetchedAt: string;
   error: string;
 };
@@ -129,9 +150,9 @@ type CinemaCatalogState = {
 
 真实样本验证：密文 `122544` 字节解密为 `122538` 字节 JPEG，文件头为 `FF D8 FF E0 00 10 4A 46 49 46`，文件尾为 `FF D9`。实现只执行一次 Web Crypto CBC 解密，再按前一密文块线性异或还原 ECB，时间与内存复制复杂度保持 O(n)。
 
-## 开映边界
+## 开映与下载边界
 
-影院详情页的主按钮是唯一新增开映入口。点击后：
+影院详情页、合集当前集和播放器内选集都是明确的开映入口。点击后：
 
 1. 内容脚本创建 `cinema_playback_<timestamp>` 请求编号。
 2. 后台强制生成 `cinema:<movieId>:<requestId>` 上下文键。
@@ -140,16 +161,29 @@ type CinemaCatalogState = {
 5. React 立即切到放映室，显示现有可见检票步骤。
 6. 资源完成后保持暂停，用户仍需点击播放器的播放按钮。
 
-目录抓取函数中没有账号池轮换、`/movie/detail`、`/movie/doBuy` 或 Worker `/v2/playback/session` 调用。代码审查时应继续保持这一物理边界。
+影院详情、合集当前集、播放器画面、影片侧栏与下载抽屉都可以发起下载。所有入口只发送 `movieId / movieTitle / sourceId` 等规划参数，统一进入 `planFullVideoDownload`：先显示可见探测态，再确认完整线路、清晰度、容器、清单兼容性与空间，最后由用户决定是否放入现有可恢复队列。探测失败保留明确错误和重新探测入口，不创建第二套下载器。
+
+目录与合集抓取函数中没有账号池轮换、`/movie/detail`、`/movie/doBuy` 或 Worker `/v2/playback/session` 调用。代码审查时应继续保持这一物理边界；只有上述明确的开映或下载手势可以跨越它。
 
 ## 界面结构
 
-- **Featured Hero**：使用本期第一部影片呈现深色影院主视觉和明确开映动作。
+- **独立 App 壳层**：桌面使用影院侧栏，移动使用安全区底栏；普通工作台页面和影院路由互不覆盖。
+- **Featured Hero**：使用本期第一部影片呈现深色影院主视觉和明确详情/开映动作。
 - **发现分区**：按目标站有效区块生成横向海报带，区块过滤器可进入完整分页浏览。
 - **搜索与筛选**：支持关键词与最新、热门、免费、VIP、竖屏、横屏组合查询；清空关键词会保留当前筛选，点击「发现」才显式重置。
-- **影片详情**：展示原始目录字段、收藏、稍后看和目录/播放分离说明。
+- **影片详情**：展示原始目录字段、收藏、稍后看、直接下载和目录/媒体分离说明。
+- **合集选集**：详情页显示封面、序号、时长和权益；画面内选集重新检票。免费/VIP 下一集自然结束后倒计时 5 秒续播，金币下一集必须再次确认。
+- **滚动记忆**：首页、发现、片库、足迹和详情分别恢复浏览位置；合集切集复用同一详情滚动上下文。
 - **移动导航**：六项底栏保持 44 像素图标热区，320 像素宽度使用紧凑文字。
 - **减少动态效果**：系统启用 `prefers-reduced-motion` 后停止 Hero 揭幕、星光闪烁和海报缩放动画。
+
+## 开源架构参考与许可证边界
+
+- [Harbor](https://github.com/harborstremio/harbor)（MIT）：参考 Hero、媒体 Rails、详情层级、滚动位置记忆和流排序思想。
+- [Jellyfin Web](https://github.com/jellyfin/jellyfin-web)（GPL-2.0）与 [Stremio Web](https://github.com/Stremio/stremio-web)（GPLv2）：只参考首页/发现/详情/片库的信息架构。
+- [Vidstack](https://github.com/vidstack/player)（MIT）：调研其播放器组合模式，但当前仍保持单一 Shaka 内核与自有 React 控制层。
+
+仓库没有复制 GPL/AGPL 项目的源代码、样式或资源；影院继续使用本项目 React + TypeScript + Shaka 架构。引用只用于说明公开的信息架构参考。
 
 ## 测试与验收
 
@@ -164,6 +198,9 @@ type CinemaCatalogState = {
 - 完整播放字段不进入目录对象
 - AES-128-ECB/PKCS7 海报解密和图片魔数校验
 - 搜索关键词与筛选组合、显式重置
+- 合集字段白名单、当前父集保留、最多 120 集与失败保留旧选集
+- 画面选集代次、免费/VIP 自动续播、金币确认和旧媒体 `ended` 隔离
+- 影院详情、播放器与侧栏下载入口，以及探测中/失败/就绪三态
 
 正式发布还必须在安装后的 Chrome 开发版扩展中检查：
 
@@ -172,10 +209,13 @@ type CinemaCatalogState = {
 3. 浏览目录时没有 `/movie/detail`、`/movie/doBuy` 或 `/v2/playback/session`。
 4. 快速连续搜索时旧结果不覆盖最新关键词。
 5. 点击开映后进入放映室，并只为所选影片创建完整会话。
-6. `1440×900`、`390×844`、`844×390` 和 `320` 像素宽度下导航、详情弹层和海报墙均可操作。
+6. 合集可在详情和播放器内切集；免费/VIP 下一集续播，金币下一集等待确认。
+7. 点击详情或播放器下载立即显示探测进度，规划完成后可选择线路、清晰度、容器、优先级和开始时间。
+8. `1440×900`、`390×844`、`844×390` 和 `320 / 640 / 1024 / 1536` 像素宽度下导航、详情、海报墙、选集和下载规划器均可操作。
 
 ## 更新日志
 
 [2026-07-30 01:38] 新增独立糖心影院目录、字段白名单、目标站发现/搜索适配、5 分钟查询缓存、旧响应隔离与按需开映链路。
 [2026-07-30 02:40] 新增加密海报后台解密、严格目录归属和图片格式校验、视口懒加载、会话级查询缓存恢复、组合筛选与非阻塞错误提示。
 [2026-07-30 02:55] 海报解密改为单次 CBC 解密与线性异或还原 ECB，并禁止重定向；目录网络计划固定为 block/search 两个只读端点，补齐播放字段注入测试与独立 pack 完整门禁。
+[2026-07-30 11:22] 扩展 5.5.0 将目录升级为独立影视 App，增加合集归一化、详情/画面选集、免费/VIP 自动续播、金币确认、滚动记忆和全链路下载入口；目录与合集仍严格排除播放 URL。

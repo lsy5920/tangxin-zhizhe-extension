@@ -1,8 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { createRef } from "react";
 import { describe, expect, it } from "vitest";
 import type { CinemaMovie } from "../cinema/types";
 import type { BridgeState } from "../types";
-import { CinemaPage } from "./CinemaPage";
+
+// Shaka 的浏览器包使用 self 作为全局根；服务端静态渲染测试需要先建立等价别名。
+Object.defineProperty(globalThis, "self", { configurable: true, value: globalThis });
+const { CinemaPage } = await import("./CinemaPage");
 
 const movie: CinemaMovie = {
   id: "35807",
@@ -35,8 +39,16 @@ describe("cinema page resilient states", () => {
       screening: { request: { phase: "idle" } }
     } as unknown as BridgeState;
 
-    const html = renderToStaticMarkup(<CinemaPage state={state} onAction={() => {}} onPage={() => {}} />);
-    expect(html).toContain("本次更新失败，正在展示上次成功片单");
+    const html = renderToStaticMarkup(
+      <CinemaPage
+        panelRef={createRef<HTMLDivElement>()}
+        state={state}
+        onAction={() => {}}
+        onExitWorkspace={() => {}}
+        onClose={() => {}}
+      />
+    );
+    expect(html).toContain("目录更新失败，已保留上次片单");
     expect(html).toContain("目录服务暂时超时");
     expect(html).toContain("真实目录影片");
     expect(html).toContain("data-cinema-poster-state=\"idle\"");

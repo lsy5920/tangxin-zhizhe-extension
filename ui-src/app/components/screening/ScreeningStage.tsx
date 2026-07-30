@@ -2,12 +2,15 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { PlayerContextMenu, PlayerControlBar, PlayerOverlays, PlayerTopBar, type PlayerMorePanelKey } from "../player/PlayerChrome";
 import { PlayerGestureHudOverlay, PlayerGestureSurface, type GestureHudState } from "../player/PlayerGestureSystem";
 import { isBrowserFullscreen } from "../player/browserFullscreen";
+import { canAutoAdvanceEpisode } from "../../cinema/episodePlayback";
+import type { CinemaMovie } from "../../cinema/types";
 import { usePlaybackController } from "../../playback/usePlaybackController";
 import { useFullscreenController } from "../../playback/useFullscreenController";
 import type { PlaybackSession } from "../../playback/types";
 import type { PlaybackBookmark } from "../../types";
 import { formatDuration } from "../../helpers";
 import { resolveStageMediaOrientation } from "../../playback/stageLayout";
+import { ScreeningEpisodeOverlay } from "./ScreeningEpisodeOverlay";
 
 export type PlaybackBookmarkCommand = {
   nonce: number;
@@ -22,6 +25,14 @@ type Props = {
   bookmarks?: PlaybackBookmark[];
   bookmarkCommand?: PlaybackBookmarkCommand | null;
   onMediaStatsChange?: (stats: { currentTime: number; duration: number }) => void;
+  episodes?: CinemaMovie[];
+  currentEpisodeIndex?: number;
+  nextEpisode?: CinemaMovie | null;
+  autoNextEnabled?: boolean;
+  autoPlayRequested?: boolean;
+  onSelectEpisode?: (episode: CinemaMovie) => void;
+  onAutoNextEnabledChange?: (enabled: boolean) => void;
+  onAutoPlayConsumed?: () => void;
 };
 
 function percent(value: number, total: number) {
@@ -40,7 +51,22 @@ function orientationLabel(mode: "auto" | "landscape" | "portrait") {
   return "自动方向";
 }
 
-export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks = [], bookmarkCommand = null, onMediaStatsChange }: Props) {
+export function ScreeningStage({
+  session,
+  onAction,
+  onPlayingChange,
+  bookmarks = [],
+  bookmarkCommand = null,
+  onMediaStatsChange,
+  episodes = [],
+  currentEpisodeIndex = -1,
+  nextEpisode = null,
+  autoNextEnabled = true,
+  autoPlayRequested = false,
+  onSelectEpisode,
+  onAutoNextEnabledChange,
+  onAutoPlayConsumed
+}: Props) {
   const player = usePlaybackController(session);
   const fullscreen = useFullscreenController({
     video: player.video,
@@ -51,6 +77,9 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
   const [controlsFocused, setControlsFocused] = useState(false);
   const [locked, setLocked] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [episodePanelOpen, setEpisodePanelOpen] = useState(false);
+  const [nextCountdown, setNextCountdown] = useState<number | null>(null);
+  const [autoNextCancelled, setAutoNextCancelled] = useState(false);
   const [morePanel, setMorePanel] = useState<PlayerMorePanelKey>("source");
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [gestureHud, setGestureHud] = useState<GestureHudState>({ kind: "", text: "" });
@@ -65,6 +94,8 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
   const previousRateRef = useRef(1);
   const playedRecordedRef = useRef(false);
   const endedRecordedRef = useRef(false);
+  const autoAdvanceHandledRef = useRef("");
+  const autoPlayHandledRef = useRef("");
   const [loopStart, setLoopStart] = useState<number | null>(null);
   const [loopRange, setLoopRange] = useState<{ start: number; end: number } | null>(null);
   const activeSource = player.activeSource;
@@ -73,6 +104,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
   const paused = player.stats.paused;
   const buffering = player.runtime.phase === "buffering" || player.runtime.phase === "switching" || player.runtime.phase === "loading";
   const error = player.runtime.phase === "error" ? player.runtime.error : "";
+  const ended = player.runtime.phase === "ended";
 
   const video = player.video();
   const automaticStageLayout = resolveStageMediaOrientation(
@@ -100,7 +132,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
   const revealControls = (pin = false) => {
     if (controlsTimerRef.current) window.clearTimeout(controlsTimerRef.current);
     setControlsVisible(true);
-    if (!pin && !moreOpen && !controlsFocused && !locked && player.runtime.phase === "playing") {
+    if (!pin && !moreOpen && !episodePanelOpen && !controlsFocused && !locked && player.runtime.phase === "playing") {
       controlsTimerRef.current = window.setTimeout(() => setControlsVisible(false), fullscreen.active ? 2200 : 3000);
     }
   };
@@ -111,12 +143,16 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
       if (controlsTimerRef.current) window.clearTimeout(controlsTimerRef.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fullscreen.active, locked, moreOpen, controlsFocused, player.runtime.phase]);
+  }, [fullscreen.active, locked, moreOpen, episodePanelOpen, controlsFocused, player.runtime.phase]);
 
   useEffect(() => {
     // 切换会话、线路或 URL 后立即清理旧进度点预览，迟到定时器不得覆盖新媒体。
     setDragging(false);
     setPreviewTime(null);
+    setEpisodePanelOpen(false);
+    setNextCountdown(null);
+    setAutoNextCancelled(false);
+    autoAdvanceHandledRef.current = "";
     scrubUiActiveRef.current = false;
     if (progressPreviewClearTimerRef.current) window.clearTimeout(progressPreviewClearTimerRef.current);
     return () => {
@@ -127,6 +163,10 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
   useEffect(() => {
     if (!fullscreen.active && locked) setLocked(false);
   }, [fullscreen.active, locked]);
+
+  useEffect(() => {
+    if (locked) setEpisodePanelOpen(false);
+  }, [locked]);
 
   useEffect(() => {
     onPlayingChange?.(player.runtime.phase === "playing");
@@ -147,6 +187,48 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
       onAction("mark-library-playback", { movieId: session.movieId, title: session.title, ended: true });
     }
   }, [onAction, player.runtime.phase, session.movieId, session.title]);
+
+  useEffect(() => {
+    if (
+      !autoPlayRequested
+      || !hasUrl
+      || autoPlayHandledRef.current === session.id
+      || !["ready", "paused"].includes(player.runtime.phase)
+    ) return;
+    autoPlayHandledRef.current = session.id;
+    // 画面选集和自动续播都是明确的连续观看意图；新会话就绪后只自动开映一次。
+    onAutoPlayConsumed?.();
+    void player.play();
+  }, [autoPlayRequested, hasUrl, onAutoPlayConsumed, player.play, player.runtime.phase, session.id]);
+
+  useEffect(() => {
+    setNextCountdown(null);
+    if (
+      !ended
+      || !nextEpisode
+      || !autoNextEnabled
+      || autoNextCancelled
+      || !canAutoAdvanceEpisode(nextEpisode)
+      || autoAdvanceHandledRef.current === session.id
+      || !onSelectEpisode
+    ) return;
+
+    let remaining = 5;
+    setNextCountdown(remaining);
+    const interval = window.setInterval(() => {
+      remaining -= 1;
+      setNextCountdown(Math.max(0, remaining));
+    }, 1000);
+    const timeout = window.setTimeout(() => {
+      autoAdvanceHandledRef.current = session.id;
+      setNextCountdown(null);
+      onSelectEpisode(nextEpisode);
+    }, 5000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [autoNextCancelled, autoNextEnabled, ended, nextEpisode, onSelectEpisode, session.id]);
 
   useEffect(() => {
     if (!loopRange || player.runtime.phase !== "playing") return;
@@ -181,6 +263,13 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
       const shortcutInput = eventPath.some((node) => node instanceof HTMLElement
         && node.matches("input,textarea,select,[role='slider'],[contenteditable='true']"));
       if (key === "escape") {
+        if (episodePanelOpen) {
+          event.preventDefault();
+          event.stopPropagation();
+          setEpisodePanelOpen(false);
+          revealControls(true);
+          return;
+        }
         if (moreOpen) {
           event.preventDefault();
           event.stopPropagation();
@@ -360,6 +449,46 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
     });
   };
 
+  const setEpisodePanel = (open: boolean) => {
+    setEpisodePanelOpen(open);
+    if (open) {
+      setMoreOpen(false);
+      setContextMenu(null);
+      revealControls(true);
+    }
+  };
+  const selectEpisode = (episode: CinemaMovie) => {
+    if (!onSelectEpisode || episode.id === session.movieId) return;
+    setEpisodePanelOpen(false);
+    setAutoNextCancelled(true);
+    onSelectEpisode(episode);
+  };
+  const playNextNow = () => {
+    if (!nextEpisode || !onSelectEpisode) return;
+    autoAdvanceHandledRef.current = session.id;
+    setNextCountdown(null);
+    selectEpisode(nextEpisode);
+  };
+  const cancelAutoNext = () => {
+    setAutoNextCancelled(true);
+    setNextCountdown(null);
+  };
+  const planCurrentDownload = () => {
+    const openPlanner = () => onAction("plan-full-video-download", {
+      movieId: session.movieId,
+      movieTitle: session.title,
+      sourceId: activeSource?.id || "",
+      lineKey: activeSource?.id || "auto"
+    });
+    setEpisodePanelOpen(false);
+    // 规划器是全局顶层弹层；先退出原生全屏，避免浏览器最高层级把它盖在视频后面。
+    if (fullscreen.active || isBrowserFullscreen()) {
+      void fullscreen.exit().then(openPlanner, openPlanner);
+      return;
+    }
+    openPlanner();
+  };
+
   const shellStyle = fullscreen.active ? { background: "#000" } : undefined;
 
   return (
@@ -378,7 +507,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
         event.currentTarget.focus({ preventScroll: true });
       }}
       onPointerMove={() => revealControls()}
-      onPointerLeave={() => { if (!moreOpen && player.runtime.phase === "playing") setControlsVisible(false); }}
+      onPointerLeave={() => { if (!moreOpen && !episodePanelOpen && player.runtime.phase === "playing") setControlsVisible(false); }}
       onContextMenuCapture={handleStageContextMenuCapture}
     >
       <div ref={stageRef} className="txzz-player-orientation-stage absolute inset-0">
@@ -446,7 +575,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           onDiagnostic={() => onAction("copy-playback-health-report", { movieId: session.movieId })}
         />
         <PlayerTopBar
-          visible={controlsVisible || paused || Boolean(error)}
+          visible={controlsVisible || paused || Boolean(error) || episodePanelOpen}
           locked={locked}
           fullscreen={fullscreen.active}
           title={session.title}
@@ -460,12 +589,32 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           error={error}
           onBack={() => void fullscreen.exit()}
         />
+        <ScreeningEpisodeOverlay
+          visible={hasUrl && !locked && (controlsVisible || paused || ended)}
+          open={episodePanelOpen}
+          episodes={episodes}
+          currentMovieId={session.movieId}
+          currentIndex={currentEpisodeIndex}
+          nextEpisode={nextEpisode}
+          autoNextEnabled={autoNextEnabled}
+          ended={ended}
+          countdown={nextCountdown}
+          onOpenChange={setEpisodePanel}
+          onSelectEpisode={selectEpisode}
+          onDownload={planCurrentDownload}
+          onAutoNextEnabledChange={(enabled) => {
+            setAutoNextCancelled(false);
+            onAutoNextEnabledChange?.(enabled);
+          }}
+          onPlayNext={playNextNow}
+          onCancelCountdown={cancelAutoNext}
+        />
         <PlayerOverlays
           // 设置面板已经承担当前交互焦点；暂停/缓冲大按钮继续悬在上方会遮住中间“观看”页签。
-          buffering={buffering && !moreOpen}
+          buffering={buffering && !moreOpen && !episodePanelOpen}
           hasUrl={hasUrl}
           error={error}
-          paused={paused && !moreOpen}
+          paused={paused && !moreOpen && !episodePanelOpen && !ended}
           locked={locked}
           fullscreen={fullscreen.active}
           onPlay={() => void player.play()}
@@ -475,7 +624,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           onUnlock={() => setLocked(false)}
         />
         <PlayerControlBar
-          visible={controlsVisible || paused || moreOpen}
+          visible={controlsVisible || paused || moreOpen || episodePanelOpen}
           locked={locked}
           disabled={!hasUrl}
           fullscreen={fullscreen.active}
@@ -529,7 +678,7 @@ export function ScreeningStage({ session, onAction, onPlayingChange, bookmarks =
           onTogglePlay={() => void player.togglePlay()}
           onSeekBack={() => player.seekBy(-player.preferences.seekStep)}
           onSeekForward={() => player.seekBy(player.preferences.seekStep)}
-          onToggleMore={() => { setMoreOpen((value) => !value); revealControls(true); }}
+          onToggleMore={() => { setEpisodePanelOpen(false); setMoreOpen((value) => !value); revealControls(true); }}
           onCloseMore={() => setMoreOpen(false)}
           onToggleLock={() => setLocked((value) => !value)}
           onToggleFullscreen={() => void fullscreen.toggle()}

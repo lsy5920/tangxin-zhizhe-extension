@@ -1,5 +1,5 @@
 import type { ScreeningState } from "./playback/types";
-import type { CinemaCatalogState } from "./cinema/types";
+import type { CinemaCatalogState, CinemaCollectionState } from "./cinema/types";
 
 export type Page = "overview" | "cinema" | "accounts" | "playback" | "downloads" | "settings";
 
@@ -226,6 +226,14 @@ export type DownloadTask = {
 export type LibraryEntry = {
   movieId: string;
   title?: string;
+  posterUrl?: string;
+  creator?: string;
+  durationSeconds?: number;
+  durationLabel?: string;
+  orientation?: "landscape" | "portrait" | "square";
+  access?: "free" | "vip" | "coin";
+  price?: number;
+  isCollection?: boolean;
   favorite?: boolean;
   watchLater?: boolean;
   tags?: string[];
@@ -340,6 +348,8 @@ export type DownloadPlan = {
 
 export type DownloadPlannerState = {
   open?: boolean;
+  phase?: "probing" | "ready" | "error";
+  error?: string;
   movieId?: string;
   movieTitle?: string;
   taskId?: string;
@@ -457,6 +467,7 @@ export type BridgeState = {
   fullDetails?: FullDetail[];
   screening?: ScreeningState;
   cinemaCatalog?: CinemaCatalogState;
+  cinemaCollection?: CinemaCollectionState;
   downloadTasks?: Record<string, DownloadTask>;
   downloadSnapshots?: unknown[];
   downloadPlanner?: DownloadPlannerState | null;

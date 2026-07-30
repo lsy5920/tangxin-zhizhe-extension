@@ -117,7 +117,7 @@ export function ScreeningDrawer({
                   <div className="mt-2 grid grid-cols-3 gap-1.5">
                     <button type="button" onClick={() => onAction(source.id === "backup" ? "copy-backup-link" : "copy-play-link", { url: source.url, label: `${source.label}完整链接` })} className="min-h-10 rounded-xl bg-white text-[10px] font-bold text-violet-600 shadow-sm"><Copy size={12} className="mr-1 inline" />复制</button>
                     <button type="button" onClick={() => onAction("open-playback-url", { url: source.url, label: source.label })} className="min-h-10 rounded-xl bg-white text-[10px] font-bold text-sky-600 shadow-sm"><ExternalLink size={12} className="mr-1 inline" />打开</button>
-                    <button type="button" onClick={() => onAction("plan-full-video-download", { movieId: session.movieId, sourceId: source.id })} className="min-h-10 rounded-xl bg-violet-600 text-[10px] font-bold text-white shadow-sm"><Download size={12} className="mr-1 inline" />规划下载</button>
+                    <button type="button" onClick={() => onAction("plan-full-video-download", { movieId: session.movieId, movieTitle: session.title, sourceId: source.id })} className="min-h-10 rounded-xl bg-violet-600 text-[10px] font-bold text-white shadow-sm"><Download size={12} className="mr-1 inline" />规划下载</button>
                   </div>
                 </article>
               );
@@ -141,7 +141,7 @@ export function ScreeningDrawer({
                 </div>
               </article>
             ) : (
-              <button type="button" onClick={() => onAction("plan-full-video-download", { movieId: session.movieId, lineKey: "auto" })} className="flex min-h-24 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-violet-200 bg-violet-50/45 text-violet-600">
+              <button type="button" onClick={() => onAction("plan-full-video-download", { movieId: session.movieId, movieTitle: session.title, lineKey: "auto" })} className="flex min-h-24 w-full flex-col items-center justify-center rounded-2xl border border-dashed border-violet-200 bg-violet-50/45 text-violet-600">
                 <Download size={20} /><strong className="mt-2 text-[11px]">下载本场影片</strong><span className="mt-1 text-[9px] text-violet-400">自动选择健康线路</span>
               </button>
             )}

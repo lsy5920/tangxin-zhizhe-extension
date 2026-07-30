@@ -21,9 +21,11 @@ describe("放映侧栏旧会话兼容", () => {
         onRefresh={() => {}}
         onToggleFavorite={() => {}}
         onToggleWatchLater={() => {}}
+        onPlanDownload={() => {}}
       />
     );
     expect(html).toContain("账号直取");
     expect(html).toContain("已尝试 1 个账号");
+    expect(html).toContain("下载完整视频");
   });
 });

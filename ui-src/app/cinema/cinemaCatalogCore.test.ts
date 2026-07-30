@@ -146,4 +146,35 @@ describe("cinema catalog core", () => {
     const result = core.normalizeSearchResponse({ list: [] }, { page: 3, pageSize: 24 });
     expect(result).toMatchObject({ items: [], page: 3, hasMore: false });
   });
+
+  it("normalizes collection groups without exposing playback fields", () => {
+    const collection = core.normalizeCollectionResponse({
+      data: {
+        ...rawMovie("35856", { name: "旅行日记 第 2 集", is_episode: "y" }),
+        play_link: "https://media.invalid/current.m3u8",
+        groups: [
+          rawMovie("35855", { name: "旅行日记 第 1 集", duration: "12:08", play_link: "https://media.invalid/episode-1.m3u8" }),
+          rawMovie("35856", { name: "旅行日记 第 2 集", duration: "18:26", backup_link: "https://media.invalid/episode-2.m3u8" })
+        ]
+      }
+    }, rawMovie("35856", { name: "旅行日记 第 2 集", is_episode: "y" }));
+
+    expect(collection).toMatchObject({ parentMovieId: "35856", title: "旅行日记" });
+    expect(collection.items.map((item: any) => item.id)).toEqual(["35855", "35856"]);
+    expect(collection.items.every((item: any) => item.isCollection)).toBe(true);
+    expect(core.containsPlaybackField(collection)).toBe(false);
+    expect(JSON.stringify(collection)).not.toContain("media.invalid");
+  });
+
+  it("keeps the selected parent episode when a collection exceeds the item limit", () => {
+    const parent = rawMovie("999999", { name: "超长合集 第 121 集", is_episode: "y" });
+    const groups = Array.from({ length: 121 }, (_, index) => rawMovie(String(index + 1), {
+      name: `超长合集 第 ${index + 1} 集`,
+      is_episode: "y"
+    }));
+    const collection = core.normalizeCollectionResponse({ data: { ...parent, groups } }, parent);
+
+    expect(collection.items).toHaveLength(120);
+    expect(collection.items.at(-1)?.id).toBe("999999");
+  });
 });

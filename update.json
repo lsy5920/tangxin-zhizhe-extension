@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.4.2",
-  "build": "2026-07-30-0255",
-  "releasedAt": "2026-07-30 02:55",
+  "version": "5.5.0",
+  "build": "2026-07-30-1122",
+  "releasedAt": "2026-07-30 11:22",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-30-1122",
+      "type": "功能",
+      "title": "独立影院 App、合集续播与全链路下载",
+      "detail": "糖心影院升级为独立沉浸式影视 App，补齐首页、发现、搜索、片库、足迹、详情和播放路由；合集支持详情与画面内选集，免费/VIP 下一集自然结束后 5 秒续播，金币分集必须再次确认。影院详情、合集当前集、播放器画面、影片侧栏和片源/下载抽屉均可进入同一 OPFS 下载规划器，点击后立即显示探测进度，失败可原位重试；封面有限重试、旧媒体事件隔离和响应式布局同步加固。Worker 保持 2.1.0，正式扩展 ID 与私钥不变。",
+      "releasedAt": "2026-07-30 11:22"
+    },
     {
       "id": "2026-07-30-0255",
       "type": "修复",
@@ -242,11 +249,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 728247,
-  "packageSha256": "064572000c33f499ea68de162df87a26ce0129736ae14e2536d3ded13456293f",
+  "packageSize": 751606,
+  "packageSha256": "7fb00f20e07146c00a2970262eedd34a160d999918386c5491b277ac656b1ddd",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "QVO6/XQDNwq0xyPk1vtT4M6ErqZN57tw5DwN0gm266G2Hzu5VYDh7Amlh7oIgvMful6vbLCfYDAQxPKyX45G9qGnnld/7npeqUhelYZLSysi4cjDrb+oUYFU4oHOtrRZ3UWWToDwtWs4GJ07+Gmq6BTDtFgjDFh22vmpVaXsSnsTY5POsNGb5O8WC6egVaBgaf806CV/C7BQW9wksPvvNcjdMB6vipjo0lZykkgCbSIKFFSTBPiESfbqbK11L8h0+0b21/mKZV8Xobxaqz8b+iTNd0CbcxV1QYGcrHVK+4lzDzWdiWWBJL4nwQU6Ku/V2aDDbWnfq1T5KTSMVpSWiw=="
+    "value": "MJfUB0ApERjVWnQiT08eE3u4cRu9cmxMblAg+F/s0xiDY1q6gFaPD8rwzsrxkIH8lF9X/IQZTb4ML4SZKryKVi6VBxFpwABWT++1GQbkFhP5kFtKjNfdvH31kvGTASYaZUVVIj1eug1HaOU2rMcntXEwQq5kQss3NXjMKFxJLzyWdCAWruf8K5PhsQOsolEVIfUVoF/6hh/SaH61AN8PUAM9JLDQLzuYJjRk/eXn4xdMvUKz0SPR3tDPTgr0L1tY90M4K2sXymGOtt0z2i9gccpxoHq+paDwLp3T5aO1HwdIkaa3CbISQ5+ha3BqfZo5m9xR5x+xzoUHyQxVMQKthg=="
   }
 }

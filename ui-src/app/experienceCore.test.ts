@@ -7,10 +7,29 @@ const core = (globalThis as typeof globalThis & { TxzzExperienceCore: any }).Txz
 describe("experience core", () => {
   it("keeps favorite and watch-later flags independent and searchable", () => {
     let state = core.defaultExperienceState();
-    state = core.updateLibraryEntry(state, { movieId: "11634", title: "甜甜 Vlog", favorite: true, tags: ["旅行"] }, 1);
+    state = core.updateLibraryEntry(state, {
+      movieId: "11634",
+      title: "甜甜 Vlog",
+      posterUrl: "https://cdn.example/11634.bnc?ext=.jpg",
+      creator: "甜甜",
+      durationSeconds: 3600,
+      durationLabel: "1:00:00",
+      orientation: "portrait",
+      access: "vip",
+      isCollection: true,
+      favorite: true,
+      tags: ["旅行"]
+    }, 1);
     state = core.updateLibraryEntry(state, { movieId: "11634", watchLater: true, note: "周末看" }, 2);
     expect(core.selectLibrary(state, { keyword: "旅行" })).toHaveLength(1);
     expect(core.selectLibrary(state, { filter: "watchLater" })[0]).toMatchObject({ favorite: true, watchLater: true });
+    expect(core.selectLibrary(state, { filter: "watchLater" })[0]).toMatchObject({
+      posterUrl: "https://cdn.example/11634.bnc?ext=.jpg",
+      durationSeconds: 3600,
+      orientation: "portrait",
+      access: "vip",
+      isCollection: true
+    });
     state = core.updateLibraryEntry(state, { movieId: "11634", favorite: false, watchLater: false }, 3);
     expect(core.selectLibrary(state, {})).toEqual([]);
   });

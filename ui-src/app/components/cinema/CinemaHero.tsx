@@ -1,4 +1,4 @@
-import { Clock3, Clapperboard, Coins, Crown, Eye, Info, Play, Sparkles } from "lucide-react";
+import { Clock3, Clapperboard, Coins, Crown, Eye, Info, Layers3, Play, Sparkles } from "lucide-react";
 import type { CinemaMovie } from "../../cinema/types";
 import { CinemaPoster } from "./CinemaPoster";
 
@@ -40,14 +40,15 @@ export function CinemaHero({ movie, onDetails, onPlay, resolving = false }: Prop
         <p className="mt-2 text-[11px] font-semibold text-violet-100/65">{movie.creator} · 影片编号 {movie.id}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-bold text-white/70">
           <span className="inline-flex min-h-7 items-center gap-1 rounded-full bg-white/9 px-2.5 backdrop-blur"><Clock3 size={11} />{movie.durationLabel}</span>
+          {movie.isCollection && <span className="inline-flex min-h-7 items-center gap-1 rounded-full bg-violet-300/14 px-2.5 text-violet-100 backdrop-blur"><Layers3 size={11} />合集影片</span>}
           <span className="inline-flex min-h-7 items-center gap-1 rounded-full bg-white/9 px-2.5 backdrop-blur"><AccessIcon size={11} />{accessLabel(movie)}</span>
           {movie.views && <span className="inline-flex min-h-7 items-center gap-1 rounded-full bg-white/9 px-2.5 backdrop-blur"><Eye size={11} />{movie.views}</span>}
           {movie.score && <span className="inline-flex min-h-7 items-center gap-1 rounded-full bg-amber-300/15 px-2.5 text-amber-200">★ {movie.score}</span>}
         </div>
         <p className="mt-3 max-w-[32rem] text-[11px] font-medium leading-5 text-white/52">目录阶段只读取目标站原始影片信息。选择开映后，糖糖才会检票、轮换账号并获取当前影片的完整线路。</p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" onClick={() => onPlay(movie)} disabled={resolving} className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-white px-4 text-[12px] font-black text-[#25162d] shadow-xl transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-55">
-            {resolving ? <Sparkles size={15} className="animate-spin" /> : <Play size={15} fill="currentColor" />}{resolving ? "正在检票" : "获取线路并开映"}
+          <button type="button" onClick={() => movie.isCollection ? onDetails(movie) : onPlay(movie)} disabled={resolving} className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-white px-4 text-[12px] font-black text-[#25162d] shadow-xl transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-55">
+            {resolving ? <Sparkles size={15} className="animate-spin" /> : movie.isCollection ? <Layers3 size={15} /> : <Play size={15} fill="currentColor" />}{resolving ? "正在检票" : movie.isCollection ? "查看合集选集" : "获取线路并开映"}
           </button>
           <button type="button" onClick={() => onDetails(movie)} className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-white/16 bg-black/28 px-4 text-[12px] font-black text-white backdrop-blur transition hover:bg-white/12">
             <Info size={15} />影片详情
