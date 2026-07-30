@@ -3188,11 +3188,24 @@
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
-  .txzz-stream-hero { min-height: calc(100dvh - 3.7rem); }
-  .txzz-stream-hero-copy { min-height: calc(100dvh - 3.7rem); padding-block: 1rem; }
-  .txzz-stream-hero-copy h2 { font-size: clamp(1.6rem, 5vw, 2.6rem); }
+  /* 矮横屏同时存在顶栏和底部导航，Hero 必须使用两者之间的净高度；
+     否则操作按钮会被固定底栏覆盖，而重复小海报也会挤占核心信息。 */
+  .txzz-stream-hero { min-height: calc(100dvh - 7.85rem); }
+  .txzz-stream-hero-copy {
+    width: min(76%, 42rem);
+    min-height: calc(100dvh - 7.85rem);
+    justify-content: center;
+    padding: 0.55rem 1rem 0.65rem;
+  }
+  .txzz-stream-hero-copy h2 {
+    margin-top: 0.4rem;
+    font-size: clamp(1.45rem, 3.4vw, 2rem);
+    line-height: 1.04;
+  }
+  .txzz-stream-hero-meta { margin-top: 0.5rem; }
+  .txzz-stream-hero-actions { width: min(100%, 25rem); margin-top: 0.65rem; }
   .txzz-stream-hero-copy > p { display: none; }
-  .txzz-stream-hero-poster { bottom: 1rem; width: 7.5rem; }
+  .txzz-stream-hero-poster { display: none; }
   .txzz-stream-hero-ticket { display: none; }
 }
 
