@@ -26,21 +26,18 @@ export function CtrlButton({
   children
 }: CtrlButtonProps) {
   const sizeClass = size === "lg"
-    ? "min-h-11 min-w-11 px-2.5 text-[12px]"
+    ? "is-lg"
     : size === "sm"
-      ? "min-h-9 min-w-9 px-2 text-[11px]"
-      : "min-h-10 min-w-10 px-2 text-[11px]";
+      ? "is-sm"
+      : "is-md";
   const activeClass = active
-    ? accent === "amber"
-      ? "bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20"
-      : accent === "emerald"
-        ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/20"
-        : accent === "rose"
-          ? "bg-rose-500 text-white shadow-md shadow-rose-500/20"
-          : "bg-sky-500 text-white shadow-md shadow-sky-500/25"
+    ? accent === "amber" ? "is-active is-amber"
+      : accent === "emerald" ? "is-active is-emerald"
+        : accent === "rose" ? "is-active is-rose"
+          : "is-active"
     : accent === "sky"
-      ? "bg-sky-500 text-white shadow-sm shadow-sky-500/25 hover:bg-sky-400"
-      : "bg-white/10 text-white hover:bg-white/18";
+      ? "is-primary"
+      : "";
 
   return (
     <button
@@ -56,7 +53,7 @@ export function CtrlButton({
       }}
       onPointerDown={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
-      className={`txzz-player-control-button inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl font-semibold outline-none transition duration-150 focus-visible:ring-2 focus-visible:ring-sky-300 focus-visible:ring-offset-2 focus-visible:ring-offset-black/70 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-35 ${sizeClass} ${activeClass} ${className}`}
+      className={`txzz-player-control-button ${sizeClass} ${activeClass} ${className}`}
     >
       {children}
     </button>
@@ -87,11 +84,7 @@ export function CtrlChip({ active, disabled, title, onClick, children, className
         onClick?.();
       }}
       onPointerDown={(event) => event.stopPropagation()}
-      className={`txzz-player-chip inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border px-2.5 text-[11px] font-semibold leading-tight outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-35 ${
-        active
-          ? "border-sky-400/80 bg-sky-500 text-white shadow-sm shadow-sky-500/20"
-          : "border-white/8 bg-white/8 text-white/85 hover:border-white/16 hover:bg-white/14 hover:text-white"
-      } ${className}`}
+      className={`txzz-player-chip ${active ? "is-active" : ""} ${className}`}
     >
       {children}
     </button>
@@ -170,14 +163,14 @@ export function PlayerProgressBar({
   };
 
   return (
-    <div className={`txzz-player-progress-wrap ${fullscreen ? "mb-2" : "mb-2.5"}`}>
-      <div className="mb-1.5 flex items-center justify-between gap-3 text-[10px] tabular-nums text-white/72">
-        <span className="shrink-0 font-semibold text-white">
-          <span className={previewTime !== null ? "text-sky-300" : ""}>{formatDuration(shownTime)}</span>
-          <span className="px-1 text-white/35">/</span>
+    <div className={`txzz-player-progress-wrap ${fullscreen ? "is-fullscreen" : ""}`}>
+      <div className="txzz-player-progress-meta">
+        <span>
+          <span className={previewTime !== null ? "is-previewing" : ""}>{formatDuration(shownTime)}</span>
+          <span>/</span>
           <span>{duration ? formatDuration(duration) : "--:--"}</span>
         </span>
-        <span className="min-w-0 truncate text-right">
+        <span>
           {lineLabel} · {qualityLabel}{!fullscreen ? ` · 缓冲 ${bufferedPercent}%` : ""}
         </span>
       </div>
@@ -221,9 +214,7 @@ export function PlayerProgressBar({
           onSeekCancel();
         }}
         onClick={(event) => event.stopPropagation()}
-        className={`txzz-player-progress group/progress relative cursor-pointer rounded-full bg-white/16 outline-none transition-[height,box-shadow] focus-visible:ring-2 focus-visible:ring-sky-300 ${
-          dragging ? "h-3.5" : fullscreen ? "h-3 hover:h-3.5" : "h-2.5 hover:h-3"
-        }`}
+        className={`txzz-player-progress ${dragging ? "is-dragging" : ""}`}
       >
         {duration > 0 && (
           <div
@@ -241,12 +232,12 @@ export function PlayerProgressBar({
               />
             </div>
             {previewTime !== null && (
-              <span className="absolute -bottom-2 left-0 h-2 w-px bg-sky-300/90 shadow-[0_0_6px_rgba(125,211,252,.75)]" aria-hidden="true" />
+              <span className="txzz-player-preview-anchor" aria-hidden="true" />
             )}
           </div>
         )}
-        <div className="absolute inset-y-0 left-0 overflow-hidden rounded-full bg-white/20" style={{ width: `${bufferedPercent}%` }} />
-        <div className="absolute inset-y-0 left-0 rounded-full bg-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.45)]" style={{ width: `${shownPercent}%` }} />
+        <div className="txzz-player-progress-buffer" style={{ width: `${bufferedPercent}%` }} />
+        <div className="txzz-player-progress-played" style={{ width: `${shownPercent}%` }} />
         {markers.filter((marker) => duration > 0 && marker.time >= 0 && marker.time <= duration).map((marker) => (
           <button
             key={marker.id}
@@ -259,16 +250,11 @@ export function PlayerProgressBar({
               event.stopPropagation();
               onMarkerSelect?.(marker.id, marker.time);
             }}
-            className="absolute top-1/2 z-[3] h-4 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/90 bg-fuchsia-400 shadow-[0_0_8px_rgba(244,114,182,.8)] outline-none focus-visible:ring-2 focus-visible:ring-white"
+            className="txzz-player-progress-marker"
             style={{ left: `${Math.max(0, Math.min(100, (marker.time / duration) * 100))}%` }}
           />
         ))}
-        <div
-          className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-lg ring-2 ring-sky-300/45 transition-transform ${
-            dragging ? "scale-110" : "group-hover/progress:scale-105"
-          }`}
-          style={{ left: `${shownPercent}%` }}
-        />
+        <div className="txzz-player-progress-thumb" style={{ left: `${shownPercent}%` }} />
       </div>
     </div>
   );

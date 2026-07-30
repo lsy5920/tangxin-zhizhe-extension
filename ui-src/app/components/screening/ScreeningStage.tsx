@@ -494,13 +494,13 @@ export function ScreeningStage({
   return (
     <div
       ref={fullscreen.shellRef}
-      className={`txzz-player-shell txzz-player-shell--${stageLayout.orientation} txzz-candy-interactive select-none overflow-hidden bg-black ${fullscreen.active ? "txzz-player-fullscreen-shell txzz-fullscreen-active fixed inset-0 z-[2147483647] rounded-none" : "relative rounded-[1.35rem] shadow-2xl shadow-violet-950/20 ring-1 ring-black/25"}`}
+      className={`txzz-player-shell txzz-stream-player-shell txzz-player-shell--${stageLayout.orientation} ${fullscreen.active ? "txzz-player-fullscreen-shell txzz-fullscreen-active" : "is-embedded"}`}
       style={shellStyle}
       data-playback-phase={player.runtime.phase}
       data-stage-orientation={stageLayout.orientation}
       data-stage-evidence={stageLayout.source}
       tabIndex={0}
-      aria-label={`糖果影院播放器：${session.title}`}
+      aria-label={`糖心影院播放器：${session.title}`}
       onPointerDownCapture={(event) => {
         const target = event.target;
         if (target instanceof HTMLElement && target.closest("button,input,textarea,select,[role='slider'],[contenteditable='true']")) return;
@@ -511,7 +511,7 @@ export function ScreeningStage({
       onContextMenuCapture={handleStageContextMenuCapture}
     >
       <div ref={stageRef} className="txzz-player-orientation-stage absolute inset-0">
-        <div ref={player.containerRef} className="txzz-player-clean txzz-player-card-body absolute inset-0 h-full w-full bg-black" />
+        <div ref={player.containerRef} className="txzz-player-clean txzz-player-card-body txzz-stream-player-media" />
         <div
           className="txzz-player-brightness-mask pointer-events-none absolute inset-0 z-[8]"
           data-mode={player.preferences.brightness > 100 ? "boost" : "dim"}
@@ -549,13 +549,13 @@ export function ScreeningStage({
           onHoldRateStart={(rate) => {
             previousRateRef.current = player.preferences.rate;
             player.setTransientRate(rate);
-            setHoldHint(`${rate}x 糖果加速中 · 松开恢复`);
+            setHoldHint(`${rate}x 长按加速 · 松开恢复`);
           }}
           onHoldRateEnd={() => {
             player.setTransientRate(previousRateRef.current);
             setHoldHint("");
           }}
-          onLockHint={() => setHoldHint("控制已锁定，点右下角糖果锁解开")}
+          onLockHint={() => setHoldHint("控制已锁定，点击右下角解锁")}
           onContextMenu={(position) => { setMoreOpen(false); setContextMenu(position); }}
         />
         <PlayerGestureHudOverlay hud={gestureHud} holdHint={holdHint} />
@@ -628,7 +628,7 @@ export function ScreeningStage({
           locked={locked}
           disabled={!hasUrl}
           fullscreen={fullscreen.active}
-          controlsTone="inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/66 to-transparent px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-14 sm:px-5"
+          controlsTone=""
           iconSize={16}
           buttonSize={fullscreen.active ? "lg" : "md"}
           compact={!fullscreen.active}

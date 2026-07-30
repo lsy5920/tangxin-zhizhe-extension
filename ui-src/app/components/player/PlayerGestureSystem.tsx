@@ -554,10 +554,8 @@ type GestureHudOverlayProps = {
 export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProps) {
   if (holdHint) {
     return (
-      <div className="pointer-events-none absolute inset-0 z-[26] flex items-center justify-center px-4">
-        <div className="txzz-player-gesture-chip max-w-[70%] truncate rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-semibold text-white shadow-lg ring-1 ring-white/12 backdrop-blur-sm">
-          {holdHint}
-        </div>
+      <div className="txzz-stream-gesture-layer">
+        <div className="txzz-player-gesture-chip"><Zap size={14} />{holdHint}</div>
       </div>
     );
   }
@@ -584,64 +582,55 @@ export function PlayerGestureHudOverlay({ hud, holdHint }: GestureHudOverlayProp
     || (!hud.direction && (hud.kind === "seek-forward" || hud.kind === "double-right" || (hud.kind === "seek-scrub" && barPercent >= 50)));
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-[26]">
-      {/* 双击区域闪烁：更淡、更短，少挡画面 */}
+    <div className="txzz-stream-gesture-layer">
+      {/* 区域反馈只使用短暂边缘闪光，避免一整块蒙版遮住正在看的画面。 */}
       {hud.zone === "left" && <div className="txzz-gesture-zone-flash txzz-gesture-zone-left" />}
       {hud.zone === "right" && <div className="txzz-gesture-zone-flash txzz-gesture-zone-right" />}
       {hud.zone === "center" && <div className="txzz-gesture-zone-flash txzz-gesture-zone-center" />}
 
-      {/* 左侧亮度竖条 */}
       {hud.sideBar === "left" && (
         <div className="txzz-gesture-side-bar txzz-gesture-side-bar-left">
-          <Sun size={14} className="mb-1.5 text-amber-200" />
+          <Sun size={15} />
           <div className="txzz-gesture-side-track">
-            <div className="txzz-gesture-side-fill bg-amber-300" style={{ height: `${barPercent}%` }} />
+            <div className="txzz-gesture-side-fill is-brightness" style={{ height: `${barPercent}%` }} />
           </div>
-          <span className="mt-1.5 text-[10px] font-semibold text-white/90">{Math.round(60 + (barPercent / 100) * 80)}</span>
+          <span>{Math.round(60 + (barPercent / 100) * 80)}</span>
         </div>
       )}
 
-      {/* 右侧音量竖条 */}
       {hud.sideBar === "right" && (
         <div className="txzz-gesture-side-bar txzz-gesture-side-bar-right">
-          {barPercent <= 0 ? <VolumeX size={14} className="mb-1.5 text-sky-200" /> : <Volume2 size={14} className="mb-1.5 text-sky-200" />}
+          {barPercent <= 0 ? <VolumeX size={15} /> : <Volume2 size={15} />}
           <div className="txzz-gesture-side-track">
-            <div className="txzz-gesture-side-fill bg-sky-400" style={{ height: `${barPercent}%` }} />
+            <div className="txzz-gesture-side-fill is-volume" style={{ height: `${barPercent}%` }} />
           </div>
-          <span className="mt-1.5 text-[10px] font-semibold text-white/90">{barPercent}</span>
+          <span>{barPercent}</span>
         </div>
       )}
 
-      {/* 中央 HUD：紧凑胶囊，快进/拖进度用横条小卡片 */}
       {showCenter && (
-        <div className="absolute inset-0 flex items-center justify-center px-6">
+        <div className="txzz-stream-gesture-center">
           {isSeek ? (
-            <div className="txzz-player-gesture-hud flex max-w-[min(14rem,72vw)] items-center gap-2 rounded-2xl bg-black/65 px-3 py-2 text-white shadow-lg ring-1 ring-white/12 backdrop-blur-sm">
-              <div className="flex min-w-0 items-center gap-2">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12">
-                  {seekBackward && <ChevronLeft size={16} />}
-                  {seekForward && <ChevronRight size={16} />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[11px] font-semibold leading-tight tracking-wide">{hud.text}</div>
-                  {typeof hud.percent === "number" && (
-                    <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-white/18">
-                      <div className="h-full rounded-full bg-emerald-300 transition-all duration-75" style={{ width: `${barPercent}%` }} />
-                    </div>
-                  )}
-                </div>
+            <div className="txzz-player-gesture-hud is-seek">
+              <span className="txzz-stream-gesture-icon">
+                {seekBackward && <ChevronLeft size={17} />}
+                {seekForward && <ChevronRight size={17} />}
+              </span>
+              <div>
+                <strong>{hud.text}</strong>
+                {typeof hud.percent === "number" && <span className="txzz-stream-gesture-progress"><i style={{ width: `${barPercent}%` }} /></span>}
               </div>
             </div>
           ) : (
-            <div className="txzz-player-gesture-hud flex max-w-[min(11rem,70vw)] items-center gap-2 rounded-full bg-black/65 px-3 py-1.5 text-white shadow-lg ring-1 ring-white/12 backdrop-blur-sm">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12">
+            <div className="txzz-player-gesture-hud">
+              <span className="txzz-stream-gesture-icon">
                 {hud.kind === "play" && <Play size={14} className="ml-0.5 fill-white" />}
                 {hud.kind === "pause" && <Pause size={14} className="fill-white" />}
                 {hud.kind === "lock" && <Lock size={13} />}
                 {hud.kind === "unlock" && <Unlock size={13} />}
                 {hud.kind === "rate" && <Zap size={14} />}
-              </div>
-              <span className="truncate text-[11px] font-semibold tracking-wide">{hud.text}</span>
+              </span>
+              <strong>{hud.text}</strong>
             </div>
           )}
         </div>

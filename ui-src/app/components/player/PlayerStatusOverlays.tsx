@@ -53,36 +53,36 @@ export function PlayerOverlays({
   return (
     <>
       {!hasUrl && (
-        <div className="pointer-events-none absolute inset-0 z-[14] flex items-center justify-center p-5" role="status" aria-live="polite">
-          <div className="max-w-xs text-center text-white/72">
-            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/8">
+        <div className="txzz-stream-player-state is-empty" role="status" aria-live="polite">
+          <div>
+            <span>
               <Film size={20} />
             </span>
-            <p className="mt-3 text-[12px] font-semibold text-white/88">等待播放链接</p>
-            <p className="mt-1 text-[10px] leading-relaxed text-white/48">打开网站视频详情页后，播放器会在此加载可用线路。</p>
+            <strong>等待播放线路</strong>
+            <p>选择影片并完成检票后，画面会在这里就绪。</p>
           </div>
         </div>
       )}
 
       {buffering && hasUrl && !error && (
-        <div className="pointer-events-none absolute inset-0 z-[15] flex items-center justify-center" role="status" aria-live="polite">
-          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/58 px-4 py-3 text-white shadow-xl backdrop-blur-md">
-            <div className="txzz-player-spinner !h-7 !w-7" />
-            <div className="text-left">
-              <p className="text-[11px] font-semibold">正在缓冲</p>
-              <p className="mt-0.5 text-[10px] text-white/52">网络恢复后会自动继续</p>
+        <div className="txzz-stream-player-state is-buffering" role="status" aria-live="polite">
+          <div>
+            <div className="txzz-player-spinner" />
+            <div>
+              <strong>正在缓冲</strong>
+              <p>网络稳定后自动继续</p>
             </div>
           </div>
         </div>
       )}
 
       {hasUrl && paused && !buffering && !error && !locked && (
-        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center">
+        <div className="txzz-stream-player-paused">
           <button
             type="button"
             onClick={(event) => { event.preventDefault(); event.stopPropagation(); onPlay(); }}
             onPointerDown={(event) => event.stopPropagation()}
-            className="pointer-events-auto flex h-16 w-16 items-center justify-center rounded-full border border-white/18 bg-black/52 text-white shadow-2xl backdrop-blur-md outline-none transition hover:scale-105 hover:bg-black/65 focus-visible:ring-2 focus-visible:ring-sky-300 active:scale-95"
+            className="txzz-stream-player-big-play"
             title="开始播放"
             aria-label="开始播放"
           >
@@ -92,12 +92,12 @@ export function PlayerOverlays({
       )}
 
       {hasUrl && error && paused && !buffering && !locked && (
-        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4" role="alert">
-          <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-rose-300/15 bg-black/82 p-4 text-center text-white shadow-2xl backdrop-blur-md">
-            <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-amber-300/12 text-amber-200"><Activity size={19} /></span>
-            <p className="mt-2 text-[12px] font-semibold">播放暂时中断</p>
-            <p className="mt-1.5 line-clamp-3 text-[10px] leading-relaxed text-white/58">{error}</p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="txzz-stream-player-error" role="alert">
+          <div>
+            <span><Activity size={19} /></span>
+            <strong>播放暂时中断</strong>
+            <p>{error}</p>
+            <div>
               <CtrlButton title="重新加载当前线路" accent="sky" size="sm" onClick={onReload} className="w-full"><RefreshCw size={13} /> 重载</CtrlButton>
               <CtrlButton title="切换到备用线路" active accent="emerald" size="sm" disabled={!canSwitchBackup} onClick={onSwitchBackup} className="w-full"><Route size={13} /> 切备用</CtrlButton>
             </div>
@@ -110,7 +110,7 @@ export function PlayerOverlays({
           ref={unlockRef}
           type="button"
           onClick={(event) => { event.stopPropagation(); onUnlock(); }}
-          className="txzz-player-unlock-fab absolute bottom-[max(18px,env(safe-area-inset-bottom))] right-[max(16px,env(safe-area-inset-right))] z-30 flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-black/58 text-white shadow-xl backdrop-blur-md outline-none focus-visible:ring-2 focus-visible:ring-sky-300 active:scale-95"
+          className="txzz-player-unlock-fab txzz-stream-player-unlock"
           title="解锁播放器控制"
           aria-label="解锁播放器控制"
         >
@@ -207,7 +207,7 @@ export function PlayerContextMenu({
       onKeyDown={handleKeyDown}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
-      className="txzz-player-context-menu absolute z-[42] overflow-y-auto rounded-2xl border border-white/12 bg-slate-950/96 p-1.5 text-white shadow-2xl backdrop-blur-xl"
+      className="txzz-player-context-menu txzz-stream-player-context-menu"
       style={{
         width: "min(12rem, calc(100% - 1rem))",
         maxHeight: "calc(100% - 1rem)",
@@ -222,7 +222,7 @@ export function PlayerContextMenu({
       <ContextMenuButton icon={Repeat2} label="设为 B 点并循环" onClick={() => run(onLoopEnd)} />
       {loopActive && <ContextMenuButton icon={X} label="结束片段循环" onClick={() => run(onClearLoop)} />}
       <ContextMenuButton icon={Activity} label="查看播放器诊断" onClick={() => run(onDiagnostic)} />
-      <div className="my-1 h-px bg-white/8" />
+      <div className="txzz-stream-context-divider" />
       <ContextMenuButton icon={X} label="关闭菜单" onClick={onClose} />
     </div>
   );
@@ -234,9 +234,9 @@ function ContextMenuButton({ icon: Icon, label, onClick }: { icon: typeof X; lab
       type="button"
       role="menuitem"
       onClick={onClick}
-      className="flex min-h-10 w-full items-center gap-2.5 rounded-xl px-3 text-left text-[11px] font-semibold text-white/82 outline-none transition hover:bg-white/10 hover:text-white focus-visible:bg-white/12 focus-visible:ring-2 focus-visible:ring-sky-300"
+      className="txzz-stream-context-item"
     >
-      <Icon size={14} className="shrink-0 text-sky-300" />
+      <Icon size={14} />
       <span>{label}</span>
     </button>
   );
@@ -278,41 +278,39 @@ export function PlayerTopBar({
   return (
     <div
       aria-hidden={!interactive}
-      className={`txzz-player-top-bar pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/88 via-black/34 to-transparent px-3 pb-12 pt-[max(10px,env(safe-area-inset-top))] text-white transition-opacity duration-200 sm:px-5 ${
-        interactive ? "opacity-100" : "opacity-0"
-      }`}
+      className={`txzz-player-top-bar txzz-stream-player-topbar ${interactive ? "is-visible" : ""}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
+      <div>
+        <div className="txzz-stream-player-title-block">
           {fullscreen && (
             <button
               type="button"
               disabled={!interactive}
               tabIndex={interactive ? 0 : -1}
               onClick={(event) => { event.stopPropagation(); onBack(); }}
-              className={`${interactive ? "pointer-events-auto" : "pointer-events-none"} flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/12 bg-black/42 text-white shadow-sm backdrop-blur outline-none transition hover:bg-black/58 focus-visible:ring-2 focus-visible:ring-sky-300 active:scale-95 disabled:opacity-0`}
+              className={interactive ? "is-interactive" : ""}
               title="退出全屏"
               aria-label="退出全屏"
             >
               <ChevronLeft size={19} />
             </button>
           )}
-          <div className="min-w-0 rounded-xl border border-white/8 bg-black/38 px-3 py-2 shadow-sm backdrop-blur">
-            <span className="block max-w-[13rem] truncate text-[11px] font-semibold sm:max-w-[30rem]">{title}</span>
-            {resumeTip && <span className="mt-0.5 block truncate text-[10px] text-emerald-200/85">{resumeTip}</span>}
+          <div>
+            <span>{title}</span>
+            {resumeTip && <small>{resumeTip}</small>}
           </div>
         </div>
-        <div className={`flex shrink-0 flex-wrap justify-end gap-1 transition-opacity ${fullscreen && !metaVisible && !error ? "opacity-0" : "opacity-100"}`}>
-          <span role="status" className={`rounded-full px-2.5 py-1 text-[10px] font-medium backdrop-blur ${hasUrl ? "bg-emerald-500/76" : "bg-rose-500/76"}`}>{status}</span>
-          {fullscreen && <span className="rounded-full bg-sky-500/76 px-2.5 py-1 text-[10px] font-medium backdrop-blur">{fillLabel}</span>}
+        <div className={`txzz-stream-player-meta ${fullscreen && !metaVisible && !error ? "is-hidden" : ""}`}>
+          <span role="status" className={hasUrl ? "is-ok" : "is-error"}>{status}</span>
+          {fullscreen && <span>{fillLabel}</span>}
           {fullscreen && metaVisible && (
-            <span className={`rounded-full px-2.5 py-1 text-[10px] font-medium backdrop-blur ${diagnosticOk ? "bg-black/42" : "bg-amber-500/88"}`} title={diagnosticLabel}>
+            <span className={diagnosticOk ? "" : "is-warning"} title={diagnosticLabel}>
               {diagnosticLabel}
             </span>
           )}
         </div>
       </div>
-      {error && <p className="mt-2 max-w-xl rounded-xl border border-rose-300/12 bg-black/48 px-3 py-2 text-[10px] leading-relaxed text-rose-100 backdrop-blur">{error}</p>}
+      {error && <p className="txzz-stream-player-top-error">{error}</p>}
     </div>
   );
 }

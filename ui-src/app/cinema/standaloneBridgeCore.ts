@@ -28,11 +28,13 @@ export const STANDALONE_RUNTIME_ACTIONS: Readonly<Record<string, string>> = Obje
  */
 export function mergeStandaloneBridgeState(current: BridgeState, incoming?: BridgeState | null): BridgeState {
   if (!incoming) return current;
+  const hasCollection = Object.prototype.hasOwnProperty.call(incoming, "cinemaCollection");
+  const hasPlanner = Object.prototype.hasOwnProperty.call(incoming, "downloadPlanner");
   return {
     ...current,
     ...incoming,
-    cinemaCollection: incoming.cinemaCollection ?? current.cinemaCollection,
-    downloadPlanner: incoming.downloadPlanner ?? current.downloadPlanner,
+    cinemaCollection: hasCollection ? incoming.cinemaCollection : current.cinemaCollection,
+    downloadPlanner: hasPlanner ? incoming.downloadPlanner : current.downloadPlanner,
     expanded: true,
     publishedAt: incoming.publishedAt || new Date().toISOString()
   };

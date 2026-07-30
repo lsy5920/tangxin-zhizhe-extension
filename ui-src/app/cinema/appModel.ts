@@ -1,8 +1,8 @@
-import type { LibraryEntry } from "../types";
+import type { BridgeState, DownloadTask, LibraryEntry, PlaybackBookmark } from "../types";
 import type { PlaybackSession, ScreeningState } from "../playback/types";
 import type { CinemaCatalogState, CinemaCollectionState, CinemaMovie } from "./types";
 
-export const CINEMA_PRIMARY_ROUTES = ["home", "discover", "search", "library", "history", "downloads"] as const;
+export const CINEMA_PRIMARY_ROUTES = ["home", "discover", "search", "library", "bookmarks", "history", "downloads", "storage"] as const;
 
 export type CinemaPrimaryRoute = typeof CINEMA_PRIMARY_ROUTES[number];
 export type CinemaRoute =
@@ -20,6 +20,28 @@ export type CinemaHistoryItem = {
 export type CinemaLibraryItem = {
   movie: CinemaMovie;
   entry: LibraryEntry;
+};
+
+export type CinemaBookmarkItem = {
+  movie: CinemaMovie;
+  bookmark: PlaybackBookmark;
+};
+
+export type CinemaWorkspaceViewModel = {
+  movieIndex: Map<string, CinemaMovie>;
+  library: CinemaLibraryItem[];
+  history: CinemaHistoryItem[];
+  bookmarks: CinemaBookmarkItem[];
+  downloads: DownloadTask[];
+  counts: {
+    catalog: number;
+    library: number;
+    bookmarks: number;
+    history: number;
+    downloads: number;
+    activeDownloads: number;
+    storageIssues: number;
+  };
 };
 
 export function isCinemaPrimaryRoute(value: unknown): value is CinemaPrimaryRoute {
@@ -100,6 +122,7 @@ export function collectCinemaMovieIndex(
   }
   return index;
 }
+
 
 export function shouldLoadCinemaCollection(
   collection: CinemaCollectionState | null | undefined,
@@ -209,4 +232,47 @@ export function selectCinemaLibrary(
     })
     .sort((left, right) => (Date.parse(right.updatedAt || right.addedAt || "") || 0) - (Date.parse(left.updatedAt || left.addedAt || "") || 0))
     .map((entry) => ({ movie: movieIndex.get(entry.movieId) || libraryEntryToCinemaMovie(entry), entry }));
+}
+
+export function buildCinemaWorkspaceViewModel(state: BridgeState): CinemaWorkspaceViewModel {
+  const movieIndex = collectCinemaMovieIndex(state.cinemaCatalog, state.cinemaCollection);
+  const libraryEntries = state.experience?.library || {};
+  const library = selectCinemaLibrary(libraryEntries, movieIndex);
+  const history = selectCinemaHistory(state.screening, movieIndex, libraryEntries);
+  const downloads = Object.values(state.downloadTasks || {});
+  const bookmarks = Object.entries(state.experience?.bookmarks || {}).flatMap(([movieId, rows]) => {
+    const movie = movieIndex.get(movieId)
+      || (libraryEntries[movieId] ? libraryEntryToCinemaMovie(libraryEntries[movieId]) : null)
+      || history.find((item) => item.movie.id === movieId)?.movie
+      || {
+        id: movieId,
+        title: rows?.[0]?.title || `影片 ${movieId}`,
+        posterUrl: "",
+        creator: "时间书签",
+        durationSeconds: rows?.[0]?.durationSeconds || 0,
+        durationLabel: fallbackDurationLabel(rows?.[0]?.durationSeconds || 0),
+        orientation: "landscape" as const,
+        access: "free" as const,
+        price: 0
+      };
+    return (rows || []).map((bookmark) => ({ movie, bookmark }));
+  }).sort((left, right) => (Date.parse(right.bookmark.updatedAt || right.bookmark.createdAt || "") || 0) - (Date.parse(left.bookmark.updatedAt || left.bookmark.createdAt || "") || 0));
+  const activeDownloads = downloads.filter((task) => ["queued", "probing", "downloading", "recovering", "assembling", "saving"].includes(String(task.stage || ""))).length;
+  const storageIssues = (state.experience?.storageAudit?.entries || []).filter((entry) => !entry.protected && ["orphan", "residue", "duplicate"].includes(String(entry.category || ""))).length;
+  return {
+    movieIndex,
+    library,
+    history,
+    bookmarks,
+    downloads,
+    counts: {
+      catalog: movieIndex.size,
+      library: library.length,
+      bookmarks: bookmarks.length,
+      history: history.length,
+      downloads: downloads.length,
+      activeDownloads,
+      storageIssues
+    }
+  };
 }

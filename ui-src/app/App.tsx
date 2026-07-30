@@ -2,10 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { listenBridgeState, notifyUiReady, sendUiAction } from "./bridge";
 import type { AccountsPageIntent, BridgeState, Page, SettingsPageIntent } from "./types";
+import type { CinemaPrimaryRoute } from "./cinema/appModel";
 import { OverviewPage } from "./components/OverviewPage";
 import { AccountsPage } from "./components/AccountsPage";
-import { PlaybackPage } from "./components/PlaybackPage";
-import { DownloadsPage } from "./components/DownloadsPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
 import { UpdateModal } from "./update/UpdateModal";
@@ -13,7 +12,6 @@ import { isUpdateAvailableForCurrentBuild } from "./update/helpers";
 import { flowItemText } from "./helpers";
 import { useDocumentScrollLock } from "./components/ui/primitives";
 import { FloatingCompanion } from "./components/layout/FloatingCompanion";
-import { DownloadPlannerModal } from "./components/download/DownloadPlannerModal";
 import { WorkspaceShell } from "./components/layout/WorkspaceShell";
 import { PAGE_META } from "./model/navigation";
 import { buildWorkspaceViewModel } from "./model/workspaceViewModel";
@@ -274,6 +272,21 @@ export default function App() {
     setPage(target);
   };
 
+  const handleOverviewAction = (actionName: string, payload: Record<string, unknown> = {}) => {
+    if (actionName === "open-cinema-page") {
+      const route = String(payload.route || "home") as CinemaPrimaryRoute;
+      disableHostPlaybackFullscreenMode();
+      setToast({ text: "正在新标签页打开糖心影院", level: "running" });
+      void chrome.runtime.sendMessage({ type: "openCinemaPage", route }).then((response) => {
+        if (!response?.ok) throw new Error(response?.error || "影院页面打开失败");
+        setOpen(false);
+        action("close");
+      }).catch((error) => setToast({ text: error?.message || String(error), level: "error" }));
+      return;
+    }
+    action(actionName, payload);
+  };
+
   const openUpgradeCenter = () => {
     setSettingsIntent({ section: "updates" });
     goPage("settings", { section: "updates" });
@@ -295,14 +308,10 @@ export default function App() {
     if (page === "cinema") return null;
     // 每个业务页包一层错误边界：单页崩溃时保留悬浮球与面板外壳，避免整站 UI 消失。
     const body = page === "overview"
-      ? <OverviewPage state={bridgeState} onAction={action} onPage={(target) => goPage(target)} />
+      ? <OverviewPage state={bridgeState} onAction={handleOverviewAction} onPage={(target) => goPage(target)} />
       : page === "accounts"
         ? <AccountsPage state={bridgeState} onAction={action} intent={accountsIntent} onIntentHandled={() => setAccountsIntent({})} />
-        : page === "playback"
-          ? <PlaybackPage state={bridgeState} onAction={action} onPage={(target) => goPage(target)} />
-          : page === "downloads"
-            ? <DownloadsPage state={bridgeState} onAction={action} />
-            : (
+        : (
               <SettingsPage
                 state={bridgeState}
                 onAction={action}
@@ -385,8 +394,6 @@ export default function App() {
         onDownload={handleDownloadUpdate}
         onCheck={handleCheckUpdate}
       />
-
-      <DownloadPlannerModal planner={bridgeState.downloadPlanner} onAction={action} />
 
       {updatePersistenceError && (
         <div

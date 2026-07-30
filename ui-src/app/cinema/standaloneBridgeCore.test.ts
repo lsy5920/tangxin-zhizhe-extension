@@ -44,6 +44,19 @@ describe("standalone cinema bridge core", () => {
     expect(Object.keys(merged.downloadTasks || {})).toEqual(["fresh"]);
   });
 
+  it("honors an explicit null from the runtime instead of reviving a closed overlay", () => {
+    const current = {
+      cinemaCollection: { phase: "ready", parentMovieId: "10", items: [] },
+      downloadPlanner: { open: true, phase: "ready", movieId: "10" }
+    } as BridgeState;
+    const merged = mergeStandaloneBridgeState(current, {
+      cinemaCollection: null,
+      downloadPlanner: null
+    } as BridgeState);
+    expect(merged.cinemaCollection).toBeNull();
+    expect(merged.downloadPlanner).toBeNull();
+  });
+
   it("maps every stateful cinema action to a background message", () => {
     expect(STANDALONE_RUNTIME_ACTIONS["update-library-entry"]).toBe("updateLibraryEntry");
     expect(STANDALONE_RUNTIME_ACTIONS["pause-download-task"]).toBe("pauseDownloadTask");

@@ -1,18 +1,18 @@
 {
   "name": "糖心志者",
-  "version": "5.6.0",
-  "build": "2026-07-30-2136",
+  "version": "5.7.0",
+  "build": "2026-07-31-0145",
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
   "package": "tangxin-zhizhe-latest.crx",
-  "versionedPackage": "tangxin-zhizhe-5.6.0.crx",
-  "packedAt": "2026-07-30T13:44:06.471Z",
+  "versionedPackage": "tangxin-zhizhe-5.7.0.crx",
+  "packedAt": "2026-07-30T17:49:35.767Z",
   "format": "crx",
-  "size": 768584,
-  "sha256": "33db15bfc0e696b39488d3a19676267702bb0f9a68d130e886e94df22998f322",
+  "size": 777183,
+  "sha256": "9a6d01eb66b019a0e023dbdd54ae42ffdecea26a846fd443d92d9bdc8b0a893b",
   "publicKeySha256": "334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
   "updateManifestSignature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "jBXyKEM0tOoPSuGNg2tN3xSAY3Sb5E7LEvC4JHhOYS9DSVw6wrPxMVKY538q952l6vjT1SPfWif4SdaYPS3v4Lz7Thx7YDIPPmqeowv+0WgZaodjZa4bR0+r9G4O6bXXOmmgUzcEqNAjR7Z1LnCns0iSh1O5l+XhDpGiwCCtc6QYA4UhbO7VcFWjyJiA0jpTRONqaIHVm6n4Tnypp/6ioSpIHsnPciMihLp/LFLZEgp960l+L0r2FMRl4U8BSoZ62NRyWCx8fxUoTDqWllVmiE6o39KH97RmEyCyAjxF1Ft98iBvCNsFOySI0RBC9bipibrGr670ykfn5A0lt93VMQ=="
+    "value": "PWqyB8Z/a6hk/QImc/99JehgAGzk6FuSSh3WA6byru1CIYL1Yka8EWk91OIVYCwhKLzs+JGztgt9dYricHqKGAOKmlnqo6eRNZc6Hzt9tcX46nYUshTcUI19GOhnsmA8u6rTJGOevUUIL1ZXqtaqUuxbCPTHcoiv4o5kKX64UPbHl1IyjzBcQLcuGam6M63/wNNaOcr0lYJnFmwe1Rix0PhcEUTZZdsSCiWjNbYh+SnC5xGiuSr2zWqbTWVYf/pdCTyLO8/jCpMM9u43vq02f5oAQAOHDI2THIKDFAu2cKAgzExxgltRFpd+stb85XnQMcy2yJeYPeB4ICWHb3QnPA=="
   }
 }

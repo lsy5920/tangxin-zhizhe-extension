@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import {
-  collectCinemaMovieIndex,
+  buildCinemaWorkspaceViewModel,
+  cinemaRoutesEqual,
   createCinemaRouteStack,
   libraryEntryToCinemaMovie,
   navigateCinemaPrimary,
   popCinemaRoute,
   pushCinemaRoute,
-  selectCinemaHistory,
   selectCinemaLibrary,
   shouldLoadCinemaCollection,
   syncCinemaRouteStack,
@@ -28,7 +28,9 @@ import { CinemaAppShell } from "./cinema/CinemaAppShell";
 import { CinemaDetailPage } from "./cinema/CinemaDetailPage";
 import { CinemaExploreView, CinemaHomeView, type CinemaQuery } from "./cinema/CinemaCatalogViews";
 import { CinemaHistoryView, CinemaLibraryView } from "./cinema/CinemaLibraryViews";
-import { DownloadsPage } from "./DownloadsPage";
+import { CinemaBookmarkView } from "./cinema/CinemaBookmarkView";
+import { CinemaStorageView } from "./cinema/CinemaStorageView";
+import { CinemaDownloadView } from "./cinema/CinemaDownloadView";
 import { PlaybackPage } from "./PlaybackPage";
 
 type Toast = { text: string; level: string } | null;
@@ -62,7 +64,7 @@ const EMPTY_CATALOG: CinemaCatalogState = {
 };
 
 function isPrimaryRoute(route: CinemaRoute): route is { name: CinemaPrimaryRoute } {
-  return ["home", "discover", "search", "library", "history", "downloads"].includes(route.name);
+  return ["home", "discover", "search", "library", "bookmarks", "history", "downloads", "storage"].includes(route.name);
 }
 
 function cinemaRouteHash(route: CinemaRoute) {
@@ -77,7 +79,7 @@ function validCinemaRouteStack(value: unknown): value is CinemaRoute[] {
     if (!route || typeof route !== "object" || !("name" in route)) return false;
     const name = String(route.name || "");
     if (["detail", "playback"].includes(name)) return "movieId" in route && Boolean(String(route.movieId || "").trim());
-    return ["home", "discover", "search", "library", "history", "downloads"].includes(name);
+    return ["home", "discover", "search", "library", "bookmarks", "history", "downloads", "storage"].includes(name);
   });
 }
 
@@ -100,12 +102,13 @@ export function CinemaPage({
   const route = routeStack[routeStack.length - 1];
   const rememberedMovies = useRef(new Map<string, CinemaMovie>());
   const scrollPositions = useRef(new Map<string, number>());
-  const movieIndex = useMemo(() => collectCinemaMovieIndex(catalog, collection), [catalog, collection]);
+  const workspace = useMemo(() => buildCinemaWorkspaceViewModel(state), [state]);
+  const movieIndex = workspace.movieIndex;
   const library = state.experience?.library || {};
-  const history = useMemo(() => selectCinemaHistory(state.screening, movieIndex, library), [library, movieIndex, state.screening]);
+  const history = workspace.history;
   const [libraryFilter, setLibraryFilter] = useState<"all" | "favorite" | "watchLater">("all");
   const [libraryKeyword, setLibraryKeyword] = useState("");
-  const allLibraryItems = useMemo(() => selectCinemaLibrary(library, movieIndex), [library, movieIndex]);
+  const allLibraryItems = workspace.library;
   const libraryItems = useMemo(
     () => selectCinemaLibrary(library, movieIndex, libraryFilter, libraryKeyword),
     [library, libraryFilter, libraryKeyword, movieIndex]
@@ -113,8 +116,6 @@ export function CinemaPage({
   const resolvingMovieId = state.screening?.request?.phase === "resolving"
     ? String(state.screening.request.movieId || "")
     : "";
-  const downloads = Object.values(state.downloadTasks || {});
-  const activeDownloadCount = downloads.filter((task) => ["queued", "probing", "downloading", "recovering", "assembling", "saving"].includes(String(task.stage || ""))).length;
 
   const resolveMovie = (movieId: string) => rememberedMovies.current.get(movieId)
     || movieIndex.get(movieId)
@@ -183,8 +184,9 @@ export function CinemaPage({
 
   useEffect(() => {
     // 存储偏好异步恢复时，只在还没进入详情/播放的情况下同步首页签。
-    setRouteStack((current) => current.length === 1 && isPrimaryRoute(current[0]) && current[0].name !== initialRoute
-      ? createCinemaRouteStack(initialRoute)
+    const target = createCinemaRouteStack(initialRoute);
+    setRouteStack((current) => current.length === 1 && isPrimaryRoute(current[0]) && !cinemaRoutesEqual(current[0], target[target.length - 1])
+      ? target
       : current);
   }, [initialRoute]);
 
@@ -205,7 +207,7 @@ export function CinemaPage({
   }, [collection, onAction, route.name, selectedMovie]);
 
   useEffect(() => {
-    const scroller = panelRef.current?.querySelector<HTMLElement>(".txzz-cinema-app-main");
+    const scroller = panelRef.current?.querySelector<HTMLElement>(".txzz-stream-main");
     if (!scroller) return;
     const frame = window.requestAnimationFrame(() => {
       scroller.scrollTo({ top: scrollPositions.current.get(routeScrollKey) || 0, behavior: "auto" });
@@ -283,8 +285,8 @@ export function CinemaPage({
   const openPlayback = (movie: CinemaMovie) => {
     rememberMovie(movie);
     // 用户手势是完整线路请求的唯一入口；路由切换本身绝不解析或预购买。
-    onAction("open-cinema-playback", { movieId: movie.id, movieTitle: movie.title });
     applyRouteStack(pushCinemaRoute(routeStack, { name: "playback", movieId: movie.id }));
+    onAction("open-cinema-playback", { movieId: movie.id, movieTitle: movie.title });
   };
 
   const replacePlaybackMovieRoute = (movieId: string) => {
@@ -401,19 +403,23 @@ export function CinemaPage({
       : route.name === "search"
         ? <CinemaExploreView {...commonCatalogProps} searchOnly />
         : route.name === "library"
-          ? <CinemaLibraryView items={libraryItems} allItems={allLibraryItems} filter={libraryFilter} keyword={libraryKeyword} onFilter={setLibraryFilter} onKeyword={setLibraryKeyword} onMovie={openMovie} onNavigate={goPrimary} />
+          ? <CinemaLibraryView items={libraryItems} allItems={allLibraryItems} filter={libraryFilter} keyword={libraryKeyword} onFilter={setLibraryFilter} onKeyword={setLibraryKeyword} onMovie={openMovie} onPlay={openPlayback} onUpdateEntry={({ movie, entry }, patch) => onAction("update-library-entry", { ...entry, ...patch, movieId: movie.id, title: movie.title })} onNavigate={goPrimary} bookmarkCount={workspace.counts.bookmarks} historyCount={workspace.counts.history} />
+          : route.name === "bookmarks"
+            ? <CinemaBookmarkView items={workspace.bookmarks} onMovie={openMovie} onPlay={openPlayback} onEdit={({ bookmark }, patch) => onAction("save-playback-bookmark", { ...bookmark, ...patch })} onDelete={({ bookmark }) => onAction("delete-playback-bookmark", { movieId: bookmark.movieId, bookmarkId: bookmark.id })} />
           : route.name === "history"
             ? <CinemaHistoryView items={history} onMovie={openMovie} onPlay={openPlayback} onNavigate={goPrimary} />
             : route.name === "downloads"
-              ? <div className="txzz-cinema-downloads-view"><DownloadsPage state={state} onAction={onAction} /></div>
+              ? <CinemaDownloadView state={state} onAction={onAction} onOpenStorage={() => goPrimary("storage")} />
+            : route.name === "storage"
+              ? <CinemaStorageView state={state} onAction={onAction} />
             : route.name === "detail"
               ? <CinemaDetailPage movie={selectedMovie} collection={activeCollection} libraryEntry={selectedMovie ? library[selectedMovie.id] || null : null} resolving={Boolean(selectedMovie && resolvingMovieId === selectedMovie.id)} related={related} onOpenPlayback={openPlayback} onPlanDownload={planDownload} onRefreshCollection={refreshCollection} onToggleFavorite={(movie) => updateLibrary(movie, { favorite: !library[movie.id]?.favorite })} onToggleWatchLater={(movie) => updateLibrary(movie, { watchLater: !library[movie.id]?.watchLater })} onMovie={openMovie} onBack={goBack} />
               : <PlaybackPage
                   state={state}
                   onAction={onAction}
-                  variant="cinema"
                   routeMovieId={"movieId" in route ? route.movieId : ""}
                   onRouteMovieChange={replacePlaybackMovieRoute}
+                  onOpenDownloads={() => goPrimary("downloads")}
                 />;
 
   return (
@@ -421,11 +427,13 @@ export function CinemaPage({
       panelRef={panelRef}
       route={route}
       canGoBack={routeStack.length > 1}
-      libraryCount={Object.keys(library).length}
-      historyCount={history.length}
-      downloadCount={downloads.length}
-      activeDownloadCount={activeDownloadCount}
-      catalogCount={movieIndex.size}
+      libraryCount={workspace.counts.library}
+      bookmarkCount={workspace.counts.bookmarks}
+      historyCount={workspace.counts.history}
+      downloadCount={workspace.counts.downloads}
+      activeDownloadCount={workspace.counts.activeDownloads}
+      catalogCount={workspace.counts.catalog}
+      storageIssueCount={workspace.counts.storageIssues}
       resolving={Boolean(resolvingMovieId)}
       toast={toast}
       onNavigate={goPrimary}

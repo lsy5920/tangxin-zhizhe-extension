@@ -97,7 +97,7 @@ export function WorkspaceShell({
           <nav className="txzz-sidebar-nav mt-4 space-y-1.5" aria-label="桌面端页面导航">
             {NAVIGATION_ITEMS.map((item) => {
               const active = page === item.id;
-              const hasBadge = item.id === "downloads" && viewModel.activeDownloads > 0;
+              const hasBadge = item.id === "cinema" && viewModel.activeDownloads > 0;
               const hasUpdateDot = item.id === "settings" && viewModel.update.available;
               return (
                 <button
@@ -115,7 +115,7 @@ export function WorkspaceShell({
                     <span className="block truncate">{item.label}</span>
                     <span className="txzz-sidebar-nav-subtitle mt-0.5 block truncate text-[10px] font-medium opacity-65">{item.subtitle}</span>
                   </span>
-                  {hasBadge && <span className="rounded-full bg-info-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{viewModel.activeDownloads}</span>}
+                  {hasBadge && <span className="rounded-full bg-info-500 px-1.5 py-0.5 text-[10px] font-bold text-white" title="影院内正在处理的下载任务">{viewModel.activeDownloads}</span>}
                   {hasUpdateDot && <span className="h-2.5 w-2.5 rounded-full bg-warning-500 ring-4 ring-warning-100 animate-pulse" />}
                 </button>
               );
@@ -198,7 +198,7 @@ export function WorkspaceShell({
           <nav aria-label="移动端主要导航" className="txzz-app-mobile-nav flex min-h-[4.65rem] shrink-0 items-center border-t pb-[max(0.35rem,env(safe-area-inset-bottom))] pt-1 backdrop-blur-md md:hidden">
             {NAVIGATION_ITEMS.map((item) => {
               const active = page === item.id;
-              const hasBadge = item.id === "downloads" && viewModel.activeDownloads > 0;
+              const hasBadge = item.id === "cinema" && viewModel.activeDownloads > 0;
               return (
                 <button
                   key={item.id}

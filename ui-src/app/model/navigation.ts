@@ -1,8 +1,6 @@
 import {
   Clapperboard,
-  Download,
   House,
-  Play,
   Settings,
   Users
 } from "lucide-react";
@@ -34,22 +32,13 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     icon: House
   },
   {
-    id: "cinema",
-    label: "糖心影院",
-    shortLabel: "影院",
-    eyebrow: "CINEMA",
-    subtitle: "发现、搜索与选片",
-    companionHint: "先逛目录，选好影片后再检票开映",
-    icon: Clapperboard
-  },
-  {
-    id: "playback",
-    label: "放映室",
-    shortLabel: "播放",
-    eyebrow: "PLAYER",
-    subtitle: "播放器、线路与记录",
-    companionHint: "选择最顺畅的线路开始放映",
-    icon: Play
+    id: "settings",
+    label: "照料中心",
+    shortLabel: "照料",
+    eyebrow: "SETTINGS",
+    subtitle: "体检、体验、升级与数据",
+    companionHint: "偶尔体检一下，使用更安心",
+    icon: Settings
   },
   {
     id: "accounts",
@@ -61,22 +50,13 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     icon: Users
   },
   {
-    id: "downloads",
-    label: "收纳篮",
-    shortLabel: "下载",
-    eyebrow: "DOWNLOADS",
-    subtitle: "下载进度、保存与排查",
-    companionHint: "下载好的内容会整齐放在这里",
-    icon: Download
-  },
-  {
-    id: "settings",
-    label: "照料中心",
-    shortLabel: "设置",
-    eyebrow: "SETTINGS",
-    subtitle: "体检、体验、升级与数据",
-    companionHint: "偶尔体检一下，使用更安心",
-    icon: Settings
+    id: "cinema",
+    label: "糖心影院",
+    shortLabel: "影院",
+    eyebrow: "CINEMA",
+    subtitle: "打开独立影视 App",
+    companionHint: "播放、片库、书签、足迹、下载与存储都在影院里",
+    icon: Clapperboard
   }
 ];
 

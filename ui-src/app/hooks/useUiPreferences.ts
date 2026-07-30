@@ -38,8 +38,8 @@ export function useUiPreferences() {
     chrome.storage.local.get(UI_PREFERENCES_KEY).then((stored) => {
       if (!alive) return;
       const preferences = (stored?.[UI_PREFERENCES_KEY] || {}) as UiPreferences;
-      // 5.4.x 曾把影院当作工具页持久化；5.5 起影院改为点击后单独进入的 App，
-      // 因此旧值 cinema 需回落总览，避免下次打开伙伴入口时跳过原工具台。
+      // 旧版本可能持久化了已经迁入影院的 playback/downloads 页面。isPage 会把
+      // 它们拒绝掉；cinema 仍是启动动作，因此普通面板打开时回落到总览。
       if (isPage(preferences.page)) setPage(preferences.page === "cinema" ? "overview" : preferences.page);
       if (isCinemaPrimaryRoute(preferences.cinemaRoute)) setCinemaRoute(preferences.cinemaRoute);
       if (preferences.ballPos) setBallPos(clampLauncherPosition(preferences.ballPos));

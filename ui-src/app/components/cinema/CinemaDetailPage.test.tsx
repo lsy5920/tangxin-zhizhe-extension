@@ -47,8 +47,8 @@ describe("cinema collection detail", () => {
     expect(html).toContain("旅行日记");
     expect(html).toContain("共 2 集");
     expect(html).toContain("当前第 2 集");
-    expect(html).toContain("开映当前集");
-    expect(html).toContain("下载当前集");
+    expect(html).toContain("播放当前集");
+    expect(html).toContain("下载本集");
     expect(html).not.toMatch(/play_link|backup_link|m3u8/i);
   });
 
@@ -68,8 +68,8 @@ describe("cinema collection detail", () => {
       />
     );
 
-    expect(html).toContain("下载完整视频");
-    expect(html).toContain("明确点击开映或下载");
+    expect(html).toContain("立即播放");
+    expect(html).toContain("点击播放或下载后");
   });
 
   it("keeps stale episodes visible when a refresh fails", () => {

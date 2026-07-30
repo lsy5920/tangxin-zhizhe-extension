@@ -1,75 +1,57 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Film, RefreshCw, Sparkles, Ticket, WandSparkles } from "lucide-react";
-import type { BridgeState, Page, PlaybackBookmark } from "../types";
+import { Film, LoaderCircle, Ticket, WandSparkles } from "lucide-react";
+import type { BridgeState, PlaybackBookmark } from "../types";
 import { reconcileScreeningState } from "../playback/migration";
 import type { PlaybackSession } from "../playback/types";
+import { resolveEpisodePlayback } from "../cinema/episodePlayback";
+import { buildCinemaPlaybackViewModel } from "../cinema/playbackViewModel";
+import type { CinemaMovie } from "../cinema/types";
 import { ScreeningStage, type PlaybackBookmarkCommand } from "./screening/ScreeningStage";
 import { ScreeningSidebar } from "./screening/ScreeningSidebar";
 import { ScreeningDrawer } from "./screening/ScreeningDrawer";
-import { APP_VERSION } from "../constants";
-import { resolveEpisodePlayback } from "../cinema/episodePlayback";
-import type { CinemaMovie } from "../cinema/types";
-
-const cinemaVersion = APP_VERSION.split(".").slice(0, 2).join(".");
 
 type Props = {
   state: BridgeState;
+  routeMovieId: string;
   onAction: (action: string, payload?: Record<string, unknown>) => void;
-  onPage?: (page: Page) => void;
-  variant?: "workspace" | "cinema";
-  routeMovieId?: string;
   onRouteMovieChange?: (movieId: string, movieTitle?: string) => void;
+  onOpenDownloads: () => void;
 };
 
-export function PlaybackPage({ state, onAction, variant = "workspace", routeMovieId = "", onRouteMovieChange }: Props) {
+export function PlaybackPage({ state, routeMovieId, onAction, onRouteMovieChange, onOpenDownloads }: Props) {
   const screening = useMemo(
     () => reconcileScreeningState(state.screening, state.fullDetails || []),
     [state.fullDetails, state.screening]
   );
-  const [selectedSessionId, setSelectedSessionId] = useState("");
+  const view = useMemo(
+    () => buildCinemaPlaybackViewModel(screening, routeMovieId),
+    [routeMovieId, screening]
+  );
+  const selectedSession = view.session;
   const [playing, setPlaying] = useState(false);
   const [mediaStats, setMediaStats] = useState({ currentTime: 0, duration: 0 });
   const [bookmarkCommand, setBookmarkCommand] = useState<PlaybackBookmarkCommand | null>(null);
   const [autoNextEnabled, setAutoNextEnabled] = useState(true);
   const [pendingAutoPlayMovieId, setPendingAutoPlayMovieId] = useState("");
-  const activeSession = screening.activeSession;
-  const resolvingDifferentMovie = screening.request.phase === "resolving"
-    && Boolean(screening.request.movieId)
-    && String(screening.request.movieId) !== String(activeSession?.movieId || "");
-  const selectedById = screening.history.find((item) => item.id === selectedSessionId) || null;
-  const routedSession = routeMovieId
-    ? [activeSession, ...screening.history].find((item) => item?.movieId === routeMovieId) || null
-    : null;
-  const selectedSession = resolvingDifferentMovie
-    ? null
-    : routeMovieId ? routedSession : selectedById || activeSession;
   const libraryEntry = selectedSession ? state.experience?.library?.[selectedSession.movieId] || null : null;
   const bookmarks = selectedSession ? state.experience?.bookmarks?.[selectedSession.movieId] || [] : [];
-  const cinemaApp = variant === "cinema";
   const episodePlayback = useMemo(
     () => resolveEpisodePlayback(state.cinemaCollection, selectedSession?.movieId || ""),
     [selectedSession?.movieId, state.cinemaCollection]
   );
 
   useEffect(() => {
-    if (routeMovieId) {
-      setSelectedSessionId(routedSession?.id || "");
-      return;
-    }
-    if (!activeSession?.id) return;
-    // active session 身份变化意味着一次新检票已经完成，应切到新片；普通状态刷新不会
-    // 打断用户在足迹抽屉中手动选择的旧会话。
-    setSelectedSessionId(activeSession.id);
-  }, [activeSession?.id, routeMovieId, routedSession?.id]);
-
-  useEffect(() => {
     setMediaStats({ currentTime: 0, duration: 0 });
     setBookmarkCommand(null);
+    setPendingAutoPlayMovieId("");
   }, [selectedSession?.movieId]);
 
   const refresh = (session: PlaybackSession | null = selectedSession) => {
     const movieId = session?.movieId || routeMovieId || "";
-    onAction("refresh-playback-session", { movieId, movieTitle: session?.title || (movieId ? `影片 ${movieId}` : "") });
+    onAction("refresh-playback-session", {
+      movieId,
+      movieTitle: session?.title || view.requestedTitle || (movieId ? `影片 ${movieId}` : "")
+    });
   };
 
   const updateCurrentLibrary = (patch: { favorite?: boolean; watchLater?: boolean }) => {
@@ -90,7 +72,6 @@ export function PlaybackPage({ state, onAction, variant = "workspace", routeMovi
 
   const openEpisode = useCallback((episode: CinemaMovie) => {
     if (!episode.id || episode.id === selectedSession?.movieId) return;
-    // 画面选集与自然续播都经过现有可见检票流程，不复用上一集的签名 URL。
     setPendingAutoPlayMovieId(episode.id);
     onRouteMovieChange?.(episode.id, episode.title);
     onAction("open-cinema-playback", { movieId: episode.id, movieTitle: episode.title });
@@ -101,38 +82,28 @@ export function PlaybackPage({ state, onAction, variant = "workspace", routeMovi
     setPendingAutoPlayMovieId((pending) => pending === currentMovieId ? "" : pending);
   }, [selectedSession?.movieId]);
 
+  const planDownload = () => {
+    if (!selectedSession) return;
+    onAction("plan-full-video-download", {
+      movieId: selectedSession.movieId,
+      movieTitle: selectedSession.title,
+      sourceId: selectedSession.decision.recommendedSourceId,
+      lineKey: selectedSession.decision.recommendedSourceId || "auto"
+    });
+  };
+
+  const waitingForRoute = view.resolving && !selectedSession;
+
   return (
-    <div className={`txzz-playback-root txzz-page relative mx-auto w-full overflow-hidden ${cinemaApp ? "max-w-[1600px] p-2 pb-5 sm:p-4 lg:p-5" : "max-w-[1180px] p-3 pb-6 sm:p-5 lg:p-6"}`}>
-      {!cinemaApp && <div className={`txzz-playback-hidden-during-fullscreen pointer-events-none absolute inset-x-3 top-2 h-44 overflow-hidden rounded-[2rem] transition-opacity duration-300 ${playing ? "opacity-0" : "opacity-100"}`} aria-hidden="true">
-        <span className="absolute left-[8%] top-8 h-2 w-2 rounded-full bg-fuchsia-300/70 shadow-[0_0_18px_6px_rgba(240,171,252,.35)]" />
-        <span className="absolute right-[12%] top-16 h-1.5 w-1.5 rounded-full bg-violet-300/80 shadow-[0_0_16px_5px_rgba(196,181,253,.38)]" />
-        <span className="absolute left-[45%] top-3 text-lg text-amber-300/75">✦</span>
-      </div>}
-
-      {!cinemaApp && <header className="txzz-playback-hero txzz-playback-hidden-during-fullscreen relative mb-4 overflow-hidden rounded-[1.65rem] border border-white/80 bg-gradient-to-r from-white/88 via-[#fff6fb]/88 to-[#f3efff]/88 px-4 py-4 shadow-[0_18px_55px_rgba(113,70,160,.10)] backdrop-blur-xl sm:px-5">
-        <span className="pointer-events-none absolute -right-8 -top-12 h-32 w-32 rounded-full bg-fuchsia-200/35 blur-2xl" />
-        <div className="relative flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="flex items-center gap-1.5 text-[10px] font-black tracking-[.18em] text-fuchsia-500"><Sparkles size={12} /> CANDY CINEMA {cinemaVersion}</p>
-            <h1 className="mt-1 flex items-center gap-2 text-[19px] font-black tracking-[-.03em] text-slate-900 sm:text-[22px]"><Ticket size={20} className="text-violet-500" />沉浸糖果影院</h1>
-            <p className="mt-1 text-[11px] leading-5 text-slate-500">检票、轮换、解锁和选线都由同一会话编排；资源就绪后仍需你亲自点击开映。</p>
-          </div>
-          <button type="button" onClick={() => refresh()} disabled={screening.request.phase === "resolving"} className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-2xl bg-gradient-to-br from-fuchsia-500 to-violet-600 px-3.5 text-[11px] font-extrabold text-white shadow-lg shadow-violet-500/20 transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-55">
-            <RefreshCw size={14} className={screening.request.phase === "resolving" ? "animate-spin" : ""} />{screening.request.phase === "resolving" ? "检票中" : "重新检票"}
-          </button>
-        </div>
-      </header>}
-
-      <div className="txzz-playback-workspace relative grid items-start gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(19rem,.72fr)]">
-        <main className={`txzz-player-card min-w-0 overflow-hidden rounded-[1.7rem] p-2.5 backdrop-blur-xl sm:p-3 ${cinemaApp ? "border border-white/10 bg-white/[.035] shadow-[0_24px_70px_rgba(0,0,0,.32)]" : "border border-white/70 bg-white/72 shadow-[0_24px_70px_rgba(75,45,108,.16)]"}`}>
-          {resolvingDifferentMovie ? (
-            <div className="relative flex min-h-[19rem] aspect-video items-center justify-center overflow-hidden rounded-[1.35rem] bg-[radial-gradient(circle_at_50%_20%,#35294c_0%,#17131f_48%,#09080d_100%)] p-6 text-center text-white">
-              <span className="absolute left-[12%] top-[18%] text-amber-200/70">✦</span><span className="absolute right-[16%] top-[28%] text-fuchsia-200/70">✦</span>
-              <div className="relative max-w-sm">
-                <div className="txzz-ticket-mascot mx-auto flex h-24 w-24 items-center justify-center rounded-[2rem] border border-white/12 bg-white/8 text-5xl shadow-2xl backdrop-blur">🎟️</div>
-                <h2 className="mt-5 text-[17px] font-black">糖糖正在为新片检票</h2>
-                <p className="mt-2 text-[11px] leading-5 text-white/55">{screening.request.movieTitle || `影片 ${screening.request.movieId}`}<br />旧影片已收起，完整线路送达前不会误显示或自动播放。</p>
-                <div className="mx-auto mt-4 h-1.5 w-40 overflow-hidden rounded-full bg-white/10"><span className="block h-full w-1/2 animate-pulse rounded-full bg-gradient-to-r from-fuchsia-400 to-violet-400" /></div>
+    <div className="txzz-playback-root txzz-stream-playback-page">
+      <div className="txzz-playback-workspace txzz-stream-playback-workspace">
+        <main className="txzz-player-card txzz-stream-stage-card">
+          {waitingForRoute ? (
+            <div className="txzz-stream-stage-state">
+              <div>
+                <LoaderCircle className="animate-spin" size={34} />
+                <h2>正在准备影片</h2>
+                <p>{view.requestedTitle || `影片 ${routeMovieId}`}<br />完整线路送达前不会展示上一部影片。</p>
               </div>
             </div>
           ) : selectedSession ? (
@@ -154,55 +125,45 @@ export function PlaybackPage({ state, onAction, variant = "workspace", routeMovi
               onAutoPlayConsumed={consumeAutoPlay}
             />
           ) : (
-            <div className="relative flex min-h-[19rem] aspect-video items-center justify-center overflow-hidden rounded-[1.35rem] bg-[radial-gradient(circle_at_50%_20%,#35294c_0%,#17131f_48%,#09080d_100%)] p-6 text-center text-white">
-              <span className="absolute left-[12%] top-[18%] text-amber-200/70">✦</span><span className="absolute right-[16%] top-[28%] text-fuchsia-200/70">✦</span>
-              <div className="relative max-w-sm">
-                <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[2rem] border border-white/12 bg-white/8 text-5xl shadow-2xl backdrop-blur">🍭</div>
-                <h2 className="mt-5 text-[17px] font-black">糖糖检票员还没收到电影票</h2>
-                <p className="mt-2 text-[11px] leading-5 text-white/55">请先打开网站中的影片详情页。识别到影片后，这里会自动准备线路，但不会擅自播放。</p>
-                <button type="button" onClick={() => refresh(null)} className="mt-4 min-h-11 rounded-2xl bg-gradient-to-r from-fuchsia-500 to-violet-500 px-5 text-[11px] font-extrabold text-white shadow-lg shadow-fuchsia-500/20"><WandSparkles size={14} className="mr-1.5 inline" />让糖糖检查当前页面</button>
+            <div className="txzz-stream-stage-state is-empty">
+              <div>
+                <Ticket size={38} />
+                <h2>当前影片还没有完整线路</h2>
+                <p>已锁定影片 {routeMovieId || "未选择"}，重新准备只会刷新这一部影片。</p>
+                <button type="button" onClick={() => refresh(null)}><WandSparkles size={14} />重新检票</button>
               </div>
             </div>
           )}
         </main>
 
-        <div className="txzz-playback-hidden-during-fullscreen">
+        <div className="txzz-playback-hidden-during-fullscreen txzz-stream-session-column">
           <ScreeningSidebar
-            session={selectedSession || null}
+            session={selectedSession}
             request={screening.request}
             onRefresh={() => refresh()}
             libraryEntry={libraryEntry}
             onToggleFavorite={() => updateCurrentLibrary({ favorite: !libraryEntry?.favorite })}
             onToggleWatchLater={() => updateCurrentLibrary({ watchLater: !libraryEntry?.watchLater })}
-            onPlanDownload={() => selectedSession && onAction("plan-full-video-download", {
-              movieId: selectedSession.movieId,
-              movieTitle: selectedSession.title,
-              sourceId: selectedSession.decision.recommendedSourceId,
-              lineKey: selectedSession.decision.recommendedSourceId || "auto"
-            })}
+            onPlanDownload={planDownload}
+            onOpenDownloads={onOpenDownloads}
             playing={playing}
           />
         </div>
       </div>
 
-      <div className="txzz-playback-hidden-during-fullscreen mt-4">
+      <div className="txzz-playback-hidden-during-fullscreen txzz-stream-screening-tools">
         <ScreeningDrawer
           state={state}
-          session={selectedSession || null}
-          history={screening.history}
+          session={selectedSession}
           currentDuration={mediaStats.duration}
-          onSelectHistory={(session) => {
-            setSelectedSessionId(session.id);
-            onRouteMovieChange?.(session.movieId, session.title);
-          }}
           onSeekBookmark={(bookmark) => commandBookmark("seek", bookmark)}
           onLoopBookmark={(bookmark) => commandBookmark("loop", bookmark)}
           onAction={onAction}
         />
       </div>
 
-      <footer className={`txzz-playback-hidden-during-fullscreen mt-3 flex items-center justify-center gap-2 text-[9px] font-semibold ${cinemaApp ? "text-violet-200/42" : "text-violet-400/75"}`}>
-        <Film size={11} /> Shaka Player · AES/HLS 自适应 · 单次自动切线 · 30 天续播
+      <footer className="txzz-playback-hidden-during-fullscreen txzz-stream-playback-footer">
+        <Film size={11} /> Shaka Player · HLS 自适应 · 单次自动切线 · 30 天续播
       </footer>
     </div>
   );

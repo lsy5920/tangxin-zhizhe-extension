@@ -48,7 +48,7 @@ describe("cinema page resilient states", () => {
         onClose={() => {}}
       />
     );
-    expect(html).toContain("目录更新失败，已保留上次片单");
+    expect(html).toContain("片单更新失败，正在展示上次内容");
     expect(html).toContain("目录服务暂时超时");
     expect(html).toContain("真实目录影片");
     expect(html).toContain("data-cinema-poster-state=\"idle\"");

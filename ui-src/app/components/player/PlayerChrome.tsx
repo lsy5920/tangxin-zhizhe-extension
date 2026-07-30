@@ -107,7 +107,7 @@ export type PlayerControlBarProps = {
  */
 export function PlayerControlBar(props: PlayerControlBarProps) {
   const {
-    visible, locked, disabled, fullscreen, controlsTone, iconSize, buttonSize, compact = false,
+    visible, locked, disabled, fullscreen, iconSize, buttonSize, compact = false,
     paused, currentTime, duration, bufferedPercent, progressPercent, markers, progressPreviewTime, previewSource, previewSessionKey, previewFallbackVideo,
     isDraggingProgress, volume, muted, rate, seekStep, qualityLabel, fillLabel, fitLabel,
     orientationLabel, brightness, moreOpen, morePanel, previewOptions, activePreviewKey,
@@ -132,8 +132,8 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onFocusWithinChange?.(false);
       }}
-      className={`txzz-player-control-panel absolute ${controlsTone} ${moreOpen ? "z-[38]" : "z-20"} text-white transition-all duration-200 ${compact ? "txzz-player-control-panel--compact" : ""} ${
-        visible && !locked ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
+      className={`txzz-player-control-panel txzz-stream-player-controls ${moreOpen ? "is-menu-open" : ""} ${compact ? "is-compact" : ""} ${
+        visible && !locked ? "is-visible" : ""
       }`}
     >
       <PlayerMenuSheet
@@ -208,22 +208,22 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
         onKeyboardSeek={onKeyboardSeek}
       />
 
-      <div className="txzz-player-control-row flex w-full items-center justify-between gap-2">
-        <div className="txzz-player-control-left flex min-w-0 items-center gap-1.5">
+      <div className="txzz-player-control-row">
+        <div className="txzz-player-control-left">
           <CtrlButton title={paused ? "播放（空格/K）" : "暂停（空格/K）"} disabled={disabled} size={buttonSize} onClick={onTogglePlay}>
             {paused ? <Play size={iconSize + 1} className="fill-white" /> : <Pause size={iconSize + 1} className="fill-white" />}
           </CtrlButton>
           <CtrlButton title={`后退 ${seekStep} 秒（←）`} disabled={disabled} size={buttonSize} onClick={onSeekBack}>
             <SkipBack size={iconSize} />
-            <span className="tabular-nums text-[10px]">{seekStep}</span>
+            <span>{seekStep}</span>
           </CtrlButton>
           <CtrlButton title={`前进 ${seekStep} 秒（→）`} disabled={disabled} size={buttonSize} onClick={onSeekForward}>
             <SkipForward size={iconSize} />
-            <span className="tabular-nums text-[10px]">{seekStep}</span>
+            <span>{seekStep}</span>
           </CtrlButton>
         </div>
 
-        <div className="txzz-player-control-right flex shrink-0 items-center gap-1.5">
+        <div className="txzz-player-control-right">
           <CtrlButton
             title={muted ? "取消静音（M）" : `静音（当前 ${volumePercent}%）`}
             disabled={disabled}
@@ -245,7 +245,7 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
             className="txzz-player-control-secondary min-w-[3.5rem]"
           >
             <Zap size={iconSize - 1} />
-            <span className="tabular-nums">{rate}x</span>
+            <span>{rate}x</span>
           </CtrlButton>
           <CtrlButton
             title="打开播放器设置"
@@ -255,7 +255,7 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
             onClick={onToggleMore}
           >
             <SlidersHorizontal size={iconSize} />
-            {!compact && <span className="hidden xl:inline">设置</span>}
+            {!compact && <span className="txzz-player-setting-label">设置</span>}
           </CtrlButton>
           {fullscreen && (
             <CtrlButton title="锁定播放器控制（L）" disabled={disabled} size={buttonSize} onClick={onToggleLock}>

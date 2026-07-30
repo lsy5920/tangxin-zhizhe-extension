@@ -56,7 +56,7 @@ describe("screening episode overlay", () => {
     const paidHtml = renderToStaticMarkup(
       <ScreeningEpisodeOverlay {...callbacks} visible open={false} episodes={[episode("1"), episode("2", "coin", 3)]} currentMovieId="1" currentIndex={0} nextEpisode={episode("2", "coin", 3)} autoNextEnabled ended countdown={null} />
     );
-    expect(freeHtml).toContain("5 秒后自动检票并续播");
+    expect(freeHtml).toContain("5 秒后自动准备下一集");
     expect(paidHtml).toContain("下一集需 3 金币");
     expect(paidHtml).toContain("确认并检票");
   });

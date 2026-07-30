@@ -1,7 +1,11 @@
 import type { ScreeningState } from "./playback/types";
 import type { CinemaCatalogState, CinemaCollectionState } from "./cinema/types";
 
-export type Page = "overview" | "cinema" | "accounts" | "playback" | "downloads" | "settings";
+/**
+ * 宿主网站里的插件面板只承担管理职责。播放、片库、书签、足迹、下载和存储
+ * 均属于独立影院域，不能再次作为面板页面出现。
+ */
+export type Page = "overview" | "cinema" | "accounts" | "settings";
 
 /** 远程版本清单中的单条更新记录 */
 export type UpdateChangelogItem = {
@@ -349,12 +353,14 @@ export type DownloadPlan = {
 
 export type DownloadPlannerState = {
   open?: boolean;
-  phase?: "probing" | "ready" | "error";
+  phase?: "probing" | "ready" | "submitting" | "error";
   error?: string;
   movieId?: string;
   movieTitle?: string;
   taskId?: string;
   lineKey?: string;
+  networkMode?: "data-saver" | "balanced" | "high-quality" | string;
+  qualityHeight?: number;
   mode?: string;
   filename?: string;
   planTicket?: string;
@@ -469,7 +475,7 @@ export type BridgeState = {
   fullDetails?: FullDetail[];
   screening?: ScreeningState;
   cinemaCatalog?: CinemaCatalogState;
-  cinemaCollection?: CinemaCollectionState;
+  cinemaCollection?: CinemaCollectionState | null;
   downloadTasks?: Record<string, DownloadTask>;
   downloadSnapshots?: unknown[];
   downloadPlanner?: DownloadPlannerState | null;

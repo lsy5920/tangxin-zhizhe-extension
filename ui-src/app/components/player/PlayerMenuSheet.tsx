@@ -79,10 +79,10 @@ export type PlayerMenuSheetProps = {
 
 function MenuSection({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
-    <section className="txzz-player-menu-section rounded-2xl border border-white/8 bg-white/[0.055] p-3">
-      <div className="mb-2.5">
-        <h4 className="text-[11px] font-semibold tracking-wide text-white">{title}</h4>
-        {hint && <p className="mt-0.5 text-[10px] leading-relaxed text-white/48">{hint}</p>}
+    <section className="txzz-player-menu-section">
+      <div className="txzz-player-menu-section-head">
+        <h4>{title}</h4>
+        {hint && <p>{hint}</p>}
       </div>
       {children}
     </section>
@@ -170,22 +170,23 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
       role="dialog"
       aria-modal="true"
       aria-label="播放器设置"
-      className="txzz-player-menu-sheet"
+      className="txzz-player-menu-sheet txzz-stream-player-menu"
       onKeyDown={handleKeyDown}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <header className="flex items-center justify-between gap-3 border-b border-white/8 px-3.5 py-3">
-        <div className="min-w-0">
-          <p className="text-[12px] font-semibold text-white">播放器设置</p>
-          <p className="mt-0.5 truncate text-[10px] text-white/48">{currentLineLabel} · {qualityLabel} · {playerStatus}</p>
+      <header className="txzz-stream-player-menu-header">
+        <div>
+          <span>PLAYER SETTINGS</span>
+          <h3>播放设置</h3>
+          <p>{currentLineLabel} · {qualityLabel} · {playerStatus}</p>
         </div>
         <CtrlButton title="关闭播放器设置（Esc）" size="sm" onClick={onClose}>
           <X size={15} />
         </CtrlButton>
       </header>
 
-      <div className="txzz-player-menu-tabs grid gap-1.5 border-b border-white/8 bg-black/15 p-2" role="tablist" aria-label="播放器设置分类">
+      <div className="txzz-player-menu-tabs txzz-stream-player-menu-tabs" role="tablist" aria-label="播放器设置分类">
         {tabs.map((item) => {
           const Icon = item.icon;
           const active = panel === item.key;
@@ -218,9 +219,7 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
                   menuRef.current?.querySelector<HTMLElement>(`#txzz-player-tab-${next.key}`)?.focus({ preventScroll: true });
                 });
               }}
-              className={`flex min-h-10 items-center justify-center gap-1.5 rounded-xl px-2 text-[11px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-sky-300 ${
-                active ? "bg-white text-slate-950 shadow-sm" : "text-white/58 hover:bg-white/8 hover:text-white"
-              }`}
+              className={active ? "is-active" : ""}
             >
               <Icon size={13} />
               {item.label}
@@ -229,7 +228,7 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
         })}
       </div>
 
-      <div id={`txzz-player-panel-${panel}`} role="tabpanel" aria-labelledby={`txzz-player-tab-${panel}`} className="txzz-player-menu-body space-y-2.5 overflow-y-auto p-2.5">
+      <div id={`txzz-player-panel-${panel}`} role="tabpanel" aria-labelledby={`txzz-player-tab-${panel}`} className="txzz-player-menu-body txzz-stream-player-menu-body">
         {panel === "source" && (
           <>
             <MenuSection title="播放策略" hint="均衡模式按带宽和播放器尺寸选档；用户明确选择始终优先。">
@@ -264,7 +263,7 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
                   </CtrlChip>
                 ))}
               </div>
-              <p className="mt-2 truncate rounded-lg bg-black/18 px-2.5 py-1.5 text-[10px] text-white/52">
+              <p className="txzz-player-current-source">
                 {previewSourceLabel} · {playerStatus}
               </p>
             </MenuSection>
@@ -323,8 +322,8 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
 
             <div className="txzz-player-menu-dual grid gap-2.5">
               <MenuSection title="画面亮度" hint="使用独立遮罩，兼容 Android / Kiwi。">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-300/15 text-amber-200"><Sun size={15} /></span>
+                <div className="txzz-player-slider-row">
+                  <span className="txzz-player-slider-icon is-brightness"><Sun size={15} /></span>
                   <input
                     aria-label="画面亮度"
                     type="range"
@@ -333,15 +332,15 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
                     step={5}
                     value={brightness}
                     onChange={(event) => onBrightnessChange(Number(event.target.value))}
-                    className="txzz-player-range min-w-0 flex-1 accent-amber-300"
+                    className="txzz-player-range"
                   />
-                  <span className="w-11 text-right text-[11px] font-semibold tabular-nums text-white">{brightness}%</span>
+                  <span className="txzz-player-slider-value">{brightness}%</span>
                 </div>
               </MenuSection>
 
               <MenuSection title="播放音量" hint="静音保留在主控制栏，避免重复按钮。">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-300/15 text-sky-200"><Volume2 size={15} /></span>
+                <div className="txzz-player-slider-row">
+                  <span className="txzz-player-slider-icon is-volume"><Volume2 size={15} /></span>
                   <input
                     aria-label="播放音量"
                     type="range"
@@ -350,9 +349,9 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
                     step={1}
                     value={volumePercent}
                     onChange={(event) => onVolumeChange(Number(event.target.value) / 100)}
-                    className="txzz-player-range min-w-0 flex-1 accent-sky-400"
+                    className="txzz-player-range"
                   />
-                  <span className="w-11 text-right text-[11px] font-semibold tabular-nums text-white">{volumePercent}%</span>
+                  <span className="txzz-player-slider-value">{volumePercent}%</span>
                 </div>
               </MenuSection>
               </div>
@@ -374,9 +373,9 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
         )}
       </div>
 
-      <footer className="border-t border-white/8 bg-black/18 px-3 py-2 text-[10px] text-white/48">
-        <p className="truncate">{currentLineLabel} · {networkMode === "data-saver" ? "省流" : networkMode === "high-quality" ? "高清" : "均衡"} · {rate}x · {gestureLayout === "mirrored" ? "左进右退" : "左退右进"} · {fillLabel}</p>
-        {fullscreen && <p className="mt-0.5 truncate text-sky-200/70">{fullscreenDiagnosticLabel}</p>}
+      <footer className="txzz-stream-player-menu-footer">
+        <p>{currentLineLabel} · {networkMode === "data-saver" ? "省流" : networkMode === "high-quality" ? "高清" : "均衡"} · {rate}x · {gestureLayout === "mirrored" ? "左进右退" : "左退右进"} · {fillLabel}</p>
+        {fullscreen && <p>{fullscreenDiagnosticLabel}</p>}
       </footer>
     </div>
     </>
@@ -404,14 +403,14 @@ function ToolButton({
       disabled={disabled}
       onClick={onClick}
       title={`${label}：${hint}`}
-      className="txzz-player-tool-button min-h-[3.75rem] !items-start !justify-start gap-2.5 px-3 py-2 text-left"
+      className="txzz-player-tool-button"
     >
-      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10">
+      <span className="txzz-player-tool-icon">
         <Icon size={14} />
       </span>
-      <span className="min-w-0">
-        <span className="block text-[11px] font-semibold">{label}</span>
-        <span className="mt-0.5 block truncate text-[10px] font-normal opacity-55">{hint}</span>
+      <span className="txzz-player-tool-copy">
+        <span>{label}</span>
+        <small>{hint}</small>
       </span>
     </CtrlChip>
   );
