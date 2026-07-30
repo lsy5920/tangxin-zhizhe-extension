@@ -132,7 +132,7 @@ export function PlayerControlBar(props: PlayerControlBarProps) {
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onFocusWithinChange?.(false);
       }}
-      className={`txzz-player-control-panel absolute ${controlsTone} z-20 text-white transition-all duration-200 ${compact ? "txzz-player-control-panel--compact" : ""} ${
+      className={`txzz-player-control-panel absolute ${controlsTone} ${moreOpen ? "z-[38]" : "z-20"} text-white transition-all duration-200 ${compact ? "txzz-player-control-panel--compact" : ""} ${
         visible && !locked ? "pointer-events-auto translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
       }`}
     >

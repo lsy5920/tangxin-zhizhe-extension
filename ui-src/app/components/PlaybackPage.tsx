@@ -17,9 +17,11 @@ type Props = {
   onAction: (action: string, payload?: Record<string, unknown>) => void;
   onPage?: (page: Page) => void;
   variant?: "workspace" | "cinema";
+  routeMovieId?: string;
+  onRouteMovieChange?: (movieId: string, movieTitle?: string) => void;
 };
 
-export function PlaybackPage({ state, onAction, variant = "workspace" }: Props) {
+export function PlaybackPage({ state, onAction, variant = "workspace", routeMovieId = "", onRouteMovieChange }: Props) {
   const screening = useMemo(
     () => reconcileScreeningState(state.screening, state.fullDetails || []),
     [state.fullDetails, state.screening]
@@ -34,9 +36,13 @@ export function PlaybackPage({ state, onAction, variant = "workspace" }: Props) 
   const resolvingDifferentMovie = screening.request.phase === "resolving"
     && Boolean(screening.request.movieId)
     && String(screening.request.movieId) !== String(activeSession?.movieId || "");
+  const selectedById = screening.history.find((item) => item.id === selectedSessionId) || null;
+  const routedSession = routeMovieId
+    ? [activeSession, ...screening.history].find((item) => item?.movieId === routeMovieId) || null
+    : null;
   const selectedSession = resolvingDifferentMovie
     ? null
-    : screening.history.find((item) => item.id === selectedSessionId) || activeSession;
+    : routeMovieId ? routedSession : selectedById || activeSession;
   const libraryEntry = selectedSession ? state.experience?.library?.[selectedSession.movieId] || null : null;
   const bookmarks = selectedSession ? state.experience?.bookmarks?.[selectedSession.movieId] || [] : [];
   const cinemaApp = variant === "cinema";
@@ -46,11 +52,15 @@ export function PlaybackPage({ state, onAction, variant = "workspace" }: Props) 
   );
 
   useEffect(() => {
+    if (routeMovieId) {
+      setSelectedSessionId(routedSession?.id || "");
+      return;
+    }
     if (!activeSession?.id) return;
     // active session 身份变化意味着一次新检票已经完成，应切到新片；普通状态刷新不会
     // 打断用户在足迹抽屉中手动选择的旧会话。
     setSelectedSessionId(activeSession.id);
-  }, [activeSession?.id]);
+  }, [activeSession?.id, routeMovieId, routedSession?.id]);
 
   useEffect(() => {
     setMediaStats({ currentTime: 0, duration: 0 });
@@ -58,7 +68,8 @@ export function PlaybackPage({ state, onAction, variant = "workspace" }: Props) 
   }, [selectedSession?.movieId]);
 
   const refresh = (session: PlaybackSession | null = selectedSession) => {
-    onAction("refresh-playback-session", { movieId: session?.movieId || "", movieTitle: session?.title || "" });
+    const movieId = session?.movieId || routeMovieId || "";
+    onAction("refresh-playback-session", { movieId, movieTitle: session?.title || (movieId ? `影片 ${movieId}` : "") });
   };
 
   const updateCurrentLibrary = (patch: { favorite?: boolean; watchLater?: boolean }) => {
@@ -81,8 +92,9 @@ export function PlaybackPage({ state, onAction, variant = "workspace" }: Props) 
     if (!episode.id || episode.id === selectedSession?.movieId) return;
     // 画面选集与自然续播都经过现有可见检票流程，不复用上一集的签名 URL。
     setPendingAutoPlayMovieId(episode.id);
+    onRouteMovieChange?.(episode.id, episode.title);
     onAction("open-cinema-playback", { movieId: episode.id, movieTitle: episode.title });
-  }, [onAction, selectedSession?.movieId]);
+  }, [onAction, onRouteMovieChange, selectedSession?.movieId]);
 
   const consumeAutoPlay = useCallback(() => {
     const currentMovieId = selectedSession?.movieId || "";
@@ -179,7 +191,10 @@ export function PlaybackPage({ state, onAction, variant = "workspace" }: Props) 
           session={selectedSession || null}
           history={screening.history}
           currentDuration={mediaStats.duration}
-          onSelectHistory={(session) => setSelectedSessionId(session.id)}
+          onSelectHistory={(session) => {
+            setSelectedSessionId(session.id);
+            onRouteMovieChange?.(session.movieId, session.title);
+          }}
           onSeekBookmark={(bookmark) => commandBookmark("seek", bookmark)}
           onLoopBookmark={(bookmark) => commandBookmark("loop", bookmark)}
           onAction={onAction}

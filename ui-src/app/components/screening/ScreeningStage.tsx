@@ -590,7 +590,7 @@ export function ScreeningStage({
           onBack={() => void fullscreen.exit()}
         />
         <ScreeningEpisodeOverlay
-          visible={hasUrl && !locked && (controlsVisible || paused || ended)}
+          visible={hasUrl && !locked && !moreOpen && (controlsVisible || paused || ended)}
           open={episodePanelOpen}
           episodes={episodes}
           currentMovieId={session.movieId}

@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./app/App";
+import CinemaStandaloneApp from "./app/CinemaStandaloneApp";
 import { APP_BUILD, APP_VERSION } from "./app/constants";
 import "./styles/index.css";
 import candyUiStyles from "./styles/index.css?inline";
@@ -13,9 +14,13 @@ const APP_STYLE_MARKERS = [
   "--txzz-shadow-property-fallback",
   ".txzz-stat-ornament",
   ".txzz-cinema-app-shell",
+  ".txzz-cinema-standalone-root",
   "@keyframes txzz-stat-float",
   "@keyframes txzz-companion-breathe"
 ] as const;
+
+const IS_STANDALONE_CINEMA_PAGE = document.documentElement.dataset.txzzCinemaPage === "true"
+  || (location.protocol === "chrome-extension:" && /\/cinema\.html$/i.test(location.pathname));
 
 function resolveUiStylesheetHref() {
   const getRuntimeUrl = globalThis.chrome?.runtime?.getURL;
@@ -105,6 +110,7 @@ function createHost() {
   if (!existed) document.documentElement.appendChild(host);
   host.dataset.txzzUiVersion = APP_VERSION;
   host.dataset.txzzUiBuild = APP_BUILD;
+  if (IS_STANDALONE_CINEMA_PAGE) host.dataset.txzzCinemaStandalone = "true";
   host.dataset.txzzStyleIntegrity = "initializing";
   bindHostVisualViewport(host);
 
@@ -301,9 +307,10 @@ const rootElement = shadow.getElementById(ROOT_ID);
 if (rootElement && !rootElement.dataset.mounted) {
   rootElement.dataset.mounted = "1";
   document.documentElement.classList.add("txzz-candy-ui-ready");
+  if (IS_STANDALONE_CINEMA_PAGE) document.documentElement.classList.add("txzz-cinema-standalone-ready");
   createRoot(rootElement).render(
     <React.StrictMode>
-      <App />
+      {IS_STANDALONE_CINEMA_PAGE ? <CinemaStandaloneApp /> : <App />}
     </React.StrictMode>
   );
 }

@@ -8,6 +8,7 @@
   const MAX_ALERTS = 100;
   const PRIORITY_ORDER = Object.freeze({ high: 0, normal: 1, low: 2 });
   const RUNNING_DOWNLOAD_STAGES = new Set(["probing", "downloading", "recovering", "assembling", "saving"]);
+  const DOWNLOAD_PLAN_REUSE_TTL_MS = 2 * 60 * 1000;
 
   function nowIso(now = Date.now()) {
     return new Date(now).toISOString();
@@ -349,6 +350,19 @@
       .slice(0, available);
   }
 
+  function isReusableDownloadPlan(task = {}, now = Date.now(), ttlMs = DOWNLOAD_PLAN_REUSE_TTL_MS) {
+    const validatedAt = Date.parse(String(task?.planValidatedAt || ""));
+    const age = Number(now) - validatedAt;
+    return Boolean(
+      task?.plan
+      && !task.plan.blockedReason
+      && Number.isFinite(validatedAt)
+      && Number.isFinite(age)
+      && age >= 0
+      && age <= Math.max(0, finiteNumber(ttlMs, DOWNLOAD_PLAN_REUSE_TTL_MS))
+    );
+  }
+
   function nextDownloadAlarmAt(downloadTasks = {}, policy = {}, now = Date.now()) {
     const normalizedPolicy = normalizeExperienceState({ downloadPolicy: policy }).downloadPolicy;
     if (normalizedPolicy.queuePaused) return 0;
@@ -453,6 +467,7 @@
     MAX_BOOKMARKS_PER_MOVIE,
     MAX_BOOKMARKS_TOTAL,
     MAX_LIBRARY_ITEMS,
+    DOWNLOAD_PLAN_REUSE_TTL_MS,
     accountIsCooling,
     addBookmark,
     applyHealthResult,
@@ -461,6 +476,7 @@
     normalizeExperienceState,
     normalizePriority,
     nextDownloadAlarmAt,
+    isReusableDownloadPlan,
     pushAlert,
     removeBookmark,
     selectDueDownloads,

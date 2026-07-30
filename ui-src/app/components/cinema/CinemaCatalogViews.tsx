@@ -2,7 +2,10 @@ import {
   AlertTriangle,
   ArrowRight,
   Compass,
+  Crown,
   Film,
+  Flame,
+  Gift,
   History,
   LoaderCircle,
   RefreshCw,
@@ -114,6 +117,28 @@ export function CinemaHomeView({ catalog, history, resolvingMovieId, onMovie, on
       {history.length > 0 && (
         <Shelf title="继续今晚的故事" eyebrow="RECENTLY CHECKED" movies={history.slice(0, 12).map((item) => item.movie)} onMovie={onMovie} onMore={() => onNavigate("history")} />
       )}
+
+      <section className="txzz-cinema-channel-section">
+        <div className="mb-3 flex items-end justify-between gap-3 px-0.5">
+          <div><p className="text-[8px] font-black tracking-[.18em] text-fuchsia-300/58">QUICK CHANNELS</p><h2 className="mt-1 text-[16px] font-black tracking-[-.02em] sm:text-[18px]">今天想看什么</h2></div>
+          <button type="button" onClick={() => onNavigate("discover")} className="inline-flex min-h-9 items-center gap-1 rounded-xl px-2 text-[10px] font-black text-fuchsia-200/72 hover:bg-white/7">更多分类 <ArrowRight size={12} /></button>
+        </div>
+        <div className="txzz-cinema-channel-grid grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+          {[
+            { title: "本周新片", detail: "按发布时间看看新故事", icon: Sparkles, tone: "is-pink", filters: { order: "new" } },
+            { title: "大家在看", detail: "跟着热度挑选不踩雷", icon: Flame, tone: "is-orange", filters: { order: "hot" } },
+            { title: "轻松免费看", detail: "无需额外权益即可开映", icon: Gift, tone: "is-mint", filters: { pay_type: "free" } },
+            { title: "VIP 精选", detail: "从会员片库发现好片", icon: Crown, tone: "is-violet", filters: { pay_type: "vip" } }
+          ].map((channel) => (
+            <button key={channel.title} type="button" onClick={() => { onNavigate("discover"); onQuery({ mode: "browse", query: "", filters: channel.filters }); }} className={`txzz-cinema-channel-card ${channel.tone} group relative min-h-24 overflow-hidden rounded-[1.35rem] border border-white/9 p-3.5 text-left transition hover:-translate-y-0.5 hover:border-white/18`}>
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/11 text-white shadow-lg"><channel.icon size={17} /></span>
+              <h3 className="mt-2.5 text-[12px] font-black text-white">{channel.title}</h3>
+              <p className="mt-0.5 text-[8px] font-semibold text-white/42">{channel.detail}</p>
+              <ArrowRight size={15} className="absolute right-3 top-3 text-white/20 transition group-hover:translate-x-0.5 group-hover:text-white/55" />
+            </button>
+          ))}
+        </div>
+      </section>
 
       {sections.map((section) => (
         <Shelf

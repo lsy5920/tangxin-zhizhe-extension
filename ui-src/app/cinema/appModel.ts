@@ -2,7 +2,7 @@ import type { LibraryEntry } from "../types";
 import type { PlaybackSession, ScreeningState } from "../playback/types";
 import type { CinemaCatalogState, CinemaCollectionState, CinemaMovie } from "./types";
 
-export const CINEMA_PRIMARY_ROUTES = ["home", "discover", "search", "library", "history"] as const;
+export const CINEMA_PRIMARY_ROUTES = ["home", "discover", "search", "library", "history", "downloads"] as const;
 
 export type CinemaPrimaryRoute = typeof CINEMA_PRIMARY_ROUTES[number];
 export type CinemaRoute =
@@ -31,7 +31,32 @@ export function normalizeCinemaPrimaryRoute(value: unknown): CinemaPrimaryRoute 
 }
 
 export function createCinemaRouteStack(initial: unknown = "home"): CinemaRoute[] {
+  if (initial && typeof initial === "object" && "name" in initial) {
+    const name = String(initial.name || "");
+    if (["detail", "playback"].includes(name) && "movieId" in initial) {
+      const movieId = String(initial.movieId || "").trim();
+      if (movieId) {
+        // 独立页深链仍保留一个可靠首页基线，让浏览器返回键始终有明确落点。
+        return [{ name: "home" }, { name: name as "detail" | "playback", movieId }];
+      }
+    }
+    return [{ name: normalizeCinemaPrimaryRoute(name) }];
+  }
   return [{ name: normalizeCinemaPrimaryRoute(initial) }];
+}
+
+export function cinemaRoutesEqual(left: CinemaRoute | undefined, right: CinemaRoute | undefined) {
+  if (!left || !right || left.name !== right.name) return false;
+  if ("movieId" in left || "movieId" in right) {
+    return "movieId" in left && "movieId" in right && left.movieId === right.movieId;
+  }
+  return true;
+}
+
+export function syncCinemaRouteStack(stack: CinemaRoute[], route: CinemaRoute): CinemaRoute[] {
+  if (cinemaRoutesEqual(stack[stack.length - 1], route)) return stack;
+  if ("movieId" in route) return createCinemaRouteStack(route);
+  return navigateCinemaPrimary(route.name);
 }
 
 export function navigateCinemaPrimary(route: CinemaPrimaryRoute): CinemaRoute[] {
@@ -74,6 +99,19 @@ export function collectCinemaMovieIndex(
     if (id) index.set(id, movie);
   }
   return index;
+}
+
+export function shouldLoadCinemaCollection(
+  collection: CinemaCollectionState | null | undefined,
+  movieId: unknown
+) {
+  const normalizedMovieId = String(movieId || "").trim();
+  if (!normalizedMovieId) return false;
+  if ((collection?.items || []).some((movie) => movie.id === normalizedMovieId)) return false;
+  // 同一编号已有进行中、成功或失败结果时不做后台重试，避免上游故障造成请求风暴；
+  // 用户仍可通过详情页“刷新合集”显式重试。
+  if (collection?.parentMovieId === normalizedMovieId && collection.phase !== "idle") return false;
+  return true;
 }
 
 function fallbackDurationLabel(durationSeconds?: number, explicit?: string) {

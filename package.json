@@ -1,7 +1,7 @@
 {
   "name": "tangxin-zhizhe-extension",
   "private": true,
-  "version": "5.5.0",
+  "version": "5.6.0",
   "type": "module",
   "scripts": {
     "deps:check": "node scripts/check-deps.mjs",

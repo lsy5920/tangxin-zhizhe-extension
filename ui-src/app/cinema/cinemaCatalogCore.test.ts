@@ -18,6 +18,15 @@ function rawMovie(id: string, overrides: Record<string, unknown> = {}) {
 }
 
 describe("cinema catalog core", () => {
+  it("treats an explicit null bootstrap session as a fresh visitor", () => {
+    expect(core.normalizeSessionCredentials(null)).toBeNull();
+    expect(core.normalizeSessionCredentials(undefined)).toBeNull();
+    expect(core.normalizeSessionCredentials({ userToken: "token_1", deviceId: "device_1" })).toEqual({
+      userToken: "token_1",
+      deviceId: "device_1"
+    });
+  });
+
   it("removes ad blocks, invalid movies and duplicate movies", () => {
     const normalized = core.normalizeDiscoverResponse([
       { id: "", name: "广告", style: -1, ad: { image: "ad.jpg" } },
@@ -164,6 +173,26 @@ describe("cinema catalog core", () => {
     expect(collection.items.every((item: any) => item.isCollection)).toBe(true);
     expect(core.containsPlaybackField(collection)).toBe(false);
     expect(JSON.stringify(collection)).not.toContain("media.invalid");
+  });
+
+  it("rebuilds a safe catalog seed from playback history without signed URLs", () => {
+    const movie = core.screeningMovieById({
+      activeSession: null,
+      history: [{
+        movieId: "35855",
+        title: "旅行日记 第 1 集",
+        sources: [{
+          url: "https://signed.invalid/full.m3u8",
+          media: { durationSeconds: 728 },
+          health: { duration: 700 }
+        }],
+        decision: { recommendedSourceId: "primary" }
+      }]
+    }, "35855");
+
+    expect(movie).toMatchObject({ id: "35855", title: "旅行日记 第 1 集", durationSeconds: 728 });
+    expect(core.containsPlaybackField(movie)).toBe(false);
+    expect(JSON.stringify(movie)).not.toContain("signed.invalid");
   });
 
   it("keeps the selected parent episode when a collection exceeds the item limit", () => {

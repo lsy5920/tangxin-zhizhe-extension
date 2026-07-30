@@ -9,9 +9,12 @@ import {
   pushCinemaRoute,
   selectCinemaHistory,
   selectCinemaLibrary,
+  shouldLoadCinemaCollection,
+  syncCinemaRouteStack,
   type CinemaPrimaryRoute,
   type CinemaRoute
 } from "../cinema/appModel";
+import { cinemaRouteEntryFromHash } from "../cinema/standaloneBridgeCore";
 import type {
   CinemaCatalogFilters,
   CinemaCatalogMode,
@@ -25,6 +28,7 @@ import { CinemaAppShell } from "./cinema/CinemaAppShell";
 import { CinemaDetailPage } from "./cinema/CinemaDetailPage";
 import { CinemaExploreView, CinemaHomeView, type CinemaQuery } from "./cinema/CinemaCatalogViews";
 import { CinemaHistoryView, CinemaLibraryView } from "./cinema/CinemaLibraryViews";
+import { DownloadsPage } from "./DownloadsPage";
 import { PlaybackPage } from "./PlaybackPage";
 
 type Toast = { text: string; level: string } | null;
@@ -32,13 +36,15 @@ type Toast = { text: string; level: string } | null;
 type Props = {
   panelRef: RefObject<HTMLDivElement>;
   state: BridgeState;
-  initialRoute?: CinemaPrimaryRoute;
+  initialRoute?: CinemaPrimaryRoute | CinemaRoute;
   toast?: Toast;
   onAction: (action: string, payload?: Record<string, unknown>) => void;
   onPrimaryRouteChange?: (route: CinemaPrimaryRoute) => void;
+  onRouteChange?: (route: CinemaRoute) => void;
   onExitWorkspace: () => void;
   onClose: () => void;
   onDismissToast?: () => void;
+  standalone?: boolean;
 };
 
 const EMPTY_CATALOG: CinemaCatalogState = {
@@ -56,7 +62,23 @@ const EMPTY_CATALOG: CinemaCatalogState = {
 };
 
 function isPrimaryRoute(route: CinemaRoute): route is { name: CinemaPrimaryRoute } {
-  return ["home", "discover", "search", "library", "history"].includes(route.name);
+  return ["home", "discover", "search", "library", "history", "downloads"].includes(route.name);
+}
+
+function cinemaRouteHash(route: CinemaRoute) {
+  return "movieId" in route
+    ? `#/${route.name}/${encodeURIComponent(route.movieId)}`
+    : `#/${route.name}`;
+}
+
+function validCinemaRouteStack(value: unknown): value is CinemaRoute[] {
+  if (!Array.isArray(value) || !value.length || value.length > 12) return false;
+  return value.every((route) => {
+    if (!route || typeof route !== "object" || !("name" in route)) return false;
+    const name = String(route.name || "");
+    if (["detail", "playback"].includes(name)) return "movieId" in route && Boolean(String(route.movieId || "").trim());
+    return ["home", "discover", "search", "library", "history", "downloads"].includes(name);
+  });
 }
 
 export function CinemaPage({
@@ -65,10 +87,12 @@ export function CinemaPage({
   initialRoute = "home",
   toast = null,
   onAction,
-  onPrimaryRouteChange = () => undefined,
+  onPrimaryRouteChange,
+  onRouteChange,
   onExitWorkspace,
   onClose,
-  onDismissToast = () => undefined
+  onDismissToast = () => undefined,
+  standalone = false
 }: Props) {
   const catalog = state.cinemaCatalog || EMPTY_CATALOG;
   const collection = state.cinemaCollection || null;
@@ -89,6 +113,8 @@ export function CinemaPage({
   const resolvingMovieId = state.screening?.request?.phase === "resolving"
     ? String(state.screening.request.movieId || "")
     : "";
+  const downloads = Object.values(state.downloadTasks || {});
+  const activeDownloadCount = downloads.filter((task) => ["queued", "probing", "downloading", "recovering", "assembling", "saving"].includes(String(task.stage || ""))).length;
 
   const resolveMovie = (movieId: string) => rememberedMovies.current.get(movieId)
     || movieIndex.get(movieId)
@@ -114,6 +140,47 @@ export function CinemaPage({
       .slice(0, 12)
     : [];
 
+  const applyRouteStack = (next: CinemaRoute[], mode: "push" | "replace" = "push") => {
+    const bounded = next.slice(-12);
+    setRouteStack(bounded);
+    if (!standalone) return;
+    const method = mode === "replace" ? "replaceState" : "pushState";
+    window.history[method]({ ...(window.history.state || {}), txzzCinemaRouteStack: bounded }, "", cinemaRouteHash(bounded[bounded.length - 1]));
+  };
+
+  useEffect(() => {
+    if (!standalone) return;
+    const currentState = window.history.state || {};
+    if (routeStack.length > 1 && currentState.txzzCinemaHistorySeeded !== true) {
+      // 直接打开 #/detail 或 #/playback 时，内部栈包含首页基线，但浏览器本身尚无对应历史项。
+      // 先写首页再 push 当前页，确保标题栏返回键不会离开扩展或落入空白页。
+      const baseStack = [routeStack[0]];
+      const sharedState = { ...currentState, txzzCinemaHistorySeeded: true };
+      window.history.replaceState({ ...sharedState, txzzCinemaRouteStack: baseStack }, "", cinemaRouteHash(baseStack[0]));
+      window.history.pushState({ ...sharedState, txzzCinemaRouteStack: routeStack }, "", cinemaRouteHash(route));
+    } else {
+      window.history.replaceState({ ...currentState, txzzCinemaHistorySeeded: true, txzzCinemaRouteStack: routeStack }, "", cinemaRouteHash(route));
+    }
+    const popState = (event: PopStateEvent) => {
+      const restored = (event.state as { txzzCinemaRouteStack?: unknown } | null)?.txzzCinemaRouteStack;
+      if (validCinemaRouteStack(restored)) setRouteStack(restored);
+    };
+    window.addEventListener("popstate", popState);
+    return () => window.removeEventListener("popstate", popState);
+    // 初次挂载建立浏览器历史基线；后续历史由 applyRouteStack 精确维护。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [standalone]);
+
+  useEffect(() => {
+    if (!standalone) return;
+    const syncFromLocation = () => {
+      const nextRoute = cinemaRouteEntryFromHash(window.location.hash);
+      setRouteStack((current) => syncCinemaRouteStack(current, nextRoute));
+    };
+    window.addEventListener("hashchange", syncFromLocation);
+    return () => window.removeEventListener("hashchange", syncFromLocation);
+  }, [standalone]);
+
   useEffect(() => {
     // 存储偏好异步恢复时，只在还没进入详情/播放的情况下同步首页签。
     setRouteStack((current) => current.length === 1 && isPrimaryRoute(current[0]) && current[0].name !== initialRoute
@@ -122,12 +189,20 @@ export function CinemaPage({
   }, [initialRoute]);
 
   useEffect(() => {
-    if (isPrimaryRoute(route)) onPrimaryRouteChange(route.name);
-  }, [onPrimaryRouteChange, route]);
+    if (isPrimaryRoute(route)) onPrimaryRouteChange?.(route.name);
+    onRouteChange?.(route);
+  }, [onPrimaryRouteChange, onRouteChange, route]);
 
   useEffect(() => {
     for (const movie of collection?.items || []) rememberedMovies.current.set(movie.id, movie);
   }, [collection?.items]);
+
+  useEffect(() => {
+    if (!selectedMovie || !["detail", "playback"].includes(route.name)) return;
+    if (!shouldLoadCinemaCollection(collection, selectedMovie.id)) return;
+    // 深链刷新没有页面态合集缓存；这里只恢复白名单元数据，绝不解析播放线路或触发购买。
+    onAction("load-cinema-collection", { movieId: selectedMovie.id, movieTitle: selectedMovie.title });
+  }, [collection, onAction, route.name, selectedMovie]);
 
   useEffect(() => {
     const scroller = panelRef.current?.querySelector<HTMLElement>(".txzz-cinema-app-main");
@@ -155,8 +230,8 @@ export function CinemaPage({
   }, [catalog.items?.length, catalog.mode, catalog.phase, catalog.sections?.length, onAction, route.name]);
 
   const goPrimary = (target: CinemaPrimaryRoute) => {
-    setRouteStack(navigateCinemaPrimary(target));
-    onPrimaryRouteChange(target);
+    applyRouteStack(navigateCinemaPrimary(target));
+    onPrimaryRouteChange?.(target);
     if (target === "home" && catalog.mode !== "discover") {
       onAction("load-cinema-catalog", { mode: "discover", query: "", filters: {}, forceRefresh: false });
     } else if (target === "discover" && catalog.mode === "search") {
@@ -171,7 +246,11 @@ export function CinemaPage({
   };
 
   const goBack = () => {
-    setRouteStack((current) => popCinemaRoute(current));
+    if (standalone && routeStack.length > 1) {
+      window.history.back();
+      return;
+    }
+    applyRouteStack(popCinemaRoute(routeStack), "replace");
   };
 
   const rememberMovie = (movie: CinemaMovie) => {
@@ -180,18 +259,17 @@ export function CinemaPage({
 
   const openMovie = (movie: CinemaMovie) => {
     rememberMovie(movie);
-    const collectionAlreadyLoaded = collection?.parentMovieId === movie.id
-      || (collection?.items || []).some((item) => item.id === movie.id);
-    if (movie.isCollection && !collectionAlreadyLoaded) {
-      // 打开合集详情只读取 groups 元数据，完整线路仍由后续“开映”手势触发。
+    if (shouldLoadCinemaCollection(collection, movie.id)) {
+      // 部分上游目录项没有 is_episode 标记；用户打开详情后统一读取并白名单化 groups，
+      // 才能可靠识别合集。该请求不保存播放字段，也不会触发完整线路解析或购买。
       onAction("load-cinema-collection", { movieId: movie.id, movieTitle: movie.title });
     }
     const selectingEpisode = route.name === "detail"
       && Boolean(activeCollection?.items?.some((item) => item.id === movie.id));
-    setRouteStack((current) => selectingEpisode
+    applyRouteStack(selectingEpisode
       // 切集是同一详情层的内部状态，替换栈顶可避免返回键逐集倒退。
-      ? [...current.slice(0, -1), { name: "detail", movieId: movie.id }]
-      : pushCinemaRoute(current, { name: "detail", movieId: movie.id }));
+      ? [...routeStack.slice(0, -1), { name: "detail", movieId: movie.id }]
+      : pushCinemaRoute(routeStack, { name: "detail", movieId: movie.id }), selectingEpisode ? "replace" : "push");
   };
 
   const refreshCollection = (movie: CinemaMovie) => {
@@ -206,7 +284,19 @@ export function CinemaPage({
     rememberMovie(movie);
     // 用户手势是完整线路请求的唯一入口；路由切换本身绝不解析或预购买。
     onAction("open-cinema-playback", { movieId: movie.id, movieTitle: movie.title });
-    setRouteStack((current) => pushCinemaRoute(current, { name: "playback", movieId: movie.id }));
+    applyRouteStack(pushCinemaRoute(routeStack, { name: "playback", movieId: movie.id }));
+  };
+
+  const replacePlaybackMovieRoute = (movieId: string) => {
+    const normalizedMovieId = String(movieId || "").trim();
+    if (!normalizedMovieId) return;
+    const nextRoute: CinemaRoute = { name: "playback", movieId: normalizedMovieId };
+    // 画面内选集与足迹切换属于同一放映层，替换栈顶可避免返回键逐集倒退，
+    // 同时保证刷新、复制地址和浏览器历史都指向当前实际影片。
+    applyRouteStack(
+      route.name === "playback" ? [...routeStack.slice(0, -1), nextRoute] : pushCinemaRoute(routeStack, nextRoute),
+      route.name === "playback" ? "replace" : "push"
+    );
   };
 
   const planDownload = (movie: CinemaMovie) => {
@@ -241,8 +331,8 @@ export function CinemaPage({
 
   const runQuery = ({ mode, query, filters }: CinemaQuery) => {
     if (mode === "search" && route.name !== "search") {
-      setRouteStack(navigateCinemaPrimary("search"));
-      onPrimaryRouteChange("search");
+      applyRouteStack(navigateCinemaPrimary("search"));
+      onPrimaryRouteChange?.("search");
     }
     onAction("load-cinema-catalog", { mode, query, filters, forceRefresh: false });
   };
@@ -278,7 +368,21 @@ export function CinemaPage({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose, panelRef, routeStack.length]);
+  }, [onClose, panelRef, routeStack, standalone]);
+
+  useEffect(() => {
+    if (!standalone) return;
+    const openSearch = (event: KeyboardEvent) => {
+      if (event.key !== "/" || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+      const active = (panelRef.current?.getRootNode() as ShadowRoot | undefined)?.activeElement || document.activeElement;
+      if (active instanceof HTMLElement && (active.isContentEditable || active.matches("input, textarea, select"))) return;
+      event.preventDefault();
+      goPrimary("search");
+      window.requestAnimationFrame(() => panelRef.current?.querySelector<HTMLInputElement>("#txzz-cinema-search")?.focus());
+    };
+    window.addEventListener("keydown", openSearch);
+    return () => window.removeEventListener("keydown", openSearch);
+  }, [panelRef, route.name, standalone]);
 
   const commonCatalogProps = {
     catalog,
@@ -300,9 +404,17 @@ export function CinemaPage({
           ? <CinemaLibraryView items={libraryItems} allItems={allLibraryItems} filter={libraryFilter} keyword={libraryKeyword} onFilter={setLibraryFilter} onKeyword={setLibraryKeyword} onMovie={openMovie} onNavigate={goPrimary} />
           : route.name === "history"
             ? <CinemaHistoryView items={history} onMovie={openMovie} onPlay={openPlayback} onNavigate={goPrimary} />
+            : route.name === "downloads"
+              ? <div className="txzz-cinema-downloads-view"><DownloadsPage state={state} onAction={onAction} /></div>
             : route.name === "detail"
               ? <CinemaDetailPage movie={selectedMovie} collection={activeCollection} libraryEntry={selectedMovie ? library[selectedMovie.id] || null : null} resolving={Boolean(selectedMovie && resolvingMovieId === selectedMovie.id)} related={related} onOpenPlayback={openPlayback} onPlanDownload={planDownload} onRefreshCollection={refreshCollection} onToggleFavorite={(movie) => updateLibrary(movie, { favorite: !library[movie.id]?.favorite })} onToggleWatchLater={(movie) => updateLibrary(movie, { watchLater: !library[movie.id]?.watchLater })} onMovie={openMovie} onBack={goBack} />
-              : <PlaybackPage state={state} onAction={onAction} variant="cinema" />;
+              : <PlaybackPage
+                  state={state}
+                  onAction={onAction}
+                  variant="cinema"
+                  routeMovieId={"movieId" in route ? route.movieId : ""}
+                  onRouteMovieChange={replacePlaybackMovieRoute}
+                />;
 
   return (
     <CinemaAppShell
@@ -311,6 +423,9 @@ export function CinemaPage({
       canGoBack={routeStack.length > 1}
       libraryCount={Object.keys(library).length}
       historyCount={history.length}
+      downloadCount={downloads.length}
+      activeDownloadCount={activeDownloadCount}
+      catalogCount={movieIndex.size}
       resolving={Boolean(resolvingMovieId)}
       toast={toast}
       onNavigate={goPrimary}
@@ -318,6 +433,7 @@ export function CinemaPage({
       onExitWorkspace={onExitWorkspace}
       onClose={onClose}
       onDismissToast={onDismissToast}
+      standalone={standalone}
     >
       {body}
     </CinemaAppShell>

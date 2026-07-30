@@ -12,6 +12,45 @@
     return DOWNLOAD_STAGES.has(normalized) ? normalized : "stale";
   }
 
+  function isActiveDownloadTask(task) {
+    if (!isPlainObject(task)) return false;
+    return new Set(["queued", "probing", "downloading", "recovering", "assembling", "saving"])
+      .has(normalizeDownloadStage(task.stage));
+  }
+
+  function normalizeDownloadMode(mode = "", url = "") {
+    const normalized = String(mode || "");
+    if (normalized === "progressive-opfs" || normalized === "hls-opfs") return normalized;
+    const path = String(url || "").split(/[?#]/, 1)[0].toLowerCase();
+    return path.endsWith(".mp4") ? "progressive-opfs" : "hls-opfs";
+  }
+
+  function downloadControlDecision(stage = "", action = "") {
+    const normalizedStage = normalizeDownloadStage(stage);
+    const normalizedAction = String(action || "");
+    const active = new Set(["queued", "probing", "downloading", "recovering", "assembling"]);
+    if (normalizedAction === "pause") {
+      if (normalizedStage === "paused") return { allowed: false, noop: true, reason: "already-paused" };
+      return active.has(normalizedStage)
+        ? { allowed: true, noop: false, reason: "" }
+        : { allowed: false, noop: false, reason: "task-not-active" };
+    }
+    if (normalizedAction === "resume") {
+      return normalizedStage === "paused"
+        ? { allowed: true, noop: false, reason: "" }
+        : { allowed: false, noop: normalizedStage === "queued", reason: normalizedStage === "queued" ? "already-queued" : "task-not-paused" };
+    }
+    if (normalizedAction === "cancel") {
+      if (["cancelled", "stale", "error"].includes(normalizedStage)) {
+        return { allowed: false, noop: true, reason: "already-stopped" };
+      }
+      return [...active, "paused"].includes(normalizedStage)
+        ? { allowed: true, noop: false, reason: "" }
+        : { allowed: false, noop: false, reason: "artifact-ready" };
+    }
+    return { allowed: false, noop: false, reason: "unknown-action" };
+  }
+
   function isPlainObject(value) {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
   }
@@ -96,8 +135,11 @@
   root.TxzzStateMutationCore = Object.freeze({
     bufferedDownloadEventIsStale,
     canTakeSaveTokenClaim,
+    downloadControlDecision,
     downloadEventStageChanged,
+    isActiveDownloadTask,
     mergeConcurrentState,
+    normalizeDownloadMode,
     normalizeDownloadStage,
     planPersistedDownloadRecovery,
     validateDownloadEvent

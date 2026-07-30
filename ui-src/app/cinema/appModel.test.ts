@@ -7,7 +7,9 @@ import {
   popCinemaRoute,
   pushCinemaRoute,
   selectCinemaHistory,
-  selectCinemaLibrary
+  selectCinemaLibrary,
+  shouldLoadCinemaCollection,
+  syncCinemaRouteStack
 } from "./appModel";
 
 const movie: CinemaMovie = {
@@ -30,6 +32,22 @@ describe("cinema app model", () => {
     expect(stack.map((route) => route.name)).toEqual(["discover", "detail", "playback"]);
     expect(popCinemaRoute(stack).at(-1)).toEqual({ name: "detail", movieId: "35807" });
     expect(navigateCinemaPrimary("library")).toEqual([{ name: "library" }]);
+    expect(navigateCinemaPrimary("downloads")).toEqual([{ name: "downloads" }]);
+    expect(createCinemaRouteStack({ name: "playback", movieId: "35856" })).toEqual([
+      { name: "home" },
+      { name: "playback", movieId: "35856" }
+    ]);
+  });
+
+  it("syncs an externally changed standalone hash without duplicating the current route", () => {
+    const current = [{ name: "home" }] as const;
+    expect(syncCinemaRouteStack([...current], { name: "playback", movieId: "35855" })).toEqual([
+      { name: "home" },
+      { name: "playback", movieId: "35855" }
+    ]);
+    const playback = [{ name: "home" }, { name: "playback", movieId: "35855" }] as const;
+    expect(syncCinemaRouteStack([...playback], { name: "playback", movieId: "35855" })).toEqual(playback);
+    expect(syncCinemaRouteStack([...playback], { name: "downloads" })).toEqual([{ name: "downloads" }]);
   });
 
   it("deduplicates catalog movies while preferring the current result page", () => {
@@ -51,6 +69,13 @@ describe("cinema app model", () => {
       items: [episode]
     });
     expect(index.get("35856")).toEqual(episode);
+  });
+
+  it("restores collection metadata once for a direct detail or playback route", () => {
+    expect(shouldLoadCinemaCollection(null, "35855")).toBe(true);
+    expect(shouldLoadCinemaCollection({ phase: "loading", parentMovieId: "35855", items: [] }, "35855")).toBe(false);
+    expect(shouldLoadCinemaCollection({ phase: "ready", parentMovieId: "other", items: [{ ...movie, id: "35855" }] }, "35855")).toBe(false);
+    expect(shouldLoadCinemaCollection({ phase: "error", parentMovieId: "35855", items: [], error: "upstream" }, "35855")).toBe(false);
   });
 
   it("projects playback history without leaking source URLs into the cinema catalog view model", () => {

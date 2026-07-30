@@ -149,6 +149,7 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
           <SoftButton icon={Download} disabled={blocked || (scheduleMode === "scheduled" && !scheduledAt)} onClick={() => onAction("start-planned-download", {
             movieId: planner.movieId || "",
             movieTitle: planner.movieTitle || "",
+            planTicket: planner.planTicket || "",
             sourceId,
             lineKey: sourceId || planner.lineKey || "auto",
             networkMode,

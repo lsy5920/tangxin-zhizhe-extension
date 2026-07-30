@@ -6,8 +6,11 @@ const core = (globalThis as typeof globalThis & {
   TxzzStateMutationCore: {
     bufferedDownloadEventIsStale: (buffered: Record<string, unknown> | null, message: Record<string, unknown>) => boolean;
     canTakeSaveTokenClaim: (record: Record<string, unknown>, claimant: string, active: boolean) => boolean;
+    downloadControlDecision: (stage: string, action: string) => { allowed: boolean; noop: boolean; reason: string };
     downloadEventStageChanged: (observed: Record<string, unknown> | null, message: Record<string, unknown>) => boolean;
+    isActiveDownloadTask: (task: Record<string, unknown> | null | undefined) => boolean;
     mergeConcurrentState: (base: unknown, incoming: unknown, current: unknown) => Record<string, unknown>;
+    normalizeDownloadMode: (mode?: string, url?: string) => string;
     normalizeDownloadStage: (stage: string) => string;
     planPersistedDownloadRecovery: (tasks: Record<string, Record<string, unknown>>) => Array<{ task: Record<string, unknown>; action: string }>;
     validateDownloadEvent: (existing: Record<string, unknown> | null, message: Record<string, unknown>, deleted?: string[]) => { accepted: boolean; reason: string };
@@ -56,6 +59,24 @@ describe("serialized state mutation core", () => {
     expect(core.validateDownloadEvent(existing, { taskId: "task", attemptId: "new", sequence: 8, stage: "downloading" }).reason).toBe("stale-sequence");
     expect(core.validateDownloadEvent(existing, { taskId: "task", attemptId: "new", sequence: 9, stage: "segment" }).accepted).toBe(true);
     expect(core.normalizeDownloadStage("segment")).toBe("downloading");
+  });
+
+  it("does not treat a missing task as queued and normalizes legacy download modes", () => {
+    expect(core.isActiveDownloadTask(undefined)).toBe(false);
+    expect(core.isActiveDownloadTask(null)).toBe(false);
+    expect(core.isActiveDownloadTask({ stage: "queued" })).toBe(true);
+    expect(core.normalizeDownloadMode("", "https://media.example/video.mp4?token=redacted")).toBe("progressive-opfs");
+    expect(core.normalizeDownloadMode("", "https://media.example/master.m3u8")).toBe("hls-opfs");
+    expect(core.normalizeDownloadMode("progressive-opfs", "https://media.example/master.m3u8")).toBe("progressive-opfs");
+  });
+
+  it("prevents terminal download artifacts from being resumed or cancelled", () => {
+    expect(core.downloadControlDecision("paused", "resume")).toMatchObject({ allowed: true, noop: false });
+    expect(core.downloadControlDecision("queued", "pause")).toMatchObject({ allowed: true, noop: false });
+    expect(core.downloadControlDecision("downloading", "cancel")).toMatchObject({ allowed: true, noop: false });
+    expect(core.downloadControlDecision("ready", "resume")).toMatchObject({ allowed: false, noop: false, reason: "task-not-paused" });
+    expect(core.downloadControlDecision("ready", "cancel")).toMatchObject({ allowed: false, noop: false, reason: "artifact-ready" });
+    expect(core.downloadControlDecision("cancelled", "cancel")).toMatchObject({ allowed: false, noop: true, reason: "already-stopped" });
   });
 
   it("recovers only resumable tasks and marks legacy tasks without attempt ids stale", () => {

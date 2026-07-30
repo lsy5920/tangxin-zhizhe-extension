@@ -21,6 +21,15 @@
       .slice(0, maxLength);
   }
 
+  function normalizeSessionCredentials(session) {
+    // 默认参数只处理 undefined；跨 runtime 消息常把缺失会话显式传成 null，
+    // 因此必须先缩窄为普通对象，避免全新安装加载公开目录时读取空对象属性。
+    const raw = session && typeof session === "object" ? session : {};
+    const userToken = safeText(raw.userToken || raw.token, 4096);
+    const deviceId = safeText(raw.deviceId, 240);
+    return userToken && deviceId ? { userToken, deviceId } : null;
+  }
+
   function finiteNumber(value, fallback = 0) {
     const number = Number(value);
     return Number.isFinite(number) ? number : fallback;
@@ -169,6 +178,34 @@
       title: collectionTitle(parent.title),
       items
     };
+  }
+
+  function screeningMovieById(screening = {}, requestedMovieId = "") {
+    const movieId = safeText(requestedMovieId, 80);
+    if (!movieId) return null;
+    const sessions = [
+      screening?.activeSession,
+      ...(Array.isArray(screening?.history) ? screening.history : [])
+    ].filter(Boolean);
+    const session = sessions.find((item) => safeText(item?.movieId, 80) === movieId);
+    if (!session) return null;
+    const durationSeconds = Math.max(
+      0,
+      ...(Array.isArray(session.sources) ? session.sources : []).map((source) => Math.max(
+        parseDurationSeconds(source?.media?.durationSeconds),
+        parseDurationSeconds(source?.health?.duration)
+      ))
+    );
+    // 足迹会话可能携带签名线路；这里只重新构造目录白名单字段，绝不透传 session。
+    return normalizeMovie({
+      id: movieId,
+      title: safeText(session.title, 180) || `影片 ${movieId}`,
+      durationSeconds,
+      durationLabel: formatDuration(durationSeconds),
+      orientation: "landscape",
+      access: "free",
+      isCollection: true
+    });
   }
 
   function parseSectionFilter(value) {
@@ -406,6 +443,8 @@
     normalizeCollectionResponse,
     normalizeDiscoverResponse,
     normalizeMovie,
+    screeningMovieById,
+    normalizeSessionCredentials,
     normalizeSearchResponse,
     normalizeSection,
     parseDurationSeconds

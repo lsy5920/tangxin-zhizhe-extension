@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.5.0",
-  "build": "2026-07-30-1122",
-  "releasedAt": "2026-07-30 11:22",
+  "version": "5.6.0",
+  "build": "2026-07-30-2136",
+  "releasedAt": "2026-07-30 21:36",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-30-2136",
+      "type": "重构",
+      "title": "独立浏览器糖心影院与完整影视 App 布局",
+      "detail": "糖心影院从目标网站工作台覆盖层迁移到独立 chrome-extension:// 标签页，桌面端使用可折叠影视侧栏，移动端使用首页、发现、搜索、片库、足迹、下载六项安全区底栏。入口会识别并复用浏览器恢复或直接打开的影院标签；独立页直接通过 Service Worker 状态桥处理目录、合集、播放、下载规划和 OPFS 存储。真实 Chrome DevTools 验收同步修复全新安装空访客会话、片库合集与海报校验、搜索旧结果闪回、无目录标记合集识别、外部 Hash 路由不同步，以及下载任务缺失时读取 mode 失败；暂停、继续、取消和 OPFS 清理已完成真实队列回归。正式 ID 与私钥不变，Worker 保持 2.1.0。",
+      "releasedAt": "2026-07-30 21:36"
+    },
     {
       "id": "2026-07-30-1122",
       "type": "功能",
@@ -249,11 +256,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 751606,
-  "packageSha256": "7fb00f20e07146c00a2970262eedd34a160d999918386c5491b277ac656b1ddd",
+  "packageSize": 768584,
+  "packageSha256": "33db15bfc0e696b39488d3a19676267702bb0f9a68d130e886e94df22998f322",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "MJfUB0ApERjVWnQiT08eE3u4cRu9cmxMblAg+F/s0xiDY1q6gFaPD8rwzsrxkIH8lF9X/IQZTb4ML4SZKryKVi6VBxFpwABWT++1GQbkFhP5kFtKjNfdvH31kvGTASYaZUVVIj1eug1HaOU2rMcntXEwQq5kQss3NXjMKFxJLzyWdCAWruf8K5PhsQOsolEVIfUVoF/6hh/SaH61AN8PUAM9JLDQLzuYJjRk/eXn4xdMvUKz0SPR3tDPTgr0L1tY90M4K2sXymGOtt0z2i9gccpxoHq+paDwLp3T5aO1HwdIkaa3CbISQ5+ha3BqfZo5m9xR5x+xzoUHyQxVMQKthg=="
+    "value": "jBXyKEM0tOoPSuGNg2tN3xSAY3Sb5E7LEvC4JHhOYS9DSVw6wrPxMVKY538q952l6vjT1SPfWif4SdaYPS3v4Lz7Thx7YDIPPmqeowv+0WgZaodjZa4bR0+r9G4O6bXXOmmgUzcEqNAjR7Z1LnCns0iSh1O5l+XhDpGiwCCtc6QYA4UhbO7VcFWjyJiA0jpTRONqaIHVm6n4Tnypp/6ioSpIHsnPciMihLp/LFLZEgp960l+L0r2FMRl4U8BSoZ62NRyWCx8fxUoTDqWllVmiE6o39KH97RmEyCyAjxF1Ft98iBvCNsFOySI0RBC9bipibrGr670ykfn5A0lt93VMQ=="
   }
 }

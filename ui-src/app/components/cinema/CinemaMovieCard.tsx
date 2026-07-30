@@ -1,4 +1,4 @@
-import { Clock3, Coins, Crown, Eye, Heart, Layers3, Play, Sparkles } from "lucide-react";
+import { Clock3, Coins, Crown, Eye, Heart, Layers3, Play, Sparkles, Star } from "lucide-react";
 import type { CinemaMovie } from "../../cinema/types";
 import { CinemaPoster } from "./CinemaPoster";
 
@@ -51,7 +51,7 @@ export function CinemaMovieCard({ movie, onOpen, featured = false }: Props) {
         <span className={`absolute left-2 top-2 inline-flex min-h-7 items-center gap-1 rounded-full px-2 text-[9px] font-black shadow-lg backdrop-blur ${access.className}`}>
           <AccessIcon size={10} /> {access.label}
         </span>
-        {movie.badge && <span className="absolute right-2 top-2 max-w-[55%] truncate rounded-full bg-black/55 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">{movie.badge}</span>}
+        {(movie.badge || movie.score) && <span className="absolute right-2 top-2 inline-flex max-w-[55%] items-center gap-1 truncate rounded-full bg-black/58 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">{movie.score && <Star size={9} className="text-amber-300" fill="currentColor" />}{movie.badge || movie.score}</span>}
         <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-black/65 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">
           {movie.isCollection ? <Layers3 size={10} /> : <Clock3 size={10} />} {movie.isCollection ? "合集" : movie.durationLabel}
         </span>

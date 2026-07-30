@@ -59,6 +59,22 @@ describe("experience core", () => {
     expect(core.withinDownloadWindow({ windowEnabled: true, windowStart: "22:00", windowEnd: "06:00" }, noon)).toBe(false);
   });
 
+  it("reuses only a recent validated download plan", () => {
+    const now = Date.parse("2026-07-30T12:00:00.000Z");
+    expect(core.isReusableDownloadPlan({
+      plan: { segmentCount: 33, blockedReason: "" },
+      planValidatedAt: new Date(now - 30_000).toISOString()
+    }, now)).toBe(true);
+    expect(core.isReusableDownloadPlan({
+      plan: { segmentCount: 33 },
+      planValidatedAt: new Date(now - 3 * 60_000).toISOString()
+    }, now)).toBe(false);
+    expect(core.isReusableDownloadPlan({
+      plan: { segmentCount: 33, blockedReason: "空间不足" },
+      planValidatedAt: new Date(now).toISOString()
+    }, now)).toBe(false);
+  });
+
   it("rebuilds the next alarm for future tasks and the next allowed window", () => {
     const now = new Date(2026, 0, 1, 12, 0, 0, 0).getTime();
     const tasks = { due: { taskId: "due", stage: "queued" } };

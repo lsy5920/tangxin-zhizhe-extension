@@ -377,6 +377,8 @@ for (const runtimeFile of [
   "update_core.js",
   "page_context_core.js",
   "download_core.js",
+  "cinema.html",
+  "cinema.css",
   "save.html",
   "save.css",
   "save.js"
@@ -403,6 +405,10 @@ expect(uiScriptText.includes("txzz-app-style"), "正式 UI 脚本缺少 Shadow D
 expect(uiScriptText.includes("txzzUiBuild"), "正式 UI 脚本缺少构建代次标记，旧 ShadowRoot 可能被复用");
 expect(uiScriptText.includes("txzzStyleIntegrity"), "正式 UI 脚本缺少 ShadowRoot 样式完整性自检");
 expect(backgroundText.includes('getURL(`save.html#token='), "background.js 未打开扩展安全保存页");
+expect(backgroundText.includes('getURL("cinema.html")'), "background.js 未提供独立影院标签页入口");
+expect(backgroundText.includes('message?.type === "openCinemaPage"'), "background.js 未注册独立影院开页消息");
+expect(uiScriptText.includes("txzz-cinema-standalone-ready"), "正式 UI 脚本缺少独立影院挂载标记");
+expect(uiStyleText.includes(".txzz-cinema-standalone-root"), "正式 UI CSS 缺少独立影院根样式");
 expect(!contentText.includes("clientSave"), "content.js 不得再通过 runtime 消息接收整包 CRX 字节");
 expect(!RELEASE_INCLUDE_PATHS.includes("update.json"), "发布文件列表不得包含 update.json");
 const accessibleResources = (manifest.web_accessible_resources || []).flatMap((item) => item.resources || []);

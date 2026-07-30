@@ -2064,3 +2064,260 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+/* 5.6 独立影院页：与目标网页完全分离的 chrome-extension:// 影视 App 壳。 */
+:host([data-txzz-cinema-standalone="true"]) {
+  pointer-events: auto;
+  color-scheme: dark;
+  background: #0b0710;
+}
+
+:host([data-txzz-cinema-standalone="true"]) #txzz-candy-ui,
+.txzz-cinema-standalone-root {
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+  background: #0b0710;
+}
+
+.txzz-cinema-app-overlay.is-standalone {
+  width: 100%;
+  height: 100%;
+  transform: none;
+}
+
+.txzz-cinema-app-shell {
+  --txzz-cinema-sidebar-width: 16.75rem;
+}
+
+.txzz-cinema-app-sidebar {
+  width: var(--txzz-cinema-sidebar-width);
+  transition: width 220ms ease, padding 220ms ease;
+}
+
+.txzz-cinema-app-shell.is-sidebar-collapsed {
+  --txzz-cinema-sidebar-width: 5.6rem;
+}
+
+.txzz-cinema-app-shell.is-sidebar-collapsed .txzz-cinema-app-sidebar {
+  padding-inline: 0.65rem;
+}
+
+.txzz-cinema-app-shell.is-sidebar-collapsed .txzz-cinema-sidebar-label,
+.txzz-cinema-app-shell.is-sidebar-collapsed .txzz-cinema-nav-badge {
+  display: none;
+}
+
+.txzz-cinema-app-shell.is-sidebar-collapsed .txzz-cinema-nav-item {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.txzz-cinema-app-shell.is-sidebar-collapsed .txzz-cinema-brand {
+  flex: 0 0 auto;
+  padding-inline: 0;
+}
+
+.txzz-cinema-app-shell.is-sidebar-collapsed .txzz-cinema-sidebar-toggle {
+  position: absolute;
+  right: 0.25rem;
+  bottom: 1rem;
+  z-index: 2;
+}
+
+.txzz-cinema-brand-mark {
+  background: linear-gradient(145deg, #ff84c4 0%, #d65bc6 46%, #8d6cf1 100%);
+  box-shadow:
+    0 0.9rem 2.2rem rgba(213, 80, 188, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  transform: rotate(-2deg);
+  transition: transform 220ms ease;
+}
+
+.txzz-cinema-brand:hover .txzz-cinema-brand-mark {
+  transform: rotate(2deg) translateY(-2px);
+}
+
+.txzz-cinema-brand-star {
+  position: absolute;
+  right: -0.2rem;
+  top: -0.45rem;
+  color: #ffe7a9;
+  font-size: 0.8rem;
+  font-style: normal;
+  text-shadow: 0 0 1rem rgba(255, 229, 145, 0.7);
+  animation: txzz-cinema-brand-sparkle 2.4s ease-in-out infinite;
+}
+
+.txzz-cinema-nav-item.is-active::before {
+  position: absolute;
+  left: -0.75rem;
+  width: 0.22rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  background: linear-gradient(#ff8bd0, #a67cff);
+  box-shadow: 0 0 1rem rgba(234, 112, 215, 0.55);
+  content: "";
+}
+
+.txzz-cinema-app-main {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.012), transparent 12rem),
+    transparent;
+}
+
+.txzz-cinema-ambient-orb,
+.txzz-cinema-ambient-cloud,
+.txzz-cinema-sparkle {
+  position: absolute;
+}
+
+.txzz-cinema-ambient-orb {
+  width: 34rem;
+  height: 34rem;
+  border-radius: 50%;
+  filter: blur(5rem);
+  opacity: 0.18;
+}
+
+.txzz-cinema-ambient-orb.is-pink {
+  left: -17rem;
+  top: -16rem;
+  background: #e65cbf;
+}
+
+.txzz-cinema-ambient-orb.is-violet {
+  right: -15rem;
+  top: 16%;
+  background: #7058d8;
+}
+
+.txzz-cinema-ambient-cloud {
+  width: 13rem;
+  height: 4.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.016);
+  filter: blur(1px);
+}
+
+.txzz-cinema-ambient-cloud::before,
+.txzz-cinema-ambient-cloud::after {
+  position: absolute;
+  bottom: 0;
+  border-radius: 50%;
+  background: inherit;
+  content: "";
+}
+
+.txzz-cinema-ambient-cloud::before {
+  left: 2rem;
+  width: 5rem;
+  height: 6rem;
+}
+
+.txzz-cinema-ambient-cloud::after {
+  right: 1.8rem;
+  width: 6.2rem;
+  height: 7.2rem;
+}
+
+.txzz-cinema-ambient-cloud.is-left {
+  left: 24%;
+  bottom: -2rem;
+}
+
+.txzz-cinema-ambient-cloud.is-right {
+  right: 6%;
+  top: 9rem;
+  transform: scale(0.72);
+}
+
+.txzz-cinema-sparkle {
+  color: rgba(255, 224, 248, 0.24);
+  animation: txzz-cinema-shell-twinkle 3.4s ease-in-out infinite;
+}
+
+.txzz-cinema-sparkle.is-one { left: 30%; top: 7rem; font-size: 0.8rem; }
+.txzz-cinema-sparkle.is-two { right: 9%; top: 22%; font-size: 1.1rem; animation-delay: -1.3s; }
+.txzz-cinema-sparkle.is-three { left: 62%; bottom: 8%; font-size: 0.65rem; animation-delay: -2.1s; }
+
+.txzz-cinema-library-summary {
+  background:
+    linear-gradient(145deg, rgba(237, 114, 207, 0.08), rgba(126, 97, 220, 0.07)),
+    rgba(255, 255, 255, 0.025);
+}
+
+.txzz-cinema-channel-card {
+  box-shadow: 0 1rem 2.4rem rgba(0, 0, 0, 0.12);
+}
+
+.txzz-cinema-channel-card.is-pink { background: linear-gradient(140deg, rgba(210, 70, 157, 0.25), rgba(255, 255, 255, 0.035)); }
+.txzz-cinema-channel-card.is-orange { background: linear-gradient(140deg, rgba(218, 116, 65, 0.23), rgba(255, 255, 255, 0.035)); }
+.txzz-cinema-channel-card.is-mint { background: linear-gradient(140deg, rgba(47, 156, 131, 0.22), rgba(255, 255, 255, 0.035)); }
+.txzz-cinema-channel-card.is-violet { background: linear-gradient(140deg, rgba(111, 76, 192, 0.27), rgba(255, 255, 255, 0.035)); }
+
+.txzz-cinema-downloads-view {
+  min-height: 100%;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 137, 199, 0.13), transparent 24rem),
+    radial-gradient(circle at 94% 8%, rgba(147, 116, 239, 0.12), transparent 26rem),
+    #f8f5fb;
+  color-scheme: light;
+}
+
+.txzz-cinema-downloads-view .txzz-page {
+  max-width: 92rem;
+  padding-bottom: 3rem;
+}
+
+.txzz-cinema-command-search kbd {
+  font-family: inherit;
+}
+
+.txzz-cinema-app-shell :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid rgba(242, 153, 228, 0.78);
+  outline-offset: 2px;
+}
+
+@keyframes txzz-cinema-brand-sparkle {
+  0%, 100% { opacity: 0.45; transform: scale(0.78) rotate(-10deg); }
+  50% { opacity: 1; transform: scale(1.18) rotate(12deg); }
+}
+
+@keyframes txzz-cinema-shell-twinkle {
+  0%, 100% { opacity: 0.18; transform: translateY(0) scale(0.8); }
+  50% { opacity: 0.58; transform: translateY(-4px) scale(1.15); }
+}
+
+@media (max-width: 639px) {
+  .txzz-cinema-channel-grid {
+    gap: 0.55rem;
+  }
+
+  .txzz-cinema-channel-card {
+    min-height: 6.35rem;
+    padding: 0.75rem;
+  }
+
+  .txzz-cinema-downloads-view .txzz-page {
+    padding-inline: 0.75rem;
+  }
+}
+
+@media (max-width: 359px) {
+  .txzz-cinema-app-mobile-nav button {
+    font-size: 7px !important;
+  }
+
+  .txzz-cinema-app-mobile-nav button > span:first-child {
+    width: 1.9rem !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .txzz-cinema-brand-star,
+  .txzz-cinema-sparkle {
+    animation: none !important;
+  }
+}

@@ -216,15 +216,18 @@
   // 广告清理：严格模式。
   // 1) 实测开屏根：.my-swipe.ad-splash.van-swipe（fixed z-index:1001）
   // 2) 倒计时结束后常残留右上角「进入/跳过/数字」徽标（可能挂到 body，不在 .ad-splash 内）
-  const AD_CLEANER_VERSION = "2026-07-28-ad-clean-app-entry-v2";
+  const AD_CLEANER_VERSION = "2026-07-30-ad-clean-promotion-v3";
   const AD_APP_ENTRY_OVERLAY_SELECTOR = "#__layout > .app-container > .control";
+  const AD_PROMOTION_CANDIDATE_SELECTOR = ".ad-apps, .my-swipe.van-swipe";
   const AD_CONTAINER_SELECTORS = [
     ".ad-splash",
     ".my-swipe.ad-splash",
     ".ad-splash.van-swipe",
     ".my-swipe.ad-splash.van-swipe",
     "[class~='ad-splash']",
-    AD_APP_ENTRY_OVERLAY_SELECTOR
+    AD_APP_ENTRY_OVERLAY_SELECTOR,
+    ".ad-apps",
+    ".my-swipe.van-swipe"
   ];
   const AD_SPLASH_ROOT_SELECTOR = ".ad-splash, .my-swipe.ad-splash, .ad-splash.van-swipe, .my-swipe.ad-splash.van-swipe, [class~='ad-splash']";
   // 倒计时/进入按钮常见 class 线索（仍需几何与文案二次校验）
@@ -1174,6 +1177,7 @@
       blockedClicks: 0,
       splashHits: 0,
       entryOverlayHits: 0,
+      promotionHits: 0,
       countdownHits: 0,
       lastRunAt: "",
       lastReason: "",
@@ -1225,6 +1229,16 @@
 }
 /* 被标记的倒计时/进入残留徽标 */
 [data-txzz-ad-residual="1"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+}
+/* 明确广告应用块与悬浮推广轮播可直接隐藏；顶部轮播仍由外链比例二次校验后标记。 */
+.ad-apps,
+.drag-area > .my-swipe.van-swipe,
+[data-txzz-ad-promotion="1"] {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
@@ -1301,6 +1315,35 @@
     // 结构与文案都精确命中时仍允许删除，便于状态统计与防止站点反复改写 style。
     const hiddenByCleaner = style.display === "none" && contentMatch;
     return contentMatch && (hiddenByCleaner || (locationMatch && layerMatch));
+  }
+
+  /**
+   * 识别首页推广轮播和广告应用块。不能仅凭“广告”二字删除：影片标题或说明也可能包含该词。
+   * 轮播必须至少含 3 个 HTTP(S) 链接，且 80% 以上跳向站外，才会视为推广容器。
+   */
+  function promotionalAdRoot(el) {
+    if (!(el instanceof Element) || isPluginUi(el)) return null;
+    const root = el.matches?.(AD_PROMOTION_CANDIDATE_SELECTOR)
+      ? el
+      : el.closest?.(AD_PROMOTION_CANDIDATE_SELECTOR);
+    if (!root || isPluginUi(root) || root.dataset?.txzzAdCleaned === "1") return null;
+    if (root.matches?.(".ad-apps")) {
+      const items = root.querySelectorAll?.(".ad-item").length || 0;
+      const explicitLabels = Array.from(root.querySelectorAll?.("*") || [])
+        .filter((node) => node.children.length === 0 && String(node.textContent || "").trim() === "广告")
+        .length;
+      return items > 0 && explicitLabels > 0 ? root : null;
+    }
+    const links = Array.from(root.querySelectorAll?.("a[href]") || []);
+    if (links.length < 3) return null;
+    let external = 0;
+    for (const link of links) {
+      try {
+        const url = new URL(link.href, location.href);
+        if (["http:", "https:"].includes(url.protocol) && url.origin !== location.origin) external += 1;
+      } catch (_) {}
+    }
+    return external / links.length >= 0.8 ? root : null;
   }
 
   /** 判断是否为开屏倒计时结束后残留的右上角进入/跳过按钮 */
@@ -1436,11 +1479,17 @@
     const appEntryRoot = isAppEntryOverlay(el)
       ? (el.matches?.(AD_APP_ENTRY_OVERLAY_SELECTOR) ? el : el.closest?.(AD_APP_ENTRY_OVERLAY_SELECTOR))
       : null;
-    const root = appEntryRoot || (isSplashRoot ? el : el.closest?.(AD_SPLASH_ROOT_SELECTOR));
+    const splashRoot = isSplashRoot ? el : el.closest?.(AD_SPLASH_ROOT_SELECTOR);
+    const promotionRoot = promotionalAdRoot(el);
+    const root = appEntryRoot || splashRoot || promotionRoot;
     if (!root || isPluginUi(root)) return false;
     const matched = String(root.className || root.tagName).slice(0, 80);
     root.dataset.txzzAdCleaned = "1";
     if (appEntryRoot) state.adCleaner.entryOverlayHits += 1;
+    else if (promotionRoot && root === promotionRoot) {
+      root.dataset.txzzAdPromotion = "1";
+      state.adCleaner.promotionHits += 1;
+    }
     else {
       state.adCleaner.splashHits += 1;
       adSplashSeenUntil = Math.max(adSplashSeenUntil, Date.now() + 20000);
@@ -1476,7 +1525,11 @@
       document.querySelectorAll(AD_APP_ENTRY_OVERLAY_SELECTOR).forEach((el) => {
         if (removeAdElement(el, `${reason}|顶部入口`)) changed += 1;
       });
-      // 3) 倒计时结束后残留的右上角进入/跳过/数字按钮
+      // 3) 首页站外推广轮播与明确标记的广告应用块
+      document.querySelectorAll(AD_PROMOTION_CANDIDATE_SELECTOR).forEach((el) => {
+        if (promotionalAdRoot(el) && removeAdElement(el, `${reason}|站外推广`)) changed += 1;
+      });
+      // 4) 倒计时结束后残留的右上角进入/跳过/数字按钮
       findSplashResidualCandidates().forEach((el) => {
         if (removeResidualAdBadge(el, `${reason}|残留进入`)) changed += 1;
       });
@@ -1495,13 +1548,17 @@
     if (!target || isPluginUi(target)) return;
     const splash = target.closest?.(AD_SPLASH_ROOT_SELECTOR);
     const appEntry = target.closest?.(AD_APP_ENTRY_OVERLAY_SELECTOR);
-    if (splash || (appEntry && isAppEntryOverlay(appEntry))) {
+    const promotion = promotionalAdRoot(target);
+    if (splash || promotion || (appEntry && isAppEntryOverlay(appEntry))) {
       event.preventDefault();
       event.stopPropagation();
       if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-      removeAdElement(splash || appEntry, splash ? "点击拦截开屏.ad-splash" : "点击拦截顶部入口");
+      removeAdElement(
+        splash || promotion || appEntry,
+        splash ? "点击拦截开屏.ad-splash" : promotion ? "点击拦截站外推广" : "点击拦截顶部入口"
+      );
       state.adCleaner.blockedClicks += 1;
-      markAdCleanerChanged("拦截广告点击", String((splash || appEntry).className || "").slice(0, 60));
+      markAdCleanerChanged("拦截广告点击", String((splash || promotion || appEntry).className || "").slice(0, 60));
       // 点击时顺带清残留
       cleanAdElements("点击后清残留");
       publishState();
@@ -1538,7 +1595,12 @@
         for (const m of mutations) {
           if (m.type === "attributes" && m.target instanceof Element) {
             const cls = String(m.target.className || "");
-            if (/ad-splash/.test(cls) || AD_RESIDUAL_CLASS_RE.test(cls) || m.target.matches?.(AD_APP_ENTRY_OVERLAY_SELECTOR)) {
+            if (
+              /ad-splash/.test(cls)
+              || AD_RESIDUAL_CLASS_RE.test(cls)
+              || m.target.matches?.(AD_APP_ENTRY_OVERLAY_SELECTOR)
+              || m.target.matches?.(AD_PROMOTION_CANDIDATE_SELECTOR)
+            ) {
               needClean = true;
               break;
             }
@@ -1552,6 +1614,8 @@
               || node.querySelector?.(AD_SPLASH_ROOT_SELECTOR)
               || node.matches?.(AD_APP_ENTRY_OVERLAY_SELECTOR)
               || node.querySelector?.(AD_APP_ENTRY_OVERLAY_SELECTOR)
+              || node.matches?.(AD_PROMOTION_CANDIDATE_SELECTOR)
+              || node.querySelector?.(AD_PROMOTION_CANDIDATE_SELECTOR)
               || AD_RESIDUAL_CLASS_RE.test(cls)
               || AD_RESIDUAL_TEXT_RE.test(text)
               || (/进入|跳过/.test(text) && text.length <= 8)
@@ -2457,6 +2521,7 @@
         movieTitle: options.movieTitle || currentMovieTitle(),
         accountId: state.selectedFullAccountId,
         bootstrapSession,
+        planTicket: options.planTicket || "",
         lineKey,
         url: options.url || "",
         sourceId: options.sourceId || "",

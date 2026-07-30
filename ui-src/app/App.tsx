@@ -3,7 +3,6 @@ import { AlertTriangle, X } from "lucide-react";
 import { listenBridgeState, notifyUiReady, sendUiAction } from "./bridge";
 import type { AccountsPageIntent, BridgeState, Page, SettingsPageIntent } from "./types";
 import { OverviewPage } from "./components/OverviewPage";
-import { CinemaPage } from "./components/CinemaPage";
 import { AccountsPage } from "./components/AccountsPage";
 import { PlaybackPage } from "./components/PlaybackPage";
 import { DownloadsPage } from "./components/DownloadsPage";
@@ -58,8 +57,6 @@ function automaticUpdatePromptShouldWait() {
   const host = getPluginHost();
   if (document.fullscreenElement || host?.classList.contains(PLAYER_FULLSCREEN_HOST_CLASS)) return true;
   if (userIsEnteringText()) return true;
-  // 影视 App 是独立沉浸体验，自动更新弹层延后到返回工具台再展示。
-  if (pluginShadowRoot()?.querySelector('[data-txzz-cinema-app="true"]')) return true;
   return Boolean(pluginShadowRoot()?.querySelector('[data-txzz-modal-sheet="true"]'));
 }
 
@@ -83,12 +80,10 @@ async function verifyDismissedUpdateStored(updateId: string) {
 
 export default function App() {
   const [open, setOpen] = useState(false);
-  const [cinemaOpen, setCinemaOpen] = useState(false);
   const {
     page,
     setPage,
     cinemaRoute,
-    setCinemaRoute,
     ballPos,
     setBallPos,
     saveBallPosition
@@ -109,8 +104,6 @@ export default function App() {
   const lastToastKey = useRef("");
   const toastStartedAt = useRef(Date.now());
   const showUpdateModalRef = useRef(false);
-  const cinemaOpenRef = useRef(cinemaOpen);
-  cinemaOpenRef.current = cinemaOpen;
 
   const setUpdateModalVisibility = (visible: boolean) => {
     showUpdateModalRef.current = visible;
@@ -124,7 +117,6 @@ export default function App() {
       setBridgeState(next);
       if (typeof next.expanded === "boolean") {
         setOpen(next.expanded);
-        if (!next.expanded) setCinemaOpen(false);
       }
     });
     notifyUiReady();
@@ -143,8 +135,6 @@ export default function App() {
       // 顶层子弹层拥有 Esc 与 Tab；主工作台必须完全让出键盘焦点，不能把焦点偷回侧栏。
       if (pluginShadowRoot()?.querySelector('[data-txzz-modal-sheet="true"]')) return;
       if (event.key === "Escape") {
-        // 影视 App 内的 Esc 需先返回详情/上一层，由 CinemaPage 的局部路由处理。
-        if (cinemaOpenRef.current) return;
         event.preventDefault();
         closePanel();
         return;
@@ -227,13 +217,11 @@ export default function App() {
   const openPanel = () => {
     // 打开普通面板时清掉残留全屏宿主类，避免上次异常全屏后面板整页消失。
     disableHostPlaybackFullscreenMode();
-    setCinemaOpen(false);
     setOpen(true);
     action("toggle", { force: true });
   };
   const closePanel = () => {
     disableHostPlaybackFullscreenMode();
-    setCinemaOpen(false);
     setOpen(false);
     action("close");
   };
@@ -269,9 +257,16 @@ export default function App() {
 
   const goPage = (target: Page, intent: AccountsPageIntent | SettingsPageIntent = {}) => {
     if (target === "cinema") {
-      // 影院是工具台中的独立入口，不覆盖或丢失当前工具页。
+      // 影院在独立 chrome-extension:// 标签页运行，宿主网站只保留入口和原有工具台。
       disableHostPlaybackFullscreenMode();
-      setCinemaOpen(true);
+      setToast({ text: "正在新标签页打开糖心影院", level: "running" });
+      void chrome.runtime.sendMessage({ type: "openCinemaPage", route: cinemaRoute }).then((response) => {
+        if (!response?.ok) throw new Error(response?.error || "影院页面打开失败");
+        setOpen(false);
+        action("close");
+      }).catch((error) => {
+        setToast({ text: error?.message || String(error), level: "error" });
+      });
       return;
     }
     if (target === "accounts") setAccountsIntent(intent as AccountsPageIntent);
@@ -345,26 +340,7 @@ export default function App() {
         />
       )}
 
-      {open && cinemaOpen && (
-        <PageErrorBoundary title="糖心影院加载失败" onReset={() => setPage("cinema")}>
-          <CinemaPage
-            panelRef={panelRef}
-            state={bridgeState}
-            initialRoute={cinemaRoute}
-            toast={toast}
-            onAction={action}
-            onPrimaryRouteChange={setCinemaRoute}
-            onExitWorkspace={() => {
-              disableHostPlaybackFullscreenMode();
-              setCinemaOpen(false);
-            }}
-            onClose={closePanel}
-            onDismissToast={() => setToast(null)}
-          />
-        </PageErrorBoundary>
-      )}
-
-      {open && !cinemaOpen && (
+      {open && (
         <WorkspaceShell
           panelRef={panelRef}
           page={page}

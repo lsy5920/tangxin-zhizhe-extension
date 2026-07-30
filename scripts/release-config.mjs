@@ -20,6 +20,8 @@ export const RELEASE_INCLUDE_PATHS = [
   "page_probe.js",
   "offscreen.html",
   "offscreen_downloader.js",
+  "cinema.html",
+  "cinema.css",
   "save.html",
   "save.css",
   "save.js",

@@ -221,6 +221,7 @@ export type DownloadTask = {
   createdAt?: string;
   viewportHeight?: number;
   estimatedBytes?: number;
+  planValidatedAt?: string;
 };
 
 export type LibraryEntry = {
@@ -356,6 +357,7 @@ export type DownloadPlannerState = {
   lineKey?: string;
   mode?: string;
   filename?: string;
+  planTicket?: string;
   source?: { id?: string; label?: string; protocol?: string; media?: Record<string, unknown> | null };
   sources?: Array<{ id?: string; label?: string; role?: string; protocol?: string; health?: Record<string, unknown>; media?: Record<string, unknown> }>;
   plan?: DownloadPlan | null;
@@ -497,6 +499,8 @@ export type BridgeState = {
     lastMatched?: string;
     selectors?: number;
     splashHits?: number;
+    entryOverlayHits?: number;
+    promotionHits?: number;
     countdownHits?: number;
     bootActive?: boolean;
   };

@@ -101,6 +101,7 @@ const stateSnapshotByObject = new WeakMap();
 const downloadProgressBuffer = new Map();
 const downloadProgressTimers = new Map();
 const downloadObservedStage = new Map();
+const downloadPlanTickets = new Map();
 const saveTokens = new Map();
 let saveTokenMutationQueue = Promise.resolve();
 let updateVerificationKeyPromise = null;
@@ -117,15 +118,19 @@ let persistedDownloadsReconciled = false;
 let persistedDownloadRecoveryInFlight = null;
 const cinemaCatalogCache = new Map();
 const cinemaCollectionCache = new Map();
+let cinemaPageTabId = null;
 const CINEMA_CATALOG_CACHE_STORAGE_KEY = "txzzCinemaCatalogCacheV1";
 const CINEMA_CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
 const CINEMA_CATALOG_CACHE_MAX_ITEMS = 20;
 const CINEMA_CATALOG_CACHE_MAX_PERSISTED_CHARS = 3_500_000;
 const CINEMA_COLLECTION_CACHE_TTL_MS = 5 * 60 * 1000;
 const CINEMA_COLLECTION_CACHE_MAX_ITEMS = 160;
+const DOWNLOAD_PLAN_TICKET_TTL_MS = 2 * 60 * 1000;
+const DOWNLOAD_PLAN_TICKET_MAX_ITEMS = 24;
 let cinemaCatalogCacheHydration = null;
 let cinemaCatalogCachePersistQueue = Promise.resolve();
 let cinemaVisitorSessionCache = null;
+let cinemaVisitorSessionTask = null;
 const cinemaPosterCache = new Map();
 const cinemaPosterTasks = new Map();
 let cinemaPosterCacheBytes = 0;
@@ -135,7 +140,7 @@ const CINEMA_POSTER_CACHE_TTL_MS = 30 * 60 * 1000;
 const CINEMA_POSTER_CACHE_MAX_ITEMS = 64;
 const CINEMA_POSTER_CACHE_MAX_BYTES = 24 * 1024 * 1024;
 
-const LOCAL_UPDATE_BUILD = "2026-07-30-1122";
+const LOCAL_UPDATE_BUILD = "2026-07-30-2136";
 
 const DEFAULT_STATE = {
   role: "guest",
@@ -1206,10 +1211,8 @@ async function verifySessionForAccount(account, session) {
   };
 }
 
-function normalizeBootstrapSession(session = {}) {
-  const userToken = String(session.userToken || session.token || "");
-  const deviceId = String(session.deviceId || "");
-  return userToken && deviceId ? { userToken, deviceId } : null;
+function normalizeBootstrapSession(session) {
+  return cinemaCatalogCore.normalizeSessionCredentials(session);
 }
 
 function pruneCinemaCatalogCache() {
@@ -1303,12 +1306,37 @@ async function cinemaCatalogSession(message = {}) {
   if (cinemaVisitorSessionCache && Date.now() < cinemaVisitorSessionCache.expiresAt) {
     return cinemaVisitorSessionCache.session;
   }
-  const session = await createVisitorSession(String(message.deviceId || "") || makeDeviceId());
-  cinemaVisitorSessionCache = {
-    session,
-    expiresAt: Date.now() + 30 * 60 * 1000
-  };
-  return session;
+  if (cinemaVisitorSessionTask) return cinemaVisitorSessionTask;
+  const task = (async () => {
+    const candidates = unique([
+      String(message.deviceId || "").trim().slice(0, 240),
+      // 正式站对部分全新随机 web 设备号不会下发 visitor token；该兼容号已用于账号登录链路。
+      "web_8c204a9995314",
+      makeDeviceId(),
+      makeDeviceId(),
+      makeDeviceId()
+    ]);
+    const attempts = [];
+    for (const deviceId of candidates) {
+      try {
+        const session = await createVisitorSession(deviceId);
+        cinemaVisitorSessionCache = {
+          session,
+          expiresAt: Date.now() + 30 * 60 * 1000
+        };
+        return session;
+      } catch (error) {
+        attempts.push({ deviceId, error: error?.message || String(error) });
+      }
+    }
+    throw new Error(`公开访客会话创建失败：${JSON.stringify(attempts.slice(-3))}`);
+  })();
+  cinemaVisitorSessionTask = task;
+  try {
+    return await task;
+  } finally {
+    if (cinemaVisitorSessionTask === task) cinemaVisitorSessionTask = null;
+  }
 }
 
 function catalogMovieById(catalog, movieId) {
@@ -1446,7 +1474,9 @@ async function fetchCinemaPoster(message = {}) {
   const state = await getStateInternal();
   const catalog = cinemaCatalogCore.normalizeCatalogState(state.cinemaCatalog);
   const movie = catalogMovieById(catalog, movieId);
-  const libraryMovie = experienceCore.normalizeExperienceState(state.experience).library?.[movieId];
+  // 片库保存在独立的 txzzExperienceV1；getStateInternal 已刷新 experienceSnapshot，
+  // 不得再从高频 txzzState 上读取一个并不存在的 experience 字段。
+  const libraryMovie = publicExperienceState().library?.[movieId];
   const collectionMovie = cachedCinemaCollectionMovie(movieId);
   const expected = cinemaPosterCore.describeEncryptedPosterUrl(movie?.posterUrl || libraryMovie?.posterUrl || collectionMovie?.posterUrl);
   if (!expected || expected.url !== requested.url) {
@@ -1609,12 +1639,32 @@ async function fetchCinemaCollection(message = {}) {
 
   const state = await getStateInternal();
   const catalog = cinemaCatalogCore.normalizeCatalogState(state.cinemaCatalog);
-  const library = experienceCore.normalizeExperienceState(state.experience).library || {};
-  const knownMovie = catalogMovieById(catalog, movieId) || library[movieId] || cachedCinemaCollectionMovie(movieId);
-  if (!knownMovie) throw new Error("合集影片不属于当前目录或片库");
+  const library = publicExperienceState().library || {};
+  const historyMovie = cinemaCatalogCore.screeningMovieById(state.screening, movieId);
+  const knownMovie = catalogMovieById(catalog, movieId)
+    || library[movieId]
+    || cachedCinemaCollectionMovie(movieId)
+    || historyMovie;
+  if (!knownMovie) throw new Error("合集影片不属于当前目录、片库、合集或观看足迹");
 
-  const session = await cinemaCatalogSession(message);
-  const raw = await apiRequest("/movie/detail", { id: movieId }, session);
+  let raw;
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      // 公开 visitor token 偶尔会在 /system/menu 首次握手时为空；第二次强制丢弃缓存和
+      // 外部 bootstrap，只重试只读详情请求，不接触账号池、播放解析或购买流程。
+      if (attempt > 0) cinemaVisitorSessionCache = null;
+      const session = await cinemaCatalogSession(attempt > 0
+        ? { ...message, bootstrapSession: null, session: null }
+        : message);
+      raw = await apiRequest("/movie/detail", { id: movieId }, session);
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastError) throw lastError;
   const normalized = cinemaCatalogCore.normalizeCollectionResponse(raw, knownMovie);
   if (!normalized.parentMovieId || !normalized.items.length) {
     throw new Error("上游未返回可用的合集分集");
@@ -1836,12 +1886,63 @@ function downloadAttemptId() {
   return `attempt_${Date.now()}_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
 }
 
+function pruneDownloadPlanTickets(now = Date.now()) {
+  for (const [ticket, entry] of downloadPlanTickets.entries()) {
+    if (now - Number(entry?.createdAt || 0) <= DOWNLOAD_PLAN_TICKET_TTL_MS) continue;
+    downloadPlanTickets.delete(ticket);
+  }
+  while (downloadPlanTickets.size > DOWNLOAD_PLAN_TICKET_MAX_ITEMS) {
+    downloadPlanTickets.delete(downloadPlanTickets.keys().next().value);
+  }
+}
+
+function rememberDownloadPlanTicket(source, message, plan) {
+  pruneDownloadPlanTickets();
+  const ticket = `download_plan_${crypto.randomUUID().replaceAll("-", "")}`;
+  downloadPlanTickets.set(ticket, {
+    createdAt: Date.now(),
+    movieId: source.movieId,
+    sourceId: String(source.picked.source?.id || source.lineKey || ""),
+    networkMode: String(message.networkMode || "balanced"),
+    qualityHeight: Number(message.qualityHeight || 0),
+    viewportHeight: Number(message.viewportHeight || 720),
+    source,
+    plan
+  });
+  pruneDownloadPlanTickets();
+  return ticket;
+}
+
+function takeDownloadPlanTicket(message = {}) {
+  pruneDownloadPlanTickets();
+  const ticket = String(message.planTicket || "");
+  const entry = downloadPlanTickets.get(ticket);
+  if (!entry) return null;
+  const sourceMatches = (
+    entry.movieId === String(message.movieId || message.id || "").trim()
+    && entry.sourceId === String(message.sourceId || "").trim()
+  );
+  if (!sourceMatches) return null;
+  const requestedHeight = Number(message.qualityHeight || 0);
+  const plannedHeight = Number(entry.plan?.selectedVariant?.height || 0);
+  const qualityMatches = entry.qualityHeight === requestedHeight
+    || (entry.qualityHeight === 0 && plannedHeight > 0 && plannedHeight === requestedHeight);
+  const reusePlan = (
+    entry.networkMode === String(message.networkMode || "balanced")
+    && qualityMatches
+    && entry.viewportHeight === Number(message.viewportHeight || 720)
+  );
+  // 规划票据只允许消费一次，避免多个标签为同一确认动作重复创建任务。
+  downloadPlanTickets.delete(ticket);
+  return { ...entry, reusePlan };
+}
+
 function normalizeDownloadStage(stage = "") {
   return stateMutationCore.normalizeDownloadStage(stage);
 }
 
-function isDownloadRunning(task = {}) {
-  return ["queued", "probing", "downloading", "recovering", "assembling", "saving"].includes(normalizeDownloadStage(task.stage));
+function isDownloadRunning(task) {
+  return stateMutationCore.isActiveDownloadTask(task);
 }
 
 function isDownloadReady(task = {}) {
@@ -1855,6 +1956,7 @@ function compactDownloadTasks(tasks = {}) {
     const task = {
       ...rawTask,
       stage: normalizeDownloadStage(rawTask.stage),
+      mode: stateMutationCore.normalizeDownloadMode(rawTask.mode, rawTask.url),
       priority: experienceCore.normalizePriority(rawTask.priority),
       notBefore: String(rawTask.notBefore || ""),
       pauseReason: String(rawTask.pauseReason || ""),
@@ -2863,6 +2965,84 @@ async function openCinemaPlayback(message = {}) {
   }
 }
 
+const CINEMA_PAGE_PRIMARY_ROUTES = new Set(["home", "discover", "search", "library", "history", "downloads"]);
+
+function cinemaPageUrl(route = "home") {
+  const safeRoute = CINEMA_PAGE_PRIMARY_ROUTES.has(String(route || "")) ? String(route) : "home";
+  return `${chrome.runtime.getURL("cinema.html")}#/${safeRoute}`;
+}
+
+function isCinemaPageTab(tab) {
+  const baseUrl = chrome.runtime.getURL("cinema.html");
+  const tabUrl = String(tab?.url || "");
+  return Number.isInteger(tab?.id) && (tabUrl === baseUrl || tabUrl.startsWith(`${baseUrl}#`));
+}
+
+async function findOpenCinemaPageTab() {
+  const baseUrl = chrome.runtime.getURL("cinema.html");
+  if (typeof chrome.runtime.getContexts === "function") {
+    try {
+      // runtime.getContexts 不需要 tabs 权限，且能识别浏览器恢复后带 Hash 的扩展页。
+      const contexts = await chrome.runtime.getContexts({ contextTypes: ["TAB"] });
+      const context = contexts.find((item) => (
+        Number.isInteger(item?.tabId)
+        && (String(item.documentUrl || "") === baseUrl || String(item.documentUrl || "").startsWith(`${baseUrl}#`))
+      ));
+      if (context?.tabId !== undefined) return await chrome.tabs.get(context.tabId);
+    } catch (_) {
+      // 旧版 Chromium 或移动浏览器实现不完整时继续走缓存与标签枚举兜底。
+    }
+  }
+
+  try {
+    const matches = await chrome.tabs.query({});
+    return matches.find(isCinemaPageTab) || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * 糖心影院运行在独立扩展标签页。复用已打开的影院标签可以避免用户连续点击入口时
+ * 产生多个播放器和下载规划器，同时不需要读取普通网页标签的敏感信息。
+ */
+async function openCinemaPage(message = {}) {
+  const url = cinemaPageUrl(message.route);
+  let existing = null;
+
+  if (Number.isInteger(cinemaPageTabId)) {
+    try {
+      const tab = await chrome.tabs.get(cinemaPageTabId);
+      if (isCinemaPageTab(tab)) existing = tab;
+    } catch (_) {
+      cinemaPageTabId = null;
+    }
+  }
+
+  if (!existing) {
+    // tabs.query 的 url 过滤使用 MatchPattern，不能可靠匹配扩展页的 Hash 路由；
+    // 先使用扩展上下文枚举，再退回有 tabs 权限时可用的普通标签枚举。
+    existing = await findOpenCinemaPageTab();
+  }
+
+  if (existing?.id !== undefined) {
+    cinemaPageTabId = existing.id;
+    const tab = await chrome.tabs.update(existing.id, { active: true, url });
+    if (Number.isInteger(tab?.windowId)) {
+      await chrome.windows?.update?.(tab.windowId, { focused: true }).catch(() => undefined);
+    }
+    return { ok: true, reused: true, tabId: existing.id, url };
+  }
+
+  const tab = await chrome.tabs.create({ url, active: true });
+  cinemaPageTabId = Number.isInteger(tab?.id) ? tab.id : null;
+  return { ok: true, reused: false, tabId: cinemaPageTabId, url };
+}
+
+chrome.tabs?.onRemoved?.addListener((tabId) => {
+  if (tabId === cinemaPageTabId) cinemaPageTabId = null;
+});
+
 // v1 兼容入口与下载流程都复用同一 v2 会话服务，不保留第二套购买逻辑。
 async function getFullDetail(message = {}) {
   const result = await createPlaybackSession(message);
@@ -2958,6 +3138,7 @@ async function planFullVideoDownload(message = {}) {
     durationSeconds: Number(source.picked.source?.media?.durationSeconds || 0)
   });
   if (result?.ok === false) throw new Error(result.error || "下载规划失败");
+  const planTicket = rememberDownloadPlanTicket(source, message, result.plan || null);
   return {
     ok: true,
     movieId: source.movieId,
@@ -2966,6 +3147,7 @@ async function planFullVideoDownload(message = {}) {
     lineKey: source.lineKey,
     mode: source.mode,
     filename: source.filename,
+    planTicket,
     source: {
       id: source.picked.source?.id || source.lineKey,
       label: source.picked.source?.label || source.lineKey,
@@ -3022,7 +3204,8 @@ async function startStoredDownloadTask(rawTask = {}) {
   if (!taskId || !attemptId || downloadStartInFlight.has(taskId)) return { ok: false, ignored: true };
   downloadStartInFlight.add(taskId);
   try {
-    const task = await persistDownloadTaskPatch(taskId, attemptId, { stage: "recovering", pauseReason: "", error: "" });
+    const mode = stateMutationCore.normalizeDownloadMode(rawTask.mode, rawTask.url);
+    const task = await persistDownloadTaskPatch(taskId, attemptId, { mode, stage: "recovering", pauseReason: "", error: "" });
     if (!task) return { ok: false, ignored: true };
     await ensureOffscreenDocument();
 
@@ -3038,22 +3221,26 @@ async function startStoredDownloadTask(rawTask = {}) {
       }
     }
 
-    let planResult;
-    try {
-      planResult = await chrome.runtime.sendMessage({
-        type: "offscreenPlanDownload",
-        taskId: `${taskId}_scheduled_plan`,
-        movieId: task.movieId,
-        url: task.url,
-        mode: task.mode,
-        networkMode: task.networkMode || "balanced",
-        qualityHeight: Number(task.qualityHeight || 0),
-        viewportHeight: Number(task.viewportHeight || 720),
-        durationSeconds: Number(task.plan?.durationSeconds || 0)
-      });
-    } catch (error) {
-      await markScheduledDownloadBlocked(task, error, "source-stale");
-      return { ok: false, stale: true };
+    let planResult = experienceCore.isReusableDownloadPlan(task, Date.now())
+      ? { ok: true, plan: task.plan }
+      : null;
+    if (!planResult) {
+      try {
+        planResult = await chrome.runtime.sendMessage({
+          type: "offscreenPlanDownload",
+          taskId: `${taskId}_scheduled_plan`,
+          movieId: task.movieId,
+          url: task.url,
+          mode,
+          networkMode: task.networkMode || "balanced",
+          qualityHeight: Number(task.qualityHeight || 0),
+          viewportHeight: Number(task.viewportHeight || 720),
+          durationSeconds: Number(task.plan?.durationSeconds || 0)
+        });
+      } catch (error) {
+        await markScheduledDownloadBlocked(task, error, "source-stale");
+        return { ok: false, stale: true };
+      }
     }
     if (planResult?.ok === false) {
       await markScheduledDownloadBlocked(task, planResult.error || "片源探测失败", "source-stale");
@@ -3066,11 +3253,13 @@ async function startStoredDownloadTask(rawTask = {}) {
     await persistDownloadTaskPatch(taskId, attemptId, {
       plan: planResult.plan || task.plan || null,
       estimatedBytes: Number(planResult?.plan?.estimatedBytes || task.estimatedBytes || 0),
+      planValidatedAt: nowIso(),
       resumeRequested: false
     });
     const startResult = await chrome.runtime.sendMessage({
       ...task,
-      type: task.mode === "progressive-opfs" ? "offscreenDownloadProgressive" : "offscreenDownloadM3u8",
+      mode,
+      type: mode === "progressive-opfs" ? "offscreenDownloadProgressive" : "offscreenDownloadM3u8",
       sequence: Number(task.sequence || 0),
       estimatedBytes: Number(planResult?.plan?.estimatedBytes || task.estimatedBytes || 0)
     });
@@ -3252,13 +3441,16 @@ async function cleanupOpfsStorage(targets = [], automatic = false) {
 }
 
 async function downloadFullVideo(message = {}) {
-  const source = await prepareDownloadSource(message);
+  const planned = takeDownloadPlanTicket(message);
+  const source = planned?.source || await prepareDownloadSource(message);
   const {
-    movieId, summary, url, lineKey, title, titleSnippet, mode, filename, taskId
+    movieId, summary, url, lineKey, title, titleSnippet, mode, taskId
   } = source;
+  const requestedContainer = String(message.container || "mp4") === "ts" ? "ts" : "mp4";
+  const filename = downloadFileName(movieId, requestedContainer, title);
   const existingState = await getStateInternal();
   const existingTask = existingState.downloadTasks?.[taskId];
-  if (isDownloadRunning(existingTask) || normalizeDownloadStage(existingTask?.stage) === "paused") {
+  if (existingTask && (isDownloadRunning(existingTask) || normalizeDownloadStage(existingTask.stage) === "paused")) {
     return {
       ok: true,
       reused: true,
@@ -3272,20 +3464,21 @@ async function downloadFullVideo(message = {}) {
     };
   }
   await ensureOffscreenDocument();
-  const planResult = await chrome.runtime.sendMessage({
-    type: "offscreenPlanDownload",
-    taskId: `${taskId}_plan`,
-    movieId,
-    url,
-    mode,
-    networkMode: String(message.networkMode || "balanced"),
-    qualityHeight: Number(message.qualityHeight || 0),
-    viewportHeight: Number(message.viewportHeight || 720),
-    durationSeconds: Number(source.picked.source?.media?.durationSeconds || 0)
-  });
+  const planResult = planned?.reusePlan
+    ? { ok: true, plan: planned.plan }
+    : await chrome.runtime.sendMessage({
+      type: "offscreenPlanDownload",
+      taskId: `${taskId}_plan`,
+      movieId,
+      url,
+      mode,
+      networkMode: String(message.networkMode || "balanced"),
+      qualityHeight: Number(message.qualityHeight || 0),
+      viewportHeight: Number(message.viewportHeight || 720),
+      durationSeconds: Number(source.picked.source?.media?.durationSeconds || 0)
+    });
   if (planResult?.ok === false) throw new Error(planResult.error || "下载规划失败");
   if (planResult?.plan?.blockedReason) throw new Error(planResult.plan.blockedReason);
-  const requestedContainer = String(message.container || "mp4") === "ts" ? "ts" : "mp4";
   if (Array.isArray(planResult?.plan?.compatibleContainers) && !planResult.plan.compatibleContainers.includes(requestedContainer)) {
     throw new Error(`所选片源不支持 ${requestedContainer.toUpperCase()} 容器`);
   }
@@ -3334,6 +3527,7 @@ async function downloadFullVideo(message = {}) {
       viewportHeight: Number(message.viewportHeight || 720),
       estimatedBytes: Number(planResult?.plan?.estimatedBytes || 0),
       plan: planResult.plan || null,
+      planValidatedAt: nowIso(),
       objectReady: false,
       error: "",
       createdAt: nowIso(),
@@ -3342,8 +3536,8 @@ async function downloadFullVideo(message = {}) {
   };
   await saveState(queued);
   await scheduleNextDownloadAlarm(queued);
-  await runDownloadScheduler();
-  const latest = await getStateInternal();
+  // 入队确认必须先返回给页面；实际探测、下载与闹钟重建由调度器异步接管。
+  scheduleDownloadDispatch(0);
   return {
     ok: true,
     mode,
@@ -3356,7 +3550,7 @@ async function downloadFullVideo(message = {}) {
     plan: planResult.plan,
     summary,
     notBefore,
-    state: sanitizeState(latest)
+    state: sanitizeState(queued)
   };
 }
 
@@ -3639,6 +3833,16 @@ async function controlDownloadTask(taskId = "", action = "") {
   const task = state.downloadTasks?.[taskId];
   if (!task) throw new Error("未找到下载任务");
   if (!task.attemptId) throw new Error("旧下载任务缺少恢复标识，请重新创建任务");
+  const decision = stateMutationCore.downloadControlDecision(task.stage, action);
+  if (decision.noop) return { ok: true, action, ignored: true, reason: decision.reason, state: sanitizeState(state) };
+  if (!decision.allowed) {
+    const messages = {
+      pause: "任务当前不在下载中",
+      resume: "只有已暂停的任务可以继续",
+      cancel: "成品已经就绪，请直接保存或删除任务"
+    };
+    throw new Error(messages[action] || `未知下载控制动作：${action}`);
+  }
   if (action === "resume") {
     state.downloadTasks = {
       ...(state.downloadTasks || {}),
@@ -5475,6 +5679,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse(await createPlaybackSession(message));
       return;
     }
+    if (message?.type === "openCinemaPage") {
+      sendResponse(await openCinemaPage(message));
+      return;
+    }
     if (message?.type === "openCinemaPlayback") {
       sendResponse(await openCinemaPlayback(message));
       return;
@@ -5560,6 +5768,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
     sendResponse({ ok: false, error: `unknown message: ${message?.type || ""}` });
-  })().catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
+  })().catch((error) => {
+    const errorMessage = error?.message || String(error);
+    // 这里只记录消息类型与堆栈，不记录消息正文，避免签名 URL、账号会话等敏感字段进入日志。
+    console.error("[TXZZ_BACKGROUND_MESSAGE_ERROR]", {
+      type: String(message?.type || "unknown"),
+      message: errorMessage,
+      stack: String(error?.stack || "")
+    });
+    sendResponse({ ok: false, error: errorMessage });
+  });
   return true;
 });
