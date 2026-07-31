@@ -1,9 +1,9 @@
 {
   "schema": 3,
   "name": "糖心志者",
-  "version": "5.7.1",
-  "build": "2026-07-31-0153",
-  "releasedAt": "2026-07-31 01:53",
+  "version": "5.8.0",
+  "build": "2026-07-31-1755",
+  "releasedAt": "2026-07-31 17:55",
   "homepage": "https://github.com/lsy5920/tangxin-zhizhe-extension",
   "packageFormat": "crx",
   "downloadUrl": "https://github.com/lsy5920/tangxin-zhizhe-extension/raw/main/releases/tangxin-zhizhe-latest.crx",
@@ -15,6 +15,13 @@
     "https://ghproxy.net/https://raw.githubusercontent.com/lsy5920/tangxin-zhizhe-extension/main/releases/tangxin-zhizhe-latest.crx"
   ],
   "changelog": [
+    {
+      "id": "2026-07-31-1755",
+      "type": "重构",
+      "title": "专业糖心影院 5.8 与真实 MCP 多尺寸验收",
+      "detail": "从零重构独立糖心影院的首页、发现、搜索、详情、片库、书签、足迹、离线下载、存储管家和放映页面，统一深色可爱影视设计令牌、桌面侧栏、移动底栏、动效与交互反馈；目录阶段继续不预取完整线路。播放器设置保留片源、观看、工具三类并修复 Grid 正文塌陷、旧顶部锚点覆盖、移动路由滚动污染和表单字段诊断，844×390 详情主操作保持首屏可见。生产 CSS 同时注入独立页和 Shadow DOM，正式 Chrome Dev MCP 已覆盖桌面、390×844、844×390、真实线路、下载规划与 OPFS 页面。Worker 保持 2.1.0，正式扩展 ID 与私钥不变。",
+      "releasedAt": "2026-07-31 17:55"
+    },
     {
       "id": "2026-07-31-0153",
       "type": "修复",
@@ -270,11 +277,11 @@
     }
   ],
   "extensionId": "ddefadnhgebdclpkabeobjidjllkdkhm",
-  "packageSize": 777444,
-  "packageSha256": "e13f836d2244ed65d7b1926316d413195e712fb29dd9138dc5e45e1a32505f0a",
+  "packageSize": 810332,
+  "packageSha256": "f4e338a6886c49bf3b28bf30cac4cb07fc300baa56d84be8411f901839d0b358",
   "signature": {
     "algorithm": "RSASSA-PKCS1-v1_5-SHA-256",
     "keyId": "sha256:334503d764132bfa014e19839bba3a7cd4d906c74d7c6399c4bfe48975b22f16",
-    "value": "pFxOaYjbWe5J869YZFGz7LKAQJD5ZHvn9qBs+uF/wCku8uGB0hVPsCcz+PopnhrP0v4xOds6dR0FHhuW71TUxiQVwTiFNVDPlNp18ttO/qkW4YzHYhnoPY3A2iOfb2cq/jzKrIXxUJtUBHl76QFHh/3CmxqrAwdjzOX2E7/K9iPT6bluv46WFmLKISaPndvVL+o3t9U4n1/vTNnjAn7qU4ZUsB7q8pU4B/+jcucUQwjNlA6WZScb2JoXvuRnpq+k46ZgERShro6kLBOBPIzivc08bud+siJ1TcBriwI6AzGgwgXOKEvXygX50gEG3LsUar4Ozz5UdDuu68fwHUcB/A=="
+    "value": "XgjYjlgka0Tz9yyjBWdluy6+FS9iRWeXSBKihfyElYg0FeuDcu9kyTt4gwGkHmSZBO/PUrRsbR4dmQ4/uVruo0UM8f6gvT0EB97S2LsdB9tLzJ2rkwwcwzloznH5uOmYJzCfeB+d9i7sQ9hyUpstm8FTgSjGkxFvzXO5PLE16lD+lF0sNn7x2yNONWTcFYGbhfP7g8F+on8oePZENaRGunHKazqcFYJsvAUsiP21SalCT3LclhCHm8RBkj9olV6/OPx6b1Alql8EMPcaAVFYdjD7J9WZu2JF9qf+0B5nXKH4IS+nGx1FxlAUZ06Ir2uO4BLPcHafEhYaeD5qhLyZjA=="
   }
 }

@@ -1,0 +1,260 @@
+/* 下载与 OPFS 存储工作台样式。 */
+#txzz-candy-ui .txzz-cinema58-download-page,
+#txzz-candy-ui .txzz-cinema58-storage-page {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-height: 100%;
+  padding: clamp(16px, 2.2vw, 30px) clamp(16px, 2.6vw, 38px) 50px;
+}
+
+#txzz-candy-ui .txzz-cinema58-download-lead,
+#txzz-candy-ui .txzz-cinema58-storage-lead {
+  display: flex;
+  min-height: 128px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 21px clamp(20px, 2.8vw, 34px);
+  border: 1px solid var(--cinema-line);
+  border-radius: var(--cinema-radius-lg);
+  background: var(--cinema-bg-raised);
+}
+
+#txzz-candy-ui .txzz-cinema58-download-title,
+#txzz-candy-ui .txzz-cinema58-storage-title { display: flex; min-width: 0; align-items: center; gap: 15px; }
+#txzz-candy-ui .txzz-cinema58-download-title > i,
+#txzz-candy-ui .txzz-cinema58-storage-title > i { display: grid; width: 54px; height: 54px; place-items: center; flex: 0 0 auto; border: 1px solid rgba(255, 111, 104, 0.24); border-radius: 12px; background: var(--cinema-coral-soft); color: var(--cinema-coral); transform: rotate(-3deg); }
+#txzz-candy-ui .txzz-cinema58-download-title > div,
+#txzz-candy-ui .txzz-cinema58-storage-title > div { min-width: 0; }
+#txzz-candy-ui .txzz-cinema58-download-title span,
+#txzz-candy-ui .txzz-cinema58-storage-title span { color: var(--cinema-coral); font-size: 8px; font-weight: 850; letter-spacing: 0.14em; }
+#txzz-candy-ui .txzz-cinema58-download-title h2,
+#txzz-candy-ui .txzz-cinema58-storage-title h2 { margin: 4px 0 0; font-size: clamp(20px, 2.2vw, 30px); font-weight: 950; letter-spacing: -0.03em; }
+#txzz-candy-ui .txzz-cinema58-download-title p,
+#txzz-candy-ui .txzz-cinema58-storage-title p { max-width: 650px; margin: 5px 0 0; color: var(--cinema-muted); font-size: 9px; line-height: 1.6; }
+
+#txzz-candy-ui .txzz-cinema58-download-lead-actions,
+#txzz-candy-ui .txzz-cinema58-storage-lead > div:last-child { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+#txzz-candy-ui .txzz-cinema58-download-lead-actions > button,
+#txzz-candy-ui .txzz-cinema58-storage-lead > div:last-child > button { position: relative; display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 6px; padding: 0 11px; border: 1px solid var(--cinema-line); border-radius: var(--cinema-radius); background: var(--cinema-surface); color: var(--cinema-muted); font-size: 8px; font-weight: 800; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-download-lead-actions > button.is-primary { border-color: var(--cinema-coral); background: var(--cinema-coral); color: #211113; }
+#txzz-candy-ui .txzz-cinema58-storage-lead > div:last-child > button.is-danger { border-color: rgba(255, 135, 144, 0.25); color: var(--cinema-danger); }
+#txzz-candy-ui .txzz-cinema58-download-lead-actions button > em { display: grid; min-width: 16px; height: 16px; place-items: center; margin-left: 2px; border-radius: 8px; background: var(--cinema-butter); color: #21190f; font-size: 7px; font-style: normal; }
+#txzz-candy-ui .txzz-cinema58-download-lead-actions button:disabled,
+#txzz-candy-ui .txzz-cinema58-storage-lead button:disabled { cursor: not-allowed; opacity: 0.48; }
+
+#txzz-candy-ui .txzz-cinema58-download-dashboard { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(420px, 1fr); gap: 10px; }
+#txzz-candy-ui .txzz-cinema58-download-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+#txzz-candy-ui .txzz-cinema58-download-stats > div,
+#txzz-candy-ui .txzz-cinema58-storage-stats > div {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  min-height: 72px;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 13px;
+  border: 1px solid var(--cinema-line);
+  border-radius: var(--cinema-radius);
+  background: var(--cinema-bg-raised);
+}
+#txzz-candy-ui .txzz-cinema58-download-stats > div > i,
+#txzz-candy-ui .txzz-cinema58-storage-stats > div > i { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 8px; background: var(--cinema-coral-soft); color: var(--cinema-coral); }
+#txzz-candy-ui .txzz-cinema58-download-stats > div > span,
+#txzz-candy-ui .txzz-cinema58-storage-stats > div > span { display: grid; min-width: 0; color: var(--cinema-cream); font-size: 9px; font-weight: 800; }
+#txzz-candy-ui .txzz-cinema58-download-stats small,
+#txzz-candy-ui .txzz-cinema58-storage-stats small { overflow: hidden; margin-top: 2px; color: var(--cinema-faint); font-size: 7px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+#txzz-candy-ui .txzz-cinema58-download-stats strong,
+#txzz-candy-ui .txzz-cinema58-storage-stats strong { color: var(--cinema-cream); font-size: 18px; font-weight: 950; }
+#txzz-candy-ui .txzz-cinema58-download-stats > div.is-warning > i,
+#txzz-candy-ui .txzz-cinema58-storage-stats > div.is-danger > i { background: rgba(255, 135, 144, 0.12); color: var(--cinema-danger); }
+#txzz-candy-ui .txzz-cinema58-storage-stats > div.is-good > i { background: var(--cinema-mint-soft); color: var(--cinema-mint); }
+#txzz-candy-ui .txzz-cinema58-storage-stats > div.is-warning > i { background: var(--cinema-butter-soft); color: var(--cinema-butter); }
+
+#txzz-candy-ui .txzz-cinema58-scheduler {
+  padding: 13px;
+  border: 1px solid var(--cinema-line);
+  border-radius: var(--cinema-radius);
+  background: var(--cinema-bg-raised);
+}
+#txzz-candy-ui .txzz-cinema58-scheduler-title { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding-bottom: 10px; border-bottom: 1px solid var(--cinema-line); }
+#txzz-candy-ui .txzz-cinema58-scheduler-title > span { display: flex; min-width: 0; align-items: center; gap: 8px; }
+#txzz-candy-ui .txzz-cinema58-scheduler-title > span > i { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 7px; background: var(--cinema-butter-soft); color: var(--cinema-butter); }
+#txzz-candy-ui .txzz-cinema58-scheduler-title strong { display: grid; font-size: 10px; font-weight: 850; }
+#txzz-candy-ui .txzz-cinema58-scheduler-title small { color: var(--cinema-faint); font-size: 7px; font-weight: 500; }
+#txzz-candy-ui .txzz-cinema58-scheduler-title > em { padding: 4px 8px; border-radius: 10px; font-size: 7px; font-style: normal; font-weight: 850; }
+#txzz-candy-ui .txzz-cinema58-scheduler-title > em.is-running { background: var(--cinema-mint-soft); color: var(--cinema-mint); }
+#txzz-candy-ui .txzz-cinema58-scheduler-title > em.is-paused { background: var(--cinema-butter-soft); color: var(--cinema-butter); }
+#txzz-candy-ui .txzz-cinema58-scheduler-grid { display: grid; grid-template-columns: 0.72fr 1.25fr; gap: 8px; margin-top: 10px; }
+#txzz-candy-ui .txzz-cinema58-scheduler-grid > label,
+#txzz-candy-ui .txzz-cinema58-schedule-window,
+#txzz-candy-ui .txzz-cinema58-cleanup-toggle { display: grid; gap: 5px; min-width: 0; color: var(--cinema-muted); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-scheduler select,
+#txzz-candy-ui .txzz-cinema58-scheduler input[type="time"],
+#txzz-candy-ui .txzz-cinema58-task-config select,
+#txzz-candy-ui .txzz-cinema58-task-config input { width: 100%; min-width: 0; min-height: 31px; padding: 0 7px; border: 1px solid var(--cinema-line); border-radius: 6px; outline: 0; background: var(--cinema-bg); color: var(--cinema-cream); font-size: 8px; }
+#txzz-candy-ui .txzz-cinema58-schedule-window > label,
+#txzz-candy-ui .txzz-cinema58-cleanup-toggle > span { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
+#txzz-candy-ui .txzz-cinema58-schedule-window > div { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+#txzz-candy-ui .txzz-cinema58-cleanup-toggle small { color: var(--cinema-faint); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-scheduler-actions { display: flex; align-items: end; gap: 5px; }
+#txzz-candy-ui .txzz-cinema58-scheduler-actions button { display: inline-flex; min-height: 31px; align-items: center; justify-content: center; gap: 4px; flex: 1; padding: 0 8px; border: 1px solid var(--cinema-line); border-radius: 6px; background: transparent; color: var(--cinema-muted); font-size: 7px; font-weight: 800; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-scheduler-actions button.is-primary { border-color: var(--cinema-coral); background: var(--cinema-coral); color: #211113; }
+
+#txzz-candy-ui .txzz-cinema58-download-list-section,
+#txzz-candy-ui .txzz-cinema58-storage-files { display: grid; gap: 12px; padding: clamp(14px, 2vw, 22px); border: 1px solid var(--cinema-line); border-radius: var(--cinema-radius-lg); background: var(--cinema-bg-raised); }
+#txzz-candy-ui .txzz-cinema58-download-list-section > header,
+#txzz-candy-ui .txzz-cinema58-storage-files > header { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+#txzz-candy-ui .txzz-cinema58-download-list-section > header span,
+#txzz-candy-ui .txzz-cinema58-storage-files > header span { color: var(--cinema-coral); font-size: 8px; font-weight: 850; letter-spacing: 0.12em; }
+#txzz-candy-ui .txzz-cinema58-download-list-section > header h3,
+#txzz-candy-ui .txzz-cinema58-storage-files > header h3 { margin: 4px 0 0; font-size: 17px; font-weight: 900; }
+#txzz-candy-ui .txzz-cinema58-download-list-section > header > small,
+#txzz-candy-ui .txzz-cinema58-storage-files > header p { margin: 0; color: var(--cinema-faint); font-size: 7px; }
+
+#txzz-candy-ui .txzz-cinema58-download-tools { display: grid; grid-template-columns: auto minmax(180px, 1fr) auto auto; gap: 7px; padding: 8px; border: 1px solid var(--cinema-line); border-radius: var(--cinema-radius); background: var(--cinema-bg); }
+#txzz-candy-ui .txzz-cinema58-download-tools > nav { display: flex; gap: 4px; }
+#txzz-candy-ui .txzz-cinema58-download-tools > nav button { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--cinema-muted); font-size: 8px; font-weight: 800; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-download-tools > nav button.is-active { border-color: rgba(255, 111, 104, 0.3); background: var(--cinema-coral-soft); color: var(--cinema-coral); }
+#txzz-candy-ui .txzz-cinema58-download-tools > nav button span { padding: 1px 4px; border-radius: 7px; background: rgba(255, 248, 237, 0.07); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-download-tools > label { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 32px; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid var(--cinema-line); border-radius: 6px; color: var(--cinema-faint); }
+#txzz-candy-ui .txzz-cinema58-download-tools input { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--cinema-cream); font-size: 8px; }
+#txzz-candy-ui .txzz-cinema58-download-tools select,
+#txzz-candy-ui .txzz-cinema58-download-tools > button { min-height: 32px; padding: 0 8px; border: 1px solid var(--cinema-line); border-radius: 6px; background: var(--cinema-surface); color: var(--cinema-muted); font-size: 8px; }
+#txzz-candy-ui .txzz-cinema58-download-tools > button { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+
+#txzz-candy-ui .txzz-cinema58-failure-summary,
+#txzz-candy-ui .txzz-cinema58-storage-warning { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 11px 13px; border: 1px solid rgba(255, 135, 144, 0.24); border-radius: var(--cinema-radius); background: rgba(255, 135, 144, 0.08); color: var(--cinema-danger); }
+#txzz-candy-ui .txzz-cinema58-failure-summary > div,
+#txzz-candy-ui .txzz-cinema58-storage-warning > div { display: grid; gap: 2px; }
+#txzz-candy-ui .txzz-cinema58-failure-summary strong,
+#txzz-candy-ui .txzz-cinema58-storage-warning strong { color: var(--cinema-cream); font-size: 9px; }
+#txzz-candy-ui .txzz-cinema58-failure-summary span,
+#txzz-candy-ui .txzz-cinema58-storage-warning p { margin: 0; color: var(--cinema-muted); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-failure-summary button { display: inline-flex; min-height: 31px; align-items: center; gap: 4px; padding: 0 8px; border: 1px solid rgba(255, 135, 144, 0.24); border-radius: 6px; background: transparent; color: var(--cinema-danger); font-size: 7px; cursor: pointer; }
+
+#txzz-candy-ui .txzz-cinema58-download-task-list { display: grid; gap: 8px; }
+#txzz-candy-ui .txzz-cinema58-download-task-list > article { display: grid; grid-template-columns: 68px minmax(0, 1fr); align-items: center; gap: 14px; padding: 13px; border: 1px solid var(--cinema-line); border-radius: var(--cinema-radius); background: var(--cinema-surface); }
+#txzz-candy-ui .txzz-cinema58-download-task-list > article.is-error { border-color: rgba(255, 135, 144, 0.25); }
+#txzz-candy-ui .txzz-cinema58-download-progress-ring,
+#txzz-candy-ui .txzz-cinema58-storage-ring { display: grid; width: 62px; height: 62px; place-items: center; border-radius: 50%; background: conic-gradient(var(--cinema-coral) var(--txzz-download-progress, 0deg), rgba(255, 248, 237, 0.08) 0); }
+#txzz-candy-ui .txzz-cinema58-download-progress-ring::before,
+#txzz-candy-ui .txzz-cinema58-storage-ring::before { content: ""; grid-area: 1 / 1; width: 48px; height: 48px; border-radius: 50%; background: var(--cinema-surface); }
+#txzz-candy-ui .txzz-cinema58-download-progress-ring > span { position: relative; grid-area: 1 / 1; color: var(--cinema-cream); font-size: 14px; font-weight: 950; }
+#txzz-candy-ui .txzz-cinema58-download-progress-ring small { color: var(--cinema-faint); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-download-task-main { display: grid; min-width: 0; gap: 8px; }
+#txzz-candy-ui .txzz-cinema58-download-task-head { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
+#txzz-candy-ui .txzz-cinema58-download-task-head > div { min-width: 0; }
+#txzz-candy-ui .txzz-cinema58-download-task-head span { color: var(--cinema-coral); font-size: 7px; font-weight: 800; }
+#txzz-candy-ui .txzz-cinema58-download-task-head h4 { overflow: hidden; margin: 2px 0 0; color: var(--cinema-cream); font-size: 11px; font-weight: 850; text-overflow: ellipsis; white-space: nowrap; }
+#txzz-candy-ui .txzz-cinema58-download-task-head small { display: block; overflow: hidden; margin-top: 2px; color: var(--cinema-faint); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+#txzz-candy-ui .txzz-cinema58-download-task-head > em { flex: 0 0 auto; padding: 4px 7px; border-radius: 9px; background: var(--cinema-coral-soft); color: var(--cinema-coral); font-size: 7px; font-style: normal; font-weight: 850; }
+#txzz-candy-ui .txzz-cinema58-download-task-head > em.is-success { background: var(--cinema-mint-soft); color: var(--cinema-mint); }
+#txzz-candy-ui .txzz-cinema58-download-task-head > em.is-warning { background: var(--cinema-butter-soft); color: var(--cinema-butter); }
+#txzz-candy-ui .txzz-cinema58-download-task-head > em.is-error { background: rgba(255, 135, 144, 0.12); color: var(--cinema-danger); }
+#txzz-candy-ui .txzz-cinema58-download-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+#txzz-candy-ui .txzz-cinema58-download-tags > span { display: inline-flex; min-height: 21px; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid var(--cinema-line); border-radius: 5px; color: var(--cinema-muted); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-download-progress { display: grid; gap: 4px; }
+#txzz-candy-ui .txzz-cinema58-download-progress > div { display: flex; justify-content: space-between; gap: 8px; color: var(--cinema-faint); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-download-progress > div strong { color: var(--cinema-muted); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-download-progress > span { display: block; overflow: hidden; height: 4px; border-radius: 2px; background: rgba(255, 248, 237, 0.08); }
+#txzz-candy-ui .txzz-cinema58-download-progress > span i { display: block; height: 100%; border-radius: 2px; background: var(--cinema-coral); }
+#txzz-candy-ui .txzz-cinema58-task-error { display: flex; align-items: center; gap: 5px; margin: 0; padding: 7px 8px; border-radius: 6px; background: rgba(255, 135, 144, 0.08); color: var(--cinema-danger); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-task-config { display: grid; grid-template-columns: 0.45fr 1fr; gap: 6px; }
+#txzz-candy-ui .txzz-cinema58-task-config label { display: grid; gap: 3px; color: var(--cinema-faint); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-task-actions { display: flex; flex-wrap: wrap; gap: 5px; padding-top: 2px; }
+#txzz-candy-ui .txzz-cinema58-task-actions button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 4px; padding: 0 8px; border: 1px solid var(--cinema-line); border-radius: 6px; background: transparent; color: var(--cinema-muted); font-size: 7px; font-weight: 800; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-task-actions button.is-primary { border-color: var(--cinema-coral); background: var(--cinema-coral); color: #211113; }
+#txzz-candy-ui .txzz-cinema58-task-actions button.is-danger { color: var(--cinema-danger); }
+#txzz-candy-ui .txzz-cinema58-task-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+#txzz-candy-ui .txzz-cinema58-download-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--cinema-line); color: var(--cinema-faint); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-download-footer button { display: inline-flex; min-height: 30px; align-items: center; gap: 4px; padding: 0 8px; border: 1px solid rgba(255, 135, 144, 0.22); border-radius: 6px; background: transparent; color: var(--cinema-danger); font-size: 7px; cursor: pointer; }
+
+#txzz-candy-ui .txzz-cinema58-confirm-overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(5, 4, 5, 0.72); backdrop-filter: blur(8px); z-index: 80; }
+#txzz-candy-ui .txzz-cinema58-confirm-overlay > div { display: grid; width: min(390px, 100%); place-items: center; gap: 8px; padding: 24px; border: 1px solid var(--cinema-line-strong); border-radius: var(--cinema-radius-lg); background: var(--cinema-bg-raised); box-shadow: var(--cinema-shadow-lg); text-align: center; }
+#txzz-candy-ui .txzz-cinema58-confirm-overlay > div > i { display: grid; width: 52px; height: 52px; place-items: center; border-radius: 50%; background: rgba(255, 135, 144, 0.12); color: var(--cinema-danger); }
+#txzz-candy-ui .txzz-cinema58-confirm-overlay h3 { margin: 5px 0 0; font-size: 14px; font-weight: 900; }
+#txzz-candy-ui .txzz-cinema58-confirm-overlay p { margin: 0; color: var(--cinema-muted); font-size: 8px; line-height: 1.65; }
+#txzz-candy-ui .txzz-cinema58-confirm-overlay > div > div { display: flex; width: 100%; gap: 7px; margin-top: 7px; }
+#txzz-candy-ui .txzz-cinema58-confirm-overlay button { min-height: 36px; flex: 1; border: 1px solid var(--cinema-line); border-radius: 6px; background: transparent; color: var(--cinema-muted); font-size: 8px; font-weight: 850; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-confirm-overlay button.is-danger { border-color: var(--cinema-danger); background: var(--cinema-danger); color: #241114; }
+
+#txzz-candy-ui .txzz-cinema58-storage-overview { display: grid; grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr); gap: 10px; }
+#txzz-candy-ui .txzz-cinema58-storage-gauge { display: grid; grid-template-columns: 98px minmax(0, 1fr); align-items: center; gap: 15px; padding: 17px; border: 1px solid var(--cinema-line); border-radius: var(--cinema-radius); background: var(--cinema-bg-raised); }
+#txzz-candy-ui .txzz-cinema58-storage-ring { width: 92px; height: 92px; background: conic-gradient(var(--cinema-mint) var(--txzz-storage-ratio, 0deg), rgba(255, 248, 237, 0.08) 0); }
+#txzz-candy-ui .txzz-cinema58-storage-ring::before { width: 72px; height: 72px; background: var(--cinema-bg-raised); }
+#txzz-candy-ui .txzz-cinema58-storage-ring > span { position: relative; grid-area: 1 / 1; display: grid; place-items: center; }
+#txzz-candy-ui .txzz-cinema58-storage-ring strong { font-size: 18px; font-weight: 950; }
+#txzz-candy-ui .txzz-cinema58-storage-ring small { color: var(--cinema-faint); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-storage-gauge > div:last-child span { color: var(--cinema-coral); font-size: 8px; font-weight: 850; letter-spacing: 0.1em; }
+#txzz-candy-ui .txzz-cinema58-storage-gauge h3 { margin: 5px 0 0; font-size: 13px; font-weight: 900; }
+#txzz-candy-ui .txzz-cinema58-storage-gauge p { margin: 4px 0 0; color: var(--cinema-muted); font-size: 8px; }
+#txzz-candy-ui .txzz-cinema58-storage-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+#txzz-candy-ui .txzz-cinema58-storage-stats > div { grid-template-columns: 32px minmax(0, 1fr); align-content: center; min-width: 0; }
+#txzz-candy-ui .txzz-cinema58-storage-stats > div > strong { grid-column: 1 / -1; margin-top: 3px; font-size: 13px; }
+#txzz-candy-ui .txzz-cinema58-storage-files > header > button { min-height: 32px; padding: 0 9px; border: 1px solid var(--cinema-line); border-radius: 6px; background: var(--cinema-surface); color: var(--cinema-muted); font-size: 7px; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-storage-file-list { display: grid; gap: 6px; }
+#txzz-candy-ui .txzz-cinema58-storage-file-list > label { display: grid; grid-template-columns: auto 34px minmax(0, 1fr) auto; min-height: 54px; align-items: center; gap: 9px; padding: 7px 10px; border: 1px solid var(--cinema-line); border-radius: 7px; background: var(--cinema-surface); }
+#txzz-candy-ui .txzz-cinema58-storage-file-list > label.is-protected { background: rgba(131, 216, 181, 0.045); }
+#txzz-candy-ui .txzz-cinema58-storage-file-list > label.is-cleanable { border-color: rgba(255, 215, 119, 0.17); }
+#txzz-candy-ui .txzz-cinema58-storage-file-list > label > input { accent-color: var(--cinema-coral); }
+#txzz-candy-ui .txzz-cinema58-storage-file-list > label > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 7px; background: rgba(255, 248, 237, 0.04); color: var(--cinema-muted); }
+#txzz-candy-ui .txzz-cinema58-storage-file-list > label.is-protected > span { color: var(--cinema-mint); }
+#txzz-candy-ui .txzz-cinema58-storage-file-list > label.is-cleanable > span { color: var(--cinema-butter); }
+#txzz-candy-ui .txzz-cinema58-storage-file-list > label > div { display: grid; min-width: 0; }
+#txzz-candy-ui .txzz-cinema58-storage-file-list strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+#txzz-candy-ui .txzz-cinema58-storage-file-list small { margin-top: 2px; color: var(--cinema-faint); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-storage-file-list em { color: var(--cinema-muted); font-size: 8px; font-style: normal; font-weight: 800; }
+
+@media (max-width: 1120px) {
+  #txzz-candy-ui .txzz-cinema58-download-dashboard { grid-template-columns: 1fr; }
+  #txzz-candy-ui .txzz-cinema58-download-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #txzz-candy-ui .txzz-cinema58-download-stats > div { grid-template-columns: 32px minmax(0, 1fr); }
+  #txzz-candy-ui .txzz-cinema58-download-stats > div > strong { grid-column: 1 / -1; font-size: 14px; }
+  #txzz-candy-ui .txzz-cinema58-download-tools { grid-template-columns: 1fr 1fr auto; }
+  #txzz-candy-ui .txzz-cinema58-download-tools > nav { grid-column: 1 / -1; }
+  #txzz-candy-ui .txzz-cinema58-storage-overview { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  #txzz-candy-ui .txzz-cinema58-download-lead,
+  #txzz-candy-ui .txzz-cinema58-storage-lead { display: grid; }
+  #txzz-candy-ui .txzz-cinema58-download-lead-actions,
+  #txzz-candy-ui .txzz-cinema58-storage-lead > div:last-child { justify-content: flex-start; }
+  #txzz-candy-ui .txzz-cinema58-download-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #txzz-candy-ui .txzz-cinema58-download-tools { grid-template-columns: 1fr auto; }
+  #txzz-candy-ui .txzz-cinema58-download-tools > nav,
+  #txzz-candy-ui .txzz-cinema58-download-tools > label { grid-column: 1 / -1; }
+  #txzz-candy-ui .txzz-cinema58-storage-stats { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 639px) {
+  #txzz-candy-ui .txzz-cinema58-download-page,
+  #txzz-candy-ui .txzz-cinema58-storage-page { padding: 10px 10px 28px; }
+  #txzz-candy-ui .txzz-cinema58-download-lead,
+  #txzz-candy-ui .txzz-cinema58-storage-lead { min-height: 0; gap: 14px; padding: 16px 13px; border-radius: 10px; }
+  #txzz-candy-ui .txzz-cinema58-download-title > i,
+  #txzz-candy-ui .txzz-cinema58-storage-title > i { width: 45px; height: 45px; }
+  #txzz-candy-ui .txzz-cinema58-download-title h2,
+  #txzz-candy-ui .txzz-cinema58-storage-title h2 { font-size: 20px; }
+  #txzz-candy-ui .txzz-cinema58-download-lead-actions > button { flex: 1; padding-inline: 6px; }
+  #txzz-candy-ui .txzz-cinema58-scheduler-grid { grid-template-columns: 1fr; }
+  #txzz-candy-ui .txzz-cinema58-download-list-section,
+  #txzz-candy-ui .txzz-cinema58-storage-files { padding: 12px 9px; border-radius: 10px; }
+  #txzz-candy-ui .txzz-cinema58-download-tools > nav { overflow-x: auto; scrollbar-width: none; }
+  #txzz-candy-ui .txzz-cinema58-download-tools > nav button { flex: 0 0 auto; }
+  #txzz-candy-ui .txzz-cinema58-download-task-list > article { grid-template-columns: 50px minmax(0, 1fr); gap: 10px; padding: 10px 8px; }
+  #txzz-candy-ui .txzz-cinema58-download-progress-ring { width: 48px; height: 48px; }
+  #txzz-candy-ui .txzz-cinema58-download-progress-ring::before { width: 37px; height: 37px; }
+  #txzz-candy-ui .txzz-cinema58-download-progress-ring > span { font-size: 11px; }
+  #txzz-candy-ui .txzz-cinema58-task-config { grid-template-columns: 1fr; }
+  #txzz-candy-ui .txzz-cinema58-task-actions button { flex: 1; padding-inline: 5px; }
+  #txzz-candy-ui .txzz-cinema58-storage-gauge { grid-template-columns: 76px minmax(0, 1fr); padding: 13px; }
+  #txzz-candy-ui .txzz-cinema58-storage-ring { width: 72px; height: 72px; }
+  #txzz-candy-ui .txzz-cinema58-storage-ring::before { width: 55px; height: 55px; }
+  #txzz-candy-ui .txzz-cinema58-storage-file-list > label { grid-template-columns: auto 30px minmax(0, 1fr); }
+  #txzz-candy-ui .txzz-cinema58-storage-file-list > label > em { grid-column: 3; }
+  #txzz-candy-ui .txzz-cinema58-failure-summary,
+  #txzz-candy-ui .txzz-cinema58-storage-warning { grid-template-columns: auto minmax(0, 1fr); }
+  #txzz-candy-ui .txzz-cinema58-failure-summary > button { grid-column: 2; justify-self: start; }
+}

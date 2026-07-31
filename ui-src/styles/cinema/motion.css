@@ -1,0 +1,39 @@
+@keyframes txzz-cinema58-hero-breathe {
+  from { transform: scale(1.025); }
+  to { transform: scale(1.065); }
+}
+@keyframes txzz-cinema58-twinkle {
+  0%, 100% { opacity: 0.45; transform: scale(0.82) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.08) rotate(12deg); }
+}
+
+@keyframes txzz-cinema58-shimmer {
+  to { transform: translateX(100%); }
+}
+
+@keyframes txzz-cinema58-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#txzz-candy-ui .txzz-cinema58-main > * {
+  animation: txzz-cinema58-rise 280ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #txzz-candy-ui .txzz-cinema58-overlay *,
+  #txzz-candy-ui .txzz-cinema58-overlay *::before,
+  #txzz-candy-ui .txzz-cinema58-overlay *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  #txzz-candy-ui .txzz-cinema58-hero-backdrop img,
+  #txzz-candy-ui .txzz-cinema58-main > *,
+  #txzz-candy-ui .txzz-cinema58-movie-card:hover .txzz-cinema58-card-media,
+  #txzz-candy-ui .txzz-cinema58-hero-poster:hover {
+    transform: none !important;
+  }
+}

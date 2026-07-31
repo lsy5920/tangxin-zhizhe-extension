@@ -179,18 +179,18 @@ export function DownloadPlannerModal({ planner, onAction }: Props) {
         ) : (
           <div className="txzz-download-planner-content">
             <div className="txzz-download-planner-fields">
-              <label><span><Gauge size={15} />片源线路</span><select value={sourceId} onChange={(event) => setSourceId(event.target.value)}>{(planner.sources || []).map((source) => <option key={source.id} value={source.id}>{source.label || source.id}</option>)}</select></label>
-              <label><span><Database size={15} />网络策略</span><select value={networkMode} onChange={(event) => setNetworkMode(event.target.value)}><option value="data-saver">省流 · 最高 720P</option><option value="balanced">均衡 · 适配设备</option><option value="high-quality">高清 · 最高画质</option></select></label>
-              <label><span><Film size={15} />清晰度</span><select value={qualityHeight} onChange={(event) => setQualityHeight(Number(event.target.value))}><option value={0}>按策略自动选择</option>{variants.map((variant) => <option key={variant.id || variant.height} value={variant.height || 0}>{variant.height ? `${variant.height}P` : variant.id}</option>)}</select></label>
-              <label><span><HardDrive size={15} />文件格式</span><select value={container} onChange={(event) => setContainer(event.target.value)}>{(plan.compatibleContainers || ["mp4"]).map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}</select></label>
-              <label><span><ListOrdered size={15} />队列优先级</span><select value={priority} onChange={(event) => setPriority(event.target.value)}><option value="high">高 · 优先开始</option><option value="normal">普通 · 默认</option><option value="low">低 · 空闲时开始</option></select></label>
+              <label><span><Gauge size={15} />片源线路</span><select name="cinema-download-source" value={sourceId} onChange={(event) => setSourceId(event.target.value)}>{(planner.sources || []).map((source) => <option key={source.id} value={source.id}>{source.label || source.id}</option>)}</select></label>
+              <label><span><Database size={15} />网络策略</span><select name="cinema-download-network-mode" value={networkMode} onChange={(event) => setNetworkMode(event.target.value)}><option value="data-saver">省流 · 最高 720P</option><option value="balanced">均衡 · 适配设备</option><option value="high-quality">高清 · 最高画质</option></select></label>
+              <label><span><Film size={15} />清晰度</span><select name="cinema-download-quality" value={qualityHeight} onChange={(event) => setQualityHeight(Number(event.target.value))}><option value={0}>按策略自动选择</option>{variants.map((variant) => <option key={variant.id || variant.height} value={variant.height || 0}>{variant.height ? `${variant.height}P` : variant.id}</option>)}</select></label>
+              <label><span><HardDrive size={15} />文件格式</span><select name="cinema-download-container" value={container} onChange={(event) => setContainer(event.target.value)}>{(plan.compatibleContainers || ["mp4"]).map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}</select></label>
+              <label><span><ListOrdered size={15} />队列优先级</span><select name="cinema-download-priority" value={priority} onChange={(event) => setPriority(event.target.value)}><option value="high">高 · 优先开始</option><option value="normal">普通 · 默认</option><option value="low">低 · 空闲时开始</option></select></label>
               <fieldset>
                 <legend><CalendarClock size={15} />开始时间</legend>
                 <div>
                   <button type="button" aria-pressed={scheduleMode === "now"} onClick={() => setScheduleMode("now")} className={scheduleMode === "now" ? "is-active" : ""}>尽快开始</button>
                   <button type="button" aria-pressed={scheduleMode === "scheduled"} onClick={() => setScheduleMode("scheduled")} className={scheduleMode === "scheduled" ? "is-active" : ""}>指定时间</button>
                 </div>
-                {scheduleMode === "scheduled" && <input aria-label="指定下载开始时间" type="datetime-local" value={scheduledAt} min={new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setScheduledAt(event.target.value)} />}
+                {scheduleMode === "scheduled" && <input name="cinema-download-start-at" aria-label="指定下载开始时间" type="datetime-local" value={scheduledAt} min={new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16)} onChange={(event) => setScheduledAt(event.target.value)} />}
               </fieldset>
             </div>
 

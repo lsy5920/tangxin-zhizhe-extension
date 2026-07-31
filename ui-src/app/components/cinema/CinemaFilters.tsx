@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Compass, Crown, Flame, Grid2X2, MonitorPlay, Search, Smartphone, Sparkles } from "lucide-react";
+import { Compass, Crown, Flame, Gift, MonitorPlay, Search, SlidersHorizontal, Smartphone, Sparkles, X } from "lucide-react";
 import type { CinemaCatalogFilters, CinemaCatalogMode } from "../../cinema/types";
 
 type Query = { mode: CinemaCatalogMode; query: string; filters: CinemaCatalogFilters };
@@ -16,7 +16,7 @@ const PRESETS = [
   { key: "discover", label: "发现", icon: Compass, mode: "discover" as const, filters: {} },
   { key: "new", label: "最新", icon: Sparkles, mode: "browse" as const, filters: { order: "new" } },
   { key: "hot", label: "热门", icon: Flame, mode: "browse" as const, filters: { order: "hot" } },
-  { key: "free", label: "免费", icon: Grid2X2, mode: "browse" as const, filters: { pay_type: "free" } },
+  { key: "free", label: "免费", icon: Gift, mode: "browse" as const, filters: { pay_type: "free" } },
   { key: "vip", label: "VIP", icon: Crown, mode: "browse" as const, filters: { pay_type: "vip" } },
   { key: "portrait", label: "竖屏", icon: Smartphone, mode: "browse" as const, filters: { canvas: "long" } },
   { key: "landscape", label: "横屏", icon: MonitorPlay, mode: "browse" as const, filters: { canvas: "short" } }
@@ -61,18 +61,20 @@ export function CinemaFilters({ query = "", mode = "discover", filters = {}, loa
   };
 
   return (
-    <div className="txzz-stream-filter-panel">
-      <form onSubmit={submit} className="txzz-stream-search-form">
+    <div className="txzz-cinema58-filter-panel">
+      <form onSubmit={submit} className="txzz-cinema58-search-form">
         <label>
           <span className="sr-only">搜索影院影片</span>
-          <Search size={17} />
-          <input id="txzz-cinema-search" name="txzz-cinema-search" value={text} onChange={(event) => setText(event.target.value)} placeholder="输入片名、创作者或关键词" />
+          <Search size={18} />
+          <input id="txzz-cinema-search" name="txzz-cinema-search" value={text} onChange={(event) => setText(event.target.value)} placeholder="搜索片名、创作者或影片编号" autoComplete="off" />
+          {text && <button type="button" onClick={() => setText("")} aria-label="清除搜索词"><X size={15} /></button>}
         </label>
         <button type="submit" disabled={loading}>
-          <Search size={14} />搜索
+          <Search size={15} />搜索
         </button>
       </form>
-      <div className="txzz-stream-filter-strip" role="group" aria-label="影片筛选">
+      <div className="txzz-cinema58-filter-strip" role="group" aria-label="影片筛选">
+        <span><SlidersHorizontal size={13} />筛选</span>
         {PRESETS.map((preset) => {
           const active = cinemaPresetActive(preset, mode, filters);
           return (

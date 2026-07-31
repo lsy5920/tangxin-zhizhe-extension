@@ -5,6 +5,8 @@ import CinemaStandaloneApp from "./app/CinemaStandaloneApp";
 import { APP_BUILD, APP_VERSION } from "./app/constants";
 import "./styles/index.css";
 import candyUiStyles from "./styles/index.css?inline";
+import "./styles/cinema/index.css";
+import cinemaUiStyles from "./styles/cinema/index.css?inline";
 
 const HOST_ID = "txzz-candy-ui-root";
 const ROOT_ID = "txzz-candy-ui";
@@ -15,6 +17,7 @@ const APP_STYLE_MARKERS = [
   ".txzz-stat-ornament",
   ".txzz-cinema-app-shell",
   ".txzz-cinema-standalone-root",
+  ".txzz-cinema58-shell",
   "@keyframes txzz-stat-float",
   "@keyframes txzz-companion-breathe"
 ] as const;
@@ -138,7 +141,9 @@ function createHost() {
     const style = document.createElement("style");
     style.id = APP_STYLE_ID;
     style.dataset.txzzUiBuild = APP_BUILD;
-    style.textContent = candyUiStyles;
+    // 影院样式作为独立、后加载的设计层，避免旧面板规则在正式 CRX 中覆盖新版布局。
+    // 外链与内联副本使用相同拼接顺序，开发者模式、签名包和回退首帧保持像素一致。
+    style.textContent = `${candyUiStyles}\n${cinemaUiStyles}`;
     shadow.appendChild(style);
   }
 

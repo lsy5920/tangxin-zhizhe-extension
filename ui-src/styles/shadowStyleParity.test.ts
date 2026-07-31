@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const candyUiStyles = readFileSync(new URL("./index.css", import.meta.url), "utf8");
+const cinemaUiStyles = readFileSync(new URL("./cinema/index.css", import.meta.url), "utf8");
 const shadowBootstrap = readFileSync(new URL("../main.tsx", import.meta.url), "utf8");
 
 describe("Shadow DOM 样式一致性", () => {
@@ -25,6 +26,16 @@ describe("Shadow DOM 样式一致性", () => {
     ]) {
       expect(candyUiStyles).toContain(marker);
     }
+  });
+
+  it("让新版影院外链样式与 Shadow DOM 内联回退使用同一构建顺序", () => {
+    for (const layer of ["tokens.css", "layout.css", "catalog.css", "collections.css", "operations.css", "player.css", "motion.css"]) {
+      expect(cinemaUiStyles).toContain(layer);
+    }
+    expect(shadowBootstrap).toContain('import "./styles/cinema/index.css"');
+    expect(shadowBootstrap).toContain('import cinemaUiStyles from "./styles/cinema/index.css?inline"');
+    expect(shadowBootstrap).toContain("${candyUiStyles}\\n${cinemaUiStyles}");
+    expect(shadowBootstrap).toContain('".txzz-cinema58-shell"');
   });
 
   it("为竖屏舞台和三分类设置提供容器级响应规则", () => {

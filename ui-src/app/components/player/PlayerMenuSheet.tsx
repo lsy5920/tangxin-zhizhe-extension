@@ -325,6 +325,7 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
                 <div className="txzz-player-slider-row">
                   <span className="txzz-player-slider-icon is-brightness"><Sun size={15} /></span>
                   <input
+                    name="player-brightness"
                     aria-label="画面亮度"
                     type="range"
                     min={60}
@@ -342,6 +343,7 @@ export function PlayerMenuSheet(props: PlayerMenuSheetProps) {
                 <div className="txzz-player-slider-row">
                   <span className="txzz-player-slider-icon is-volume"><Volume2 size={15} /></span>
                   <input
+                    name="player-volume"
                     aria-label="播放音量"
                     type="range"
                     min={0}

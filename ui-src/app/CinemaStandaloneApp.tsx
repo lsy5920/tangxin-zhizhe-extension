@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { RefObject } from "react";
-import { AlertTriangle, LoaderCircle, RefreshCw } from "lucide-react";
+import { AlertTriangle, Clapperboard, LoaderCircle, RefreshCw } from "lucide-react";
 import { CinemaPage } from "./components/CinemaPage";
 import { DownloadPlannerModal } from "./components/download/DownloadPlannerModal";
 import { useDocumentScrollLock } from "./components/ui/primitives";
@@ -55,11 +55,12 @@ export default function CinemaStandaloneApp() {
 
   if (!controller.state.cinemaCatalog) {
     return (
-      <div className="txzz-cinema-standalone-fatal flex size-full items-center justify-center bg-[#100a17] p-5 text-white">
-        <div className="max-w-md border border-rose-200/15 bg-white/5 p-6 text-center shadow-2xl">
-          <AlertTriangle className="mx-auto text-rose-300" size={34} />
-          <h1 className="mt-4 text-lg font-black">影院资料没有成功载入</h1>
-          <button type="button" onClick={() => void controller.refreshState(false)} className="mt-5 inline-flex min-h-11 items-center gap-2 bg-white px-4 text-xs font-black text-[#24152d]"><RefreshCw size={14} />重新连接</button>
+      <div className="txzz-cinema58-fatal">
+        <div>
+          <span aria-hidden="true"><Clapperboard size={28} /><AlertTriangle size={16} /></span>
+          <h1>影院资料没有成功载入</h1>
+          <p>本地桥接暂时没有返回片单状态，请重新连接影院。这个操作不会预取片源。</p>
+          <button type="button" onClick={() => void controller.refreshState(false)}><RefreshCw size={15} />重新连接</button>
         </div>
       </div>
     );

@@ -1,0 +1,366 @@
+/*
+ * 沉浸播放器视觉层。媒体状态机、Shaka 内核与手势阈值保持独立；这里只重排画面、
+ * 控制栏、菜单、选集与本场信息，避免视觉重构影响资源恢复和线路切换语义。
+ */
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-playback-page {
+  min-height: 100%;
+  padding: clamp(10px, 1.7vw, 22px);
+  background: #070607;
+}
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-playback-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(260px, 25vw, 350px);
+  align-items: start;
+  gap: clamp(10px, 1.5vw, 18px);
+  max-width: 1680px;
+  margin: 0 auto;
+}
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-stage-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 10px;
+  background: #000;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
+}
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-shell {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  min-height: min(66vh, 760px);
+  overflow: hidden;
+  background: #000;
+}
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-shell--portrait.is-embedded {
+  min-height: min(calc(100dvh - 104px), 820px);
+}
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-media,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-orientation-stage {
+  background: #000;
+}
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-shaka-video {
+  background: #000;
+}
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-panel {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 35;
+  padding: 56px clamp(10px, 1.5vw, 20px) clamp(10px, 1.4vw, 18px);
+  background: linear-gradient(0deg, rgba(6, 5, 6, 0.97) 0%, rgba(6, 5, 6, 0.76) 54%, transparent 100%);
+  color: #fffaf1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition: opacity 190ms ease, transform 190ms ease;
+}
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-panel.is-visible,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-panel.is-menu-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress-wrap { display: grid; gap: 6px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: rgba(255, 250, 241, 0.68); font-size: 9px; font-weight: 700; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress-meta > span.is-previewing { color: #ffd777; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress {
+  position: relative;
+  height: 18px;
+  cursor: pointer;
+  touch-action: none;
+}
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress::before { content: ""; position: absolute; top: 7px; right: 0; left: 0; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.17); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress-buffer,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress-played { position: absolute; top: 7px; left: 0; height: 4px; border-radius: 2px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress-buffer { background: rgba(255, 255, 255, 0.32); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress-played { background: #ff6f68; box-shadow: 0 0 14px rgba(255, 111, 104, 0.34); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress-thumb { position: absolute; top: 3px; width: 12px; height: 12px; margin-left: -6px; border: 2px solid #fffaf1; border-radius: 50%; background: #ff6f68; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55); transform: scale(0.78); transition: transform 120ms ease; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress:hover .txzz-player-progress-thumb,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress.is-dragging .txzz-player-progress-thumb { transform: scale(1); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress-marker { position: absolute; top: 3px; width: 7px; height: 12px; margin-left: -3px; border: 1px solid rgba(255, 255, 255, 0.72); border-radius: 3px; background: #ffd777; }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-progress-preview {
+  overflow: visible;
+  width: clamp(150px, 21vw, 240px);
+  padding: 6px;
+  border: 1px solid rgba(255, 250, 241, 0.2);
+  border-radius: 8px;
+  background: #171216;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.55);
+}
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-scrub-preview { border-radius: 6px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-preview-anchor { position: absolute; top: 100%; left: 50%; width: 10px; height: 10px; border-right: 1px solid rgba(255, 250, 241, 0.2); border-bottom: 1px solid rgba(255, 250, 241, 0.2); background: #171216; transform: translate(-50%, -5px) rotate(45deg); }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 4px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-left,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-right { display: flex; align-items: center; gap: 4px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-button {
+  display: inline-flex;
+  min-width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 250, 241, 0.88);
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-button:hover { border-color: rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.09); color: #fff; transform: translateY(-1px); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-button.is-active { border-color: rgba(255, 111, 104, 0.35); background: rgba(255, 111, 104, 0.15); color: #ff8b85; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-button:disabled { cursor: not-allowed; opacity: 0.38; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-left > .txzz-player-control-button:first-child { border-color: #ff6f68; background: #ff6f68; color: #1c1012; }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-top-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 32;
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: clamp(12px, 1.6vw, 20px);
+  background: linear-gradient(180deg, rgba(5, 4, 5, 0.9), transparent);
+  color: #fffaf1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-top-bar.is-visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-title-block { min-width: 0; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-title-block > span { display: block; color: #ff8b85; font-size: 8px; font-weight: 850; letter-spacing: 0.1em; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-title-block h2,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-title-block button { display: block; overflow: hidden; max-width: min(64vw, 700px); margin: 3px 0 0; padding: 0; border: 0; background: transparent; color: #fffaf1; font-size: clamp(12px, 1.35vw, 18px); font-weight: 900; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; max-width: 40%; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-meta > span { display: inline-flex; min-height: 24px; align-items: center; gap: 4px; padding: 0 7px; border: 1px solid rgba(255, 255, 255, 0.13); border-radius: 5px; background: rgba(15, 12, 14, 0.62); color: rgba(255, 250, 241, 0.72); font-size: 7px; font-weight: 750; backdrop-filter: blur(8px); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-meta > span.is-ok { color: #83d8b5; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-meta > span.is-error,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-meta > span.is-warning { color: #ffd777; }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-paused,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-state,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-error { position: absolute; inset: 0; z-index: 18; display: grid; place-content: center; place-items: center; gap: 8px; padding: 24px; color: #fffaf1; text-align: center; pointer-events: none; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-paused { background: rgba(0, 0, 0, 0.18); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-big-play { display: grid; width: 66px; height: 66px; place-items: center; padding: 0; border: 1px solid rgba(255, 255, 255, 0.42); border-radius: 50%; background: #ff6f68; color: #1d1012; box-shadow: 0 15px 42px rgba(255, 111, 104, 0.26); cursor: pointer; pointer-events: auto; transition: transform 160ms ease, background 160ms ease; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-big-play:hover { background: #ff827c; transform: scale(1.06); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-state > strong,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-error strong { font-size: 13px; font-weight: 900; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-state > p,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-error p { max-width: 440px; margin: 0; color: rgba(255, 250, 241, 0.58); font-size: 9px; line-height: 1.6; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-error { background: rgba(5, 4, 5, 0.82); pointer-events: auto; }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-backdrop { position: fixed; inset: 0; z-index: 48; background: rgba(0, 0, 0, 0.24); backdrop-filter: blur(2px); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-sheet {
+  position: absolute;
+  /* 旧播放器侧栏规则仍声明 top: 0；设置固定高度后必须显式释放顶部锚点，否则 bottom 会被忽略。 */
+  top: auto;
+  right: clamp(8px, 1.5vw, 18px);
+  bottom: clamp(70px, 8vw, 84px);
+  z-index: 50;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: min(420px, calc(100% - 16px));
+  /* 菜单实际位于底部控制层内，百分比会以控制层的 168px 左右高度计算，导致正文只剩 24px。
+     cqh 明确以最近的 size container（播放器舞台）为基准，桌面和嵌入模式都能得到稳定高度。 */
+  height: min(500px, calc(100cqh - 94px));
+  max-height: min(560px, calc(100cqh - 94px));
+  overflow: hidden;
+  border: 1px solid rgba(255, 250, 241, 0.16);
+  border-radius: 9px;
+  background: rgba(22, 17, 21, 0.97);
+  box-shadow: 0 28px 74px rgba(0, 0, 0, 0.58);
+  color: #fffaf1;
+  backdrop-filter: blur(22px);
+}
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-menu-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 49px; padding: 0 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-menu-header h3 { margin: 0; font-size: 12px; font-weight: 900; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-menu-header button { display: grid; width: 30px; height: 30px; place-items: center; border: 0; border-radius: 6px; background: transparent; color: rgba(255, 250, 241, 0.62); cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-tabs > button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: rgba(255, 250, 241, 0.55); font-size: 9px; font-weight: 800; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-tabs > button.is-active,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-tabs > button[aria-selected="true"] { border-color: rgba(255, 111, 104, 0.3); background: rgba(255, 111, 104, 0.14); color: #ff8b85; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-body { min-height: 0; overflow-y: auto; padding: 12px; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.16) transparent; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-section { display: grid; gap: 8px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-section + .txzz-player-menu-section { margin-top: 14px; padding-top: 13px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-section-head strong { font-size: 9px; font-weight: 850; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-section-head span { color: rgba(255, 250, 241, 0.42); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-chip,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-tool-button { min-height: 36px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 6px; background: rgba(255, 255, 255, 0.035); color: rgba(255, 250, 241, 0.68); font-size: 8px; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-chip:hover,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-tool-button:hover { border-color: rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.07); color: #fffaf1; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-chip.is-active { border-color: rgba(255, 111, 104, 0.36); background: rgba(255, 111, 104, 0.14); color: #ff8b85; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-current-source { margin: 7px 0 0; padding: 7px 9px; border-left: 2px solid #83d8b5; background: rgba(131, 216, 181, 0.08); color: rgba(255, 250, 241, 0.6); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-slider-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) 38px; align-items: center; gap: 8px; min-height: 42px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-slider-icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 6px; background: rgba(255, 215, 119, 0.1); color: #ffd777; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-slider-icon.is-volume { background: rgba(131, 216, 181, 0.1); color: #83d8b5; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-range { accent-color: #ff6f68; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-slider-value { color: rgba(255, 250, 241, 0.55); font-size: 8px; text-align: right; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-menu-footer { min-height: 36px; padding: 7px 12px; border-top: 1px solid rgba(255, 255, 255, 0.08); color: rgba(255, 250, 241, 0.38); font-size: 7px; }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-quick-actions { position: absolute; top: 62px; right: 12px; z-index: 28; display: flex; gap: 5px; opacity: 0; pointer-events: none; transform: translateY(-5px); transition: opacity 160ms ease, transform 160ms ease; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-quick-actions.is-visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-quick-actions > button { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 6px; background: rgba(16, 13, 15, 0.72); color: rgba(255, 250, 241, 0.76); font-size: 8px; font-weight: 800; cursor: pointer; backdrop-filter: blur(10px); }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-episodes-panel { position: absolute; top: 58px; right: 10px; z-index: 46; width: min(390px, calc(100% - 20px)); max-height: min(480px, calc(100% - 116px)); overflow-y: auto; padding: 10px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 8px; background: rgba(21, 16, 20, 0.97); box-shadow: 0 20px 58px rgba(0, 0, 0, 0.56); backdrop-filter: blur(18px); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-auto-next { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; width: 100%; min-height: 48px; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 6px; background: rgba(255, 255, 255, 0.035); color: rgba(255, 250, 241, 0.65); text-align: left; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-auto-next > span { display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 5px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-auto-next > span.is-active { border-color: #83d8b5; background: rgba(131, 216, 181, 0.14); color: #83d8b5; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-auto-next > div { display: grid; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-auto-next strong { color: #fffaf1; font-size: 9px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-auto-next small { color: rgba(255, 250, 241, 0.4); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-episode-list { display: grid; gap: 5px; margin-top: 8px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-episode-list > button { display: grid; grid-template-columns: 82px minmax(0, 1fr) auto; min-height: 62px; align-items: center; gap: 8px; padding: 6px; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; background: rgba(255, 255, 255, 0.03); color: rgba(255, 250, 241, 0.65); text-align: left; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-episode-list > button.is-active,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-episode-list > button[aria-current="true"] { border-color: rgba(255, 111, 104, 0.36); background: rgba(255, 111, 104, 0.12); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-episode-thumb { position: relative; display: block; overflow: hidden; width: 82px; aspect-ratio: 16 / 9; border-radius: 5px; background: #090809; }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-next-episode-overlay { position: absolute; inset: 0; z-index: 42; display: grid; place-items: center; padding: 20px; background: rgba(3, 3, 3, 0.78); backdrop-filter: blur(8px); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-next-episode-overlay > section { display: grid; width: min(390px, 100%); place-items: center; gap: 6px; padding: 24px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 9px; background: #171216; text-align: center; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-next-episode-overlay > section > span { display: grid; width: 52px; height: 52px; place-items: center; border-radius: 50%; background: rgba(255, 111, 104, 0.14); color: #ff8b85; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-next-episode-overlay small { color: #ff8b85; font-size: 7px; font-weight: 850; letter-spacing: 0.12em; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-next-episode-overlay h3 { margin: 3px 0 0; font-size: 14px; font-weight: 900; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-next-episode-overlay p { margin: 0; color: rgba(255, 250, 241, 0.5); font-size: 8px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-next-episode-overlay section > div { display: flex; width: 100%; gap: 6px; margin-top: 7px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-next-episode-overlay button { min-height: 36px; flex: 1; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; background: transparent; color: rgba(255, 250, 241, 0.65); font-size: 8px; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-next-episode-overlay button.is-primary { border-color: #ff6f68; background: #ff6f68; color: #211113; }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-gesture-layer { position: absolute; inset: 0; z-index: 38; pointer-events: none; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-gesture-chip,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-player-gesture-hud { display: inline-flex; min-height: 38px; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 7px; background: rgba(18, 14, 17, 0.84); color: #fffaf1; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4); font-size: 9px; font-weight: 800; backdrop-filter: blur(12px); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-gesture-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-gesture-progress { display: block; width: 100px; height: 3px; overflow: hidden; border-radius: 2px; background: rgba(255, 255, 255, 0.15); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-gesture-progress > i { display: block; height: 100%; background: #ff6f68; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-gesture-side-bar { position: absolute; top: 50%; display: grid; place-items: center; gap: 7px; transform: translateY(-50%); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-gesture-side-bar-left { left: 20px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-gesture-side-bar-right { right: 20px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-gesture-side-track { position: relative; width: 5px; height: 120px; overflow: hidden; border-radius: 3px; background: rgba(255, 255, 255, 0.14); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-gesture-side-fill { position: absolute; right: 0; bottom: 0; left: 0; background: #ff6f68; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-gesture-side-fill.is-brightness { background: #ffd777; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-gesture-side-fill.is-volume { background: #83d8b5; }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-session-column { min-width: 0; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-sidebar {
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid var(--cinema-line);
+  border-radius: 9px;
+  background: var(--cinema-bg-raised);
+  color: var(--cinema-cream);
+}
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-sidebar > header { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--cinema-line); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-icon { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 8px; background: var(--cinema-coral-soft); color: var(--cinema-coral); transform: rotate(-3deg); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-sidebar h2,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-sidebar h3 { margin: 0; color: var(--cinema-cream); font-size: 12px; font-weight: 900; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-sidebar p { margin: 3px 0 0; color: var(--cinema-muted); font-size: 8px; line-height: 1.55; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-session-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-session-badges > span { display: inline-flex; min-height: 22px; align-items: center; gap: 4px; padding: 0 6px; border: 1px solid var(--cinema-line); border-radius: 5px; color: var(--cinema-muted); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-session-badges > span.is-coin { color: var(--cinema-butter); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-session-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-session-actions > button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--cinema-line); border-radius: 6px; background: var(--cinema-surface); color: var(--cinema-muted); font-size: 7px; font-weight: 800; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-session-actions > button.is-primary { border-color: var(--cinema-coral); background: var(--cinema-coral); color: #211113; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-session-actions > button.is-selected { border-color: rgba(131, 216, 181, 0.3); color: var(--cinema-mint); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-progress { padding-top: 4px; border-top: 1px solid var(--cinema-line); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-progress ol { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-progress li { position: relative; display: grid; grid-template-columns: 26px minmax(0, 1fr); min-height: 43px; align-items: center; gap: 7px; color: var(--cinema-faint); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-progress li::before { content: ""; position: absolute; top: 32px; bottom: -10px; left: 12px; width: 1px; background: var(--cinema-line); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-progress li:last-child::before { display: none; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-progress li > span { position: relative; display: grid; width: 25px; height: 25px; place-items: center; border: 1px solid var(--cinema-line); border-radius: 50%; background: var(--cinema-surface); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-progress li.is-active > span { border-color: var(--cinema-coral); color: var(--cinema-coral); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-progress li.is-done > span { border-color: rgba(131, 216, 181, 0.34); background: var(--cinema-mint-soft); color: var(--cinema-mint); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-progress li > div { display: grid; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-progress strong { color: var(--cinema-cream-soft); font-size: 8px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-progress small { color: var(--cinema-faint); font-size: 7px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-ticket-error { padding: 8px; border-radius: 6px; background: rgba(255, 135, 144, 0.08); color: var(--cinema-danger); }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-tools { grid-column: 1 / -1; min-width: 0; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-drawer { overflow: hidden; border: 1px solid var(--cinema-line); border-radius: 9px; background: var(--cinema-bg-raised); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-drawer-tabs { display: flex; gap: 4px; padding: 7px; border-bottom: 1px solid var(--cinema-line); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-drawer-tabs > button { display: inline-flex; min-height: 34px; align-items: center; gap: 5px; padding: 0 11px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--cinema-muted); font-size: 8px; font-weight: 800; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-drawer-tabs > button.is-active,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-drawer-tabs > button[aria-selected="true"] { border-color: rgba(255, 111, 104, 0.28); background: var(--cinema-coral-soft); color: var(--cinema-coral); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-drawer-body { padding: 12px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-source-list,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-bookmark-list,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-current-download { display: grid; gap: 7px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-source-list > article,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-bookmark-list > article { padding: 10px; border: 1px solid var(--cinema-line); border-radius: 7px; background: var(--cinema-surface); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-drawer-empty { margin: 0; padding: 24px; color: var(--cinema-faint); font-size: 8px; text-align: center; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-source-heading { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-source-index { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 6px; background: var(--cinema-coral-soft); color: var(--cinema-coral); }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-source-actions,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-bookmark-actions,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-download-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-source-actions button,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-bookmark-actions button,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-download-actions button,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-download-empty { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 4px; padding: 0 8px; border: 1px solid var(--cinema-line); border-radius: 6px; background: transparent; color: var(--cinema-muted); font-size: 7px; font-weight: 800; cursor: pointer; }
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-source-actions button.is-primary,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-download-actions button.is-primary,
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-download-empty { border-color: var(--cinema-coral); background: var(--cinema-coral); color: #211113; }
+
+#txzz-candy-ui .txzz-cinema58-shell .txzz-stream-playback-footer { grid-column: 1 / -1; display: flex; min-height: 34px; align-items: center; justify-content: center; color: var(--cinema-faint); font-size: 7px; }
+
+@media (max-width: 980px) {
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-playback-workspace { grid-template-columns: minmax(0, 1fr); }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-sidebar { position: static; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-session-column { grid-row: 2; }
+}
+
+@media (max-width: 639px) {
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-playback-page { padding: 0; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-playback-workspace { gap: 8px; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-stage-card { border-inline: 0; border-radius: 0; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-shell { min-height: min(57dvh, 520px); }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-player-shell--portrait.is-embedded { min-height: calc(100dvh - 48px); }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-panel { padding: 48px 7px 8px; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-button { min-width: 34px; height: 34px; padding-inline: 5px; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-player-control-secondary { display: none; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-player-setting-label { display: none; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-player-top-bar { padding: 10px; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-meta { display: none; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-sheet { position: fixed; right: 7px; bottom: 7px; left: 7px; width: auto; height: min(72dvh, 560px); max-height: min(72dvh, 560px); border-radius: 9px; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-quick-actions { top: 50px; right: 7px; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-quick-actions > button { min-height: 30px; padding-inline: 7px; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-episodes-panel { top: 48px; right: 5px; left: 5px; width: auto; max-height: calc(100% - 98px); }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-session-column,
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-tools { padding-inline: 8px; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-sidebar,
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-drawer { border-radius: 8px; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-source-actions button,
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-bookmark-actions button,
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-download-actions button { flex: 1; }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-playback-page { padding: 0; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-player-shell,
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-player-shell--portrait.is-embedded { min-height: calc(100dvh - 48px); height: calc(100dvh - 48px); }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-session-column,
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-screening-tools,
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-playback-footer { display: none; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-playback-workspace { display: block; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-stream-stage-card { border: 0; border-radius: 0; }
+  #txzz-candy-ui .txzz-cinema58-shell .txzz-player-menu-sheet { right: 8px; bottom: 55px; width: min(420px, 52vw); height: calc(100cqh - 64px); max-height: calc(100cqh - 64px); }
+}

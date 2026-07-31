@@ -1,4 +1,4 @@
-import { Check, Clock3, Download, Layers3, Play, Repeat2, Sparkles, X } from "lucide-react";
+import { Check, Clapperboard, Clock3, Download, Layers3, Play, Repeat2, Sparkles, X } from "lucide-react";
 import type { CinemaMovie } from "../../cinema/types";
 import { CinemaPoster } from "../cinema/CinemaPoster";
 
@@ -46,7 +46,7 @@ export function ScreeningEpisodeOverlay({ visible, open, episodes, currentMovieI
               const current = episode.id === currentMovieId;
               return (
                 <button key={episode.id} type="button" onClick={() => { if (!current) onSelectEpisode(episode); }} aria-current={current ? "true" : undefined} className={current ? "is-current" : ""}>
-                  <span className="txzz-stream-player-episode-thumb"><CinemaPoster movie={episode} alt="" className="size-full" imageClassName="size-full object-cover" fallback={<i aria-hidden="true">🎬</i>} /><em>{index + 1}</em>{current && <i><Play size={13} fill="currentColor" /></i>}</span>
+              <span className="txzz-stream-player-episode-thumb"><CinemaPoster movie={episode} alt="" className="size-full" imageClassName="size-full object-cover" fallback={<i aria-hidden="true"><Clapperboard size={22} /></i>} /><em>{index + 1}</em>{current && <i><Play size={13} fill="currentColor" /></i>}</span>
                   <span><strong>{episode.title}</strong><small><Clock3 size={9} />{episode.durationLabel} · {episodeAccess(episode)}</small></span>
                   {current ? <em>当前</em> : <Play size={13} />}
                 </button>

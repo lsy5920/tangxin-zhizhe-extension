@@ -1,0 +1,51 @@
+/*
+ * 糖果星光剧院 5.8 设计令牌。
+ * 深可可底色保证长时间观影与海报的对比；珊瑚、奶油黄、薄荷只承担动作和状态，
+ * 避免用大面积紫色制造廉价“霓虹感”，让可爱元素服务于信息层级。
+ */
+#txzz-candy-ui .txzz-cinema58-overlay {
+  --cinema-bg: #0e0c0e;
+  --cinema-bg-raised: #151116;
+  --cinema-surface: #1d171d;
+  --cinema-surface-hover: #261e25;
+  --cinema-surface-soft: #211a20;
+  --cinema-cream: #fff8ed;
+  --cinema-cream-soft: #e8ddd4;
+  --cinema-muted: #a99ca5;
+  --cinema-faint: #746b72;
+  --cinema-line: rgba(255, 248, 237, 0.11);
+  --cinema-line-strong: rgba(255, 248, 237, 0.19);
+  --cinema-coral: #ff6f68;
+  --cinema-coral-hover: #ff827c;
+  --cinema-coral-soft: rgba(255, 111, 104, 0.14);
+  --cinema-butter: #ffd777;
+  --cinema-butter-soft: rgba(255, 215, 119, 0.14);
+  --cinema-mint: #83d8b5;
+  --cinema-mint-soft: rgba(131, 216, 181, 0.14);
+  --cinema-lilac: #c6b6e9;
+  --cinema-danger: #ff8790;
+  --cinema-shadow-sm: 0 10px 30px rgba(0, 0, 0, 0.24);
+  --cinema-shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.42);
+  --cinema-radius-sm: 6px;
+  --cinema-radius: 8px;
+  --cinema-radius-lg: 14px;
+  --cinema-sidebar: 214px;
+  color: var(--cinema-cream);
+  color-scheme: dark;
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif;
+}
+#txzz-candy-ui .txzz-cinema58-overlay button,
+#txzz-candy-ui .txzz-cinema58-overlay input,
+#txzz-candy-ui .txzz-cinema58-overlay select,
+#txzz-candy-ui .txzz-cinema58-overlay textarea {
+  font: inherit;
+}
+
+#txzz-candy-ui .txzz-cinema58-overlay button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+#txzz-candy-ui .txzz-cinema58-overlay :focus-visible {
+  outline: 2px solid var(--cinema-butter);
+  outline-offset: 3px;
+}
